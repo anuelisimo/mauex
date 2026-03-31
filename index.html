@@ -6,9 +6,9 @@
 <title>MAUex — Trading Journal</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 90'><rect width='90' height='90' rx='18' fill='%230a0c0f'/><line x1='10' y1='8' x2='10' y2='78' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><line x1='80' y1='8' x2='80' y2='78' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><line x1='10' y1='8' x2='45' y2='26' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><line x1='80' y1='8' x2='45' y2='26' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><polyline points='10,78 27,52 45,26' fill='none' stroke='%23f03d3d' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><polyline points='45,26 63,52 80,78' fill='none' stroke='%2300c47a' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><circle cx='45' cy='26' r='4' fill='%23e8edf3'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg0:#0a0c0f;--bg1:#0f1217;--bg2:#161b22;--bg3:#1e252f;--bg4:#252d38;--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);--text1:#e8edf3;--text2:#8a96a4;--text3:#505a66;--accent:#00c47a;--accent2:#00a865;--accent-dim:rgba(0,196,122,0.12);--red:#f03d3d;--red-dim:rgba(240,61,61,0.12);--amber:#f0a030;--amber-dim:rgba(240,160,48,0.12);--blue:#3d9cf0;--blue-dim:rgba(61,156,240,0.12);--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;--radius:8px;--radius-lg:12px;}
+:root{--bg0:#0a0c0f;--bg1:#0f1217;--bg2:#161b22;--bg3:#1e252f;--bg4:#252d38;--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);--text1:#e8edf3;--text2:#8a96a4;--text3:#505a66;--accent:#00c47a;--accent2:#00a865;--accent-dim:rgba(0,196,122,0.12);--red:#f03d3d;--red-dim:rgba(240,61,61,0.12);--amber:#f0a030;--amber-dim:rgba(240,160,48,0.12);--blue:#3d9cf0;--blue-dim:rgba(61,156,240,0.12);--mono:'JetBrains Mono',monospace;--sans:'DM Sans',sans-serif;--radius:8px;--radius-lg:12px;}
 [data-theme="arctic"]{--bg0:#060c18;--bg1:#080f20;--bg2:#0d1628;--bg3:#0d2040;--bg4:#122650;--border:rgba(77,158,255,0.08);--border2:rgba(77,158,255,0.18);--text1:#c8e0ff;--text2:#3a6090;--text3:#1a3a60;--accent:#00e5ff;--accent2:#00b8cc;--accent-dim:rgba(0,229,255,0.12);--red:#ff4d6d;--red-dim:rgba(255,77,109,0.12);--blue:#4d9eff;--blue-dim:rgba(77,158,255,0.12);}
 [data-theme="amber"]{--bg0:#0c0900;--bg1:#100c00;--bg2:#160f00;--bg3:#2a1f00;--bg4:#3a2a00;--border:rgba(255,208,96,0.08);--border2:rgba(255,208,96,0.18);--text1:#ffd060;--text2:#7a5a00;--text3:#3a2a00;--accent:#00e5a0;--accent2:#00b880;--accent-dim:rgba(0,229,160,0.12);--red:#ff4d4d;--red-dim:rgba(255,77,77,0.12);--blue:#ff8c00;--blue-dim:rgba(255,140,0,0.12);}
 [data-theme="glass-purple"]{--bg0:#08041a;--bg1:#0f0623;--bg2:#130828;--bg3:#1e0c3c;--bg4:#281050;--border:rgba(120,60,255,0.2);--border2:rgba(120,60,255,0.35);--text1:#e8d8ff;--text2:rgba(180,130,255,0.5);--text3:rgba(120,60,255,0.35);--accent:#00ffcc;--accent2:#00cc99;--accent-dim:rgba(0,255,204,0.1);--red:#ff3399;--red-dim:rgba(255,51,153,0.1);--blue:#b060ff;--blue-dim:rgba(176,96,255,0.1);}
@@ -268,7 +268,13 @@ textarea{resize:vertical;min-height:70px;}
           </div>
           <div class="card-sm" style="margin-bottom:12px;" id="levSec">
             <div class="sec-label">Apalancamiento</div>
-            <div class="lev-grid" id="levGrid"></div>
+            <div class="lev-grid" id="levGrid" style="grid-template-columns:repeat(5,1fr);"></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+              <div style="font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap;">Custom:</div>
+              <input type="number" id="levCustom" placeholder="ej: 12" min="1" max="125"
+                style="height:30px;padding:4px 8px;font-size:11px;"
+                oninput="setCustomLev(this.value)">
+            </div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
             <div class="sec-label">Ticker</div>
@@ -328,6 +334,7 @@ textarea{resize:vertical;min-height:70px;}
         <div class="flex" style="gap:8px;">
           <span style="font-size:10px;color:var(--text3);font-family:var(--mono);" id="priceTime"></span>
           <button class="btn btn-sm" onclick="refreshPrices()">↻ Precios</button>
+          <button class="btn btn-sm btn-accent" onclick="openManualTrade()">+ Carga manual</button>
         </div>
       </div>
       <div id="posList"></div>
@@ -403,6 +410,88 @@ textarea{resize:vertical;min-height:70px;}
       <input type="file" id="csvFile" accept=".csv" style="font-family:var(--sans);padding:8px;width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius);color:var(--text1);">
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('importModal')">Cancelar</button><button class="btn btn-accent" onclick="importCSV()">Importar</button></div>
+  </div>
+</div>
+
+
+<!-- MANUAL TRADE MODAL -->
+<div class="modal-overlay" id="manualTradeModal">
+  <div class="modal" style="width:580px;">
+    <div class="modal-header">
+      <div class="modal-title">Cargar posición manualmente</div>
+      <button class="modal-close" onclick="closeModal('manualTradeModal')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- DIRECCIÓN Y EXCHANGE -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label class="inp-label">Dirección</label>
+          <div class="dir-toggle" style="margin-top:4px;">
+            <button class="dir-btn active-long" data-mdir="long" onclick="setMDir('long')">LONG ↑</button>
+            <button class="dir-btn" data-mdir="short" onclick="setMDir('short')">SHORT ↓</button>
+            <button class="dir-btn" data-mdir="spot" onclick="setMDir('spot')">SPOT</button>
+          </div>
+        </div>
+        <div>
+          <label class="inp-label">Ticker</label>
+          <input type="text" id="mTicker" placeholder="BTC, ETH, AAPL..." oninput="this.value=this.value.toUpperCase()">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div><label class="inp-label">Exchange</label><input type="text" id="mExchange" placeholder="Binance, OKX..."></div>
+        <div><label class="inp-label">Apalancamiento</label><input type="number" id="mLev" placeholder="1" value="1" min="1" max="125"></div>
+        <div><label class="inp-label">Trader</label><select id="mTrader"><option value="">— ninguno —</option></select></div>
+      </div>
+
+      <!-- ENTRADAS MÚLTIPLES -->
+      <div style="margin-bottom:14px;">
+        <div class="flex-between" style="margin-bottom:8px;">
+          <label class="inp-label" style="margin:0;">Entradas <span style="color:var(--text3);font-size:9px;">(podés agregar varias)</span></label>
+          <button class="btn btn-sm" onclick="addEntryRow()">+ Entrada</button>
+        </div>
+        <div id="entryRows">
+          <!-- populated by JS -->
+        </div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:6px;" id="mAvgEntry"></div>
+      </div>
+
+      <!-- SL Y TPs -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div><label class="inp-label">Stop Loss</label><input type="number" id="mSL" placeholder="precio SL" oninput="calcManual()"></div>
+        <div><label class="inp-label">TP1 <span style="color:var(--text3);font-size:9px;">%</span></label>
+          <div style="display:flex;gap:4px;">
+            <input type="number" id="mTP1p" placeholder="precio" style="flex:2;" oninput="calcManual()">
+            <input type="number" id="mTP1pct" placeholder="%" style="flex:1;" value="33">
+          </div>
+        </div>
+        <div><label class="inp-label">TP2 <span style="color:var(--text3);font-size:9px;">%</span></label>
+          <div style="display:flex;gap:4px;">
+            <input type="number" id="mTP2p" placeholder="precio" style="flex:2;" oninput="calcManual()">
+            <input type="number" id="mTP2pct" placeholder="%" style="flex:1;" value="33">
+          </div>
+        </div>
+        <div><label class="inp-label">TP3 <span style="color:var(--text3);font-size:9px;">%</span></label>
+          <div style="display:flex;gap:4px;">
+            <input type="number" id="mTP3p" placeholder="precio" style="flex:2;" oninput="calcManual()">
+            <input type="number" id="mTP3pct" placeholder="%" style="flex:1;" value="34">
+          </div>
+        </div>
+      </div>
+
+      <!-- RESUMEN CALCULADO -->
+      <div id="manualCalcSummary" style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:14px;display:none;">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;" id="manualMetrics"></div>
+      </div>
+
+      <div style="margin-bottom:10px;"><label class="inp-label">Fecha de apertura</label><input type="text" id="mDate" placeholder="2025-03-27"></div>
+      <div><label class="inp-label">Notas</label><textarea id="mNotes" placeholder="Contexto, setup, señal..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('manualTradeModal')">Cancelar</button>
+      <button class="btn btn-accent" onclick="saveManualTrade()">Guardar posición</button>
+    </div>
   </div>
 </div>
 
@@ -635,6 +724,13 @@ function parseDate(d){
 
 let livePrices={};
 window._prices=()=>livePrices;
+window._currentUid=()=>CU?.uid||'';
+window._addTrade=async(trade)=>{
+  if(!CU) throw new Error('No autenticado');
+  trade.userId=CU.uid;
+  await addDoc(collection(db,'trades'),trade);
+  await loadTrades();
+};
 window.refreshPrices=async()=>{
   const active=allTrades.filter(t=>t.status==='active');
   const tickers=[...new Set(active.map(t=>t.ticker))];
@@ -656,8 +752,8 @@ async function fetchPrice(ticker){
 </script>
 
 <script>
-let calcDir='short',calcExchange='binance',calcLev=10;
-const LEVS=[3,5,10,15,20];
+let calcDir='short',calcExchange='binance',calcLev=null;
+const LEVS=[2,3,5,7,10,15,20,25,50];
 const MMR={binance:.005,bybit:.005,okx:.004,mexc:.005};
 const MMR_LBL={binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%'};
 
@@ -735,12 +831,25 @@ function buildLevGrid(){
   const g=document.getElementById('levGrid');g.innerHTML='';
   LEVS.forEach(l=>{
     const b=document.createElement('div');
-    b.className='lev-btn'+(l===10?' rec':'')+(l===calcLev?' sel':'');
+    b.className='lev-btn'+(l===calcLev?' sel':'');
     b.textContent=l+'x';
-    b.onclick=()=>{calcLev=l;buildLevGrid();compute();};
+    b.onclick=()=>{
+      calcLev=l;
+      const ci=document.getElementById('levCustom');
+      if(ci) ci.value='';
+      buildLevGrid();compute();
+    };
     g.appendChild(b);
   });
 }
+window.setCustomLev=v=>{
+  const n=parseInt(v);
+  if(n>=1&&n<=125){
+    calcLev=n;
+    document.querySelectorAll('.lev-btn').forEach(b=>b.classList.remove('sel'));
+    compute();
+  }
+};
 
 function liqPrice(entry,lev,mmr,dir){
   return dir==='short'?entry/(1-1/lev+mmr):entry/(1+1/lev-mmr);
@@ -1027,6 +1136,183 @@ function renderTraders(){
     </div>`;
   }).join('');
 }
+
+
+// ===== MANUAL TRADE =====
+let mDir = 'long';
+let entryRowCount = 0;
+
+window.openManualTrade = () => {
+  mDir = 'long';
+  entryRowCount = 0;
+  document.getElementById('entryRows').innerHTML = '';
+  document.getElementById('mAvgEntry').textContent = '';
+  document.getElementById('mTicker').value = '';
+  document.getElementById('mExchange').value = '';
+  document.getElementById('mLev').value = '1';
+  document.getElementById('mSL').value = '';
+  document.getElementById('mTP1p').value = ''; document.getElementById('mTP2p').value = ''; document.getElementById('mTP3p').value = '';
+  document.getElementById('mTP1pct').value = '33'; document.getElementById('mTP2pct').value = '33'; document.getElementById('mTP3pct').value = '34';
+  document.getElementById('mNotes').value = '';
+  document.getElementById('mDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('manualCalcSummary').style.display = 'none';
+  // Populate trader select
+  const traders = window._traders ? window._traders() : [];
+  document.getElementById('mTrader').innerHTML = '<option value="">— ninguno —</option>' + traders.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  // Set direction buttons
+  document.querySelectorAll('[data-mdir]').forEach(b => { b.className = 'dir-btn'; });
+  document.querySelector('[data-mdir="long"]').classList.add('active-long');
+  addEntryRow();
+  openModal('manualTradeModal');
+};
+
+window.setMDir = d => {
+  mDir = d;
+  document.querySelectorAll('[data-mdir]').forEach(b => { b.className = 'dir-btn'; if(b.dataset.mdir===d) b.classList.add('active-'+d); });
+  calcManual();
+};
+
+window.addEntryRow = () => {
+  entryRowCount++;
+  const id = entryRowCount;
+  const row = document.createElement('div');
+  row.id = 'erow'+id;
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:6px;margin-bottom:6px;align-items:center;';
+  row.innerHTML = `
+    <input type="number" id="eprice${id}" placeholder="Precio entrada" oninput="calcManual()" style="font-size:11px;padding:7px 10px;">
+    <input type="number" id="esize${id}" placeholder="Capital USD" oninput="calcManual()" style="font-size:11px;padding:7px 10px;">
+    <button onclick="removeEntryRow(${id})" style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">×</button>
+  `;
+  document.getElementById('entryRows').appendChild(row);
+  // Auto-focus price field
+  setTimeout(() => document.getElementById('eprice'+id)?.focus(), 50);
+};
+
+window.removeEntryRow = id => {
+  const el = document.getElementById('erow'+id);
+  if(el && document.getElementById('entryRows').children.length > 1) {
+    el.remove(); calcManual();
+  }
+};
+
+window.calcManual = () => {
+  // Collect entries
+  const entries = [];
+  document.querySelectorAll('[id^="eprice"]').forEach(el => {
+    const rowId = el.id.replace('eprice','');
+    const price = parseFloat(el.value)||0;
+    const size = parseFloat(document.getElementById('esize'+rowId)?.value)||0;
+    if(price > 0 && size > 0) entries.push({price, size});
+  });
+  
+  if(!entries.length) { document.getElementById('manualCalcSummary').style.display='none'; return; }
+  
+  // Weighted avg entry
+  const totalSize = entries.reduce((s,e)=>s+e.size, 0);
+  const avgEntry = entries.reduce((s,e)=>s+e.price*e.size, 0) / totalSize;
+  document.getElementById('mAvgEntry').textContent = entries.length > 1 
+    ? `Entrada promedio ponderada: $${avgEntry.toFixed(2)} · Capital total: $${fmt(totalSize)}`
+    : '';
+  
+  const sl = parseFloat(document.getElementById('mSL').value)||0;
+  const lev = parseInt(document.getElementById('mLev').value)||1;
+  
+  if(!sl) { document.getElementById('manualCalcSummary').style.display='none'; return; }
+  
+  const slDist = Math.abs(sl - avgEntry) / avgEntry;
+  const risk = totalSize * slDist * (mDir==='spot'?1:lev);
+  const tp1 = parseFloat(document.getElementById('mTP1p').value)||0;
+  const tp2 = parseFloat(document.getElementById('mTP2p').value)||0;
+  const tp3 = parseFloat(document.getElementById('mTP3p').value)||0;
+  
+  const sign = mDir==='short' ? 1 : (mDir==='spot'?1:-1);
+  // Actually for long: profit when price goes up; for short: profit when price goes down
+  const dirSign = mDir==='long' ? 1 : -1;
+  
+  const pnlTP = (tp) => tp ? Math.round((tp-avgEntry)/avgEntry * totalSize * (mDir==='long'?1:-1) * 100)/100 : null;
+  
+  const metrics = [
+    {l:'Capital total', v:'$'+fmt(totalSize)},
+    {l:'Entry prom.', v:'$'+fmt(avgEntry,2)},
+    {l:'Riesgo estimado', v:'$'+fmt(Math.abs(risk),0), cls:'red'},
+    {l:'Apalancamiento', v:lev+'x'},
+    ...(tp1?[{l:'PnL TP1', v:(pnlTP(tp1)>=0?'+':'')+fmt(pnlTP(tp1)), cls:pnlTP(tp1)>=0?'green':'red'}]:[]),
+    ...(tp2?[{l:'PnL TP2', v:(pnlTP(tp2)>=0?'+':'')+fmt(pnlTP(tp2)), cls:pnlTP(tp2)>=0?'green':'red'}]:[]),
+  ];
+  
+  document.getElementById('manualMetrics').innerHTML = metrics.map(m=>
+    `<div><div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:3px;">${m.l}</div><div style="font-family:var(--mono);font-size:13px;font-weight:700;" class="${m.cls==='green'?'pnl-pos':m.cls==='red'?'pnl-neg':''}">${m.v}</div></div>`
+  ).join('');
+  document.getElementById('manualCalcSummary').style.display = 'block';
+};
+
+window.saveManualTrade = async () => {
+  const ticker = document.getElementById('mTicker').value.trim().toUpperCase();
+  if(!ticker) { toast('Ingresá el ticker.','error'); return; }
+  
+  // Collect entries
+  const entries = [];
+  document.querySelectorAll('[id^="eprice"]').forEach(el => {
+    const rowId = el.id.replace('eprice','');
+    const price = parseFloat(el.value)||0;
+    const size = parseFloat(document.getElementById('esize'+rowId)?.value)||0;
+    if(price > 0 && size > 0) entries.push({price, size});
+  });
+  if(!entries.length) { toast('Agregá al menos una entrada.','error'); return; }
+  
+  const totalSize = entries.reduce((s,e)=>s+e.size, 0);
+  const avgEntry = entries.reduce((s,e)=>s+e.price*e.size, 0) / totalSize;
+  const sl = parseFloat(document.getElementById('mSL').value)||0;
+  const lev = parseInt(document.getElementById('mLev').value)||1;
+  const traderId = document.getElementById('mTrader').value;
+  const traderName = (window._traders?window._traders():[]).find(t=>t.id===traderId)?.name||'';
+  const notes = document.getElementById('mNotes').value;
+  const date = document.getElementById('mDate').value;
+  const exchange = document.getElementById('mExchange').value.trim().toUpperCase();
+  
+  const tp1 = parseFloat(document.getElementById('mTP1p').value)||0;
+  const tp2 = parseFloat(document.getElementById('mTP2p').value)||0;
+  const tp3 = parseFloat(document.getElementById('mTP3p').value)||0;
+  const tp1pct = parseFloat(document.getElementById('mTP1pct').value)||0;
+  const tp2pct = parseFloat(document.getElementById('mTP2pct').value)||0;
+  const tp3pct = parseFloat(document.getElementById('mTP3pct').value)||0;
+  
+  const slDist = sl ? Math.abs(sl-avgEntry)/avgEntry : 0.05;
+  const risk = Math.round(totalSize * slDist * 100)/100;
+
+  const trade = {
+    userId: window._currentUid ? window._currentUid() : '',
+    ticker,
+    dir: mDir,
+    exchange,
+    leverage: lev,
+    traderId,
+    traderName,
+    notes,
+    // Multi-entry fields
+    entries,           // [{price, size}, ...]
+    entry: avgEntry,   // weighted avg for backwards compat
+    posSize: totalSize,
+    risk,
+    sl,
+    tp1, tp2, tp3,
+    tp1pct, tp2pct, tp3pct,
+    status: 'active',
+    createdAt: date ? date+'T00:00:00.000Z' : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  
+  try {
+    if(window._addTrade) {
+      await window._addTrade(trade);
+    }
+    closeModal('manualTradeModal');
+    toast(`Posición ${ticker} cargada!`, 'success');
+    showPage('positions');
+  } catch(e) {
+    toast('Error al guardar: '+e.message, 'error');
+  }
+};
 
 buildLevGrid();
 document.getElementById('dashDate').textContent=new Date().toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
