@@ -666,7 +666,18 @@ window.confirmClose=async()=>{
 
 window.deleteTrade=async id=>{
   if(!confirm('¿Eliminar?')) return;
-  try{ await deleteDoc(doc(db,'trades',id)); await loadTrades(); renderDashboard(); renderWatchlist&&renderWatchlist(); renderPositions&&renderPositions(); toast('Eliminado.','success'); }catch(e){ toast('Error al eliminar: '+e.message,'error'); }
+  try{
+    await deleteDoc(doc(db,'trades',id));
+    await loadTrades();
+    // Re-render only the currently visible page
+    const active=document.querySelector('[id$="Page"]:not([style*="none"])');
+    const pid=active?.id;
+    if(pid==='dashPage') renderDashboard();
+    else if(pid==='watchPage') renderWatchlist();
+    else if(pid==='posPage') renderPositions();
+    else if(pid==='histPage') renderHistory();
+    toast('Eliminado.','success');
+  }catch(e){ toast('Error al eliminar: '+e.message,'error'); console.error(e); }
 };
 
 window.openTraderModal=id=>{
@@ -999,29 +1010,35 @@ function renderDashboard(){
 }
 
 function renderPnlChart(closed){
+  const canvas=document.getElementById('chartPnl');
+  if(!canvas) return;
   const months={};
   closed.forEach(t=>{ const d=new Date(t.closeDate||t.updatedAt); const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); months[k]=(months[k]||0)+(t.pnl||0); });
   const sorted=Object.keys(months).sort().slice(-12); const vals=sorted.map(k=>months[k]);
-  const canvas=document.getElementById('chartPnl');
   if(chPnl){chPnl.destroy();chPnl=null;}
-  if(!sorted.length){canvas.parentElement.innerHTML='<div class="empty" style="padding:30px"><div class="empty-text">Sin datos</div></div>';return;}
+  if(!sorted.length){canvas.style.display='none';canvas.insertAdjacentHTML('afterend','<div class="empty" style="padding:30px"><div class="empty-text">Sin datos</div></div>');return;}
+  canvas.style.display='';
   chPnl=new Chart(canvas,{type:'bar',data:{labels:sorted.map(k=>{const[y,m]=k.split('-');return new Date(y,m-1).toLocaleDateString('es',{month:'short',year:'2-digit'});}),datasets:[{data:vals,backgroundColor:vals.map(v=>v>=0?'rgba(0,196,122,0.7)':'rgba(240,61,61,0.7)'),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#505a66',font:{size:9}},grid:{display:false}},y:{ticks:{color:'#505a66',font:{size:9},callback:v=>'$'+Math.round(v)},grid:{color:'rgba(128,128,128,0.08)'}}}}});
 }
 function renderWRChart(closed){
+  const canvas=document.getElementById('chartWR');
+  if(!canvas) return;
   const traders={};
   closed.forEach(t=>{ if(!t.traderName)return; if(!traders[t.traderName])traders[t.traderName]={wins:0,total:0}; traders[t.traderName].total++; if((t.pnl||0)>0)traders[t.traderName].wins++; });
   const names=Object.keys(traders); const rates=names.map(n=>Math.round(traders[n].wins/traders[n].total*100));
-  const canvas=document.getElementById('chartWR');
   if(chWR){chWR.destroy();chWR=null;}
-  if(!names.length){canvas.parentElement.innerHTML='<div class="empty" style="padding:30px"><div class="empty-text">Sin datos de traders</div></div>';return;}
+  if(!names.length){canvas.style.display='none';return;}
+  canvas.style.display='';
   chWR=new Chart(canvas,{type:'bar',data:{labels:names,datasets:[{data:rates,backgroundColor:'rgba(61,156,240,0.7)',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{max:100,ticks:{color:'#505a66',font:{size:9},callback:v=>v+'%'},grid:{color:'rgba(128,128,128,0.08)'}},y:{ticks:{color:'#8a96a4',font:{size:10}},grid:{display:false}}}}});
 }
 function renderAssetsChart(trades){
+  const canvas=document.getElementById('chartAssets');
+  if(!canvas) return;
   const tickers={}; trades.forEach(t=>{ tickers[t.ticker]=(tickers[t.ticker]||0)+1; });
   const sorted=Object.entries(tickers).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const canvas=document.getElementById('chartAssets');
   if(chA){chA.destroy();chA=null;}
-  if(!sorted.length){canvas.parentElement.innerHTML='<div class="empty" style="padding:30px"><div class="empty-text">Sin trades</div></div>';return;}
+  if(!sorted.length){canvas.style.display='none';return;}
+  canvas.style.display='';
   const colors=['rgba(0,196,122,0.8)','rgba(61,156,240,0.8)','rgba(240,160,48,0.8)','rgba(240,61,61,0.8)','rgba(176,96,255,0.8)','rgba(0,229,255,0.8)','rgba(255,60,120,0.8)','rgba(136,135,128,0.8)'];
   chA=new Chart(canvas,{type:'doughnut',data:{labels:sorted.map(([k])=>k),datasets:[{data:sorted.map(([,v])=>v),backgroundColor:colors,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#8a96a4',font:{size:10},boxWidth:10,padding:8}}}}});
 }
