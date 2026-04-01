@@ -285,10 +285,16 @@ textarea{resize:vertical;min-height:70px;}
             <div class="grid2" style="gap:8px;">
               <div><label class="inp-label">Entry</label><input type="number" id="cEntry" placeholder="69090" oninput="compute()"></div>
               <div><label class="inp-label">Stop Loss</label><input type="number" id="cSL" placeholder="70930" oninput="compute()"></div>
-              <div><label class="inp-label">TP1</label><input type="number" id="cTP1" placeholder="67000" oninput="compute()"></div>
-              <div><label class="inp-label">TP2</label><input type="number" id="cTP2" placeholder="64200" oninput="compute()"></div>
-              <div><label class="inp-label">TP3</label><input type="number" id="cTP3" placeholder="57700" oninput="compute()"></div>
               <div><label class="inp-label">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
+            </div>
+            <div style="margin-top:10px;display:grid;grid-template-columns:1fr 60px;gap:6px;align-items:end;">
+              <label class="inp-label" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--text3);font-size:9px;">precio · % a cerrar</span></label>
+              <input type="number" id="cTP1" placeholder="TP1 precio" oninput="compute()">
+              <input type="number" id="cTP1pct" placeholder="%" value="33" oninput="compute()" style="text-align:center;">
+              <input type="number" id="cTP2" placeholder="TP2 precio" oninput="compute()">
+              <input type="number" id="cTP2pct" placeholder="%" value="33" oninput="compute()" style="text-align:center;">
+              <input type="number" id="cTP3" placeholder="TP3 precio" oninput="compute()">
+              <input type="number" id="cTP3pct" placeholder="%" value="34" oninput="compute()" style="text-align:center;">
             </div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
@@ -605,19 +611,23 @@ async function saveTrade(status){
   const traderName=allTraders.find(t=>t.id===traderId)?.name||'';
   const notes=document.getElementById('cNotes').value;
   if(!ticker||!entry||!sl||!risk){ toast('Completá ticker, entry, SL y riesgo.','error'); return; }
+  const tp1pct=parseFloat(document.getElementById('cTP1pct')?.value)||33;
+  const tp2pct=parseFloat(document.getElementById('cTP2pct')?.value)||33;
+  const tp3pct=parseFloat(document.getElementById('cTP3pct')?.value)||34;
   const slDist=Math.abs(sl-entry)/entry;
   const contracts=risk/(entry*slDist);
   const posSize=contracts*entry;
+  const lev=calcDir==='spot'?1:(calcLev||1);
   try{
     await addDoc(collection(db,'trades'),{
-      userId:CU.uid,ticker,entry,sl,tp1,tp2,tp3,risk,traderId,traderName,notes,
-      dir:calcDir,exchange:calcDir==='spot'?'spot':calcExchange,leverage:calcDir==='spot'?1:calcLev,
+      userId:CU.uid,ticker,entry,sl,tp1,tp2,tp3,tp1pct,tp2pct,tp3pct,risk,traderId,traderName,notes,
+      dir:calcDir,exchange:calcDir==='spot'?'spot':calcExchange,leverage:lev,
       posSize,status,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
     });
     await loadTrades();
     toast(`Guardado en ${status==='watchlist'?'Watchlist':'Posiciones'}!`,'success');
     showPage(status==='watchlist'?'watchlist':'positions');
-  }catch(e){ toast('Error al guardar.','error'); }
+  }catch(e){ toast('Error al guardar: '+e.message,'error'); console.error(e); }
 }
 
 window.moveToActive=async id=>{
@@ -654,7 +664,7 @@ window.confirmClose=async()=>{
 
 window.deleteTrade=async id=>{
   if(!confirm('¿Eliminar?')) return;
-  try{ await deleteDoc(doc(db,'trades',id)); await loadTrades(); renderDashboard(); toast('Eliminado.','success'); }catch(e){}
+  try{ await deleteDoc(doc(db,'trades',id)); await loadTrades(); renderDashboard(); renderWatchlist&&renderWatchlist(); renderPositions&&renderPositions(); toast('Eliminado.','success'); }catch(e){ toast('Error al eliminar: '+e.message,'error'); }
 };
 
 window.openTraderModal=id=>{
@@ -669,9 +679,16 @@ window.saveTrader=async()=>{
   const channel=document.getElementById('tChannel').value.trim();
   const notes=document.getElementById('tNotes').value.trim();
   try{
-    window._editTId?await updateDoc(doc(db,'traders',window._editTId),{name,channel,notes}):await addDoc(collection(db,'traders'),{userId:CU.uid,name,channel,notes,createdAt:new Date().toISOString()});
-    await loadTraders(); closeModal('traderModal'); renderTraders(); toast('Trader guardado.','success');
-  }catch(e){}
+    if(window._editTId){
+      await updateDoc(doc(db,'traders',window._editTId),{name,channel,notes});
+    } else {
+      await addDoc(collection(db,'traders'),{userId:CU.uid,name,channel,notes,createdAt:new Date().toISOString()});
+    }
+    await loadTraders();
+    closeModal('traderModal');
+    renderTraders();
+    toast('Trader guardado.','success');
+  }catch(e){ toast('Error al guardar trader: '+e.message,'error'); console.error(e); }
 };
 window.deleteTrader=async id=>{
   if(!confirm('¿Eliminar trader?')) return;
@@ -861,16 +878,20 @@ window.compute=function(){
   const tp1=parseFloat(document.getElementById('cTP1').value)||0;
   const tp2=parseFloat(document.getElementById('cTP2').value)||0;
   const tp3=parseFloat(document.getElementById('cTP3').value)||0;
+  const tp1pct=(parseFloat(document.getElementById('cTP1pct')?.value)||33)/100;
+  const tp2pct=(parseFloat(document.getElementById('cTP2pct')?.value)||33)/100;
+  const tp3pct=(parseFloat(document.getElementById('cTP3pct')?.value)||34)/100;
   const risk=parseFloat(document.getElementById('cRisk').value)||0;
   if(!entry||!sl||!risk){['calcMetrics','calcLevels','calcBar'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';});return;}
   const sp=calcDir==='spot',sh=calcDir==='short';
+  const lev=calcLev||1;
   const mmr=MMR[calcExchange]||.005;
   const slDist=Math.abs(sl-entry)/entry;
   const contracts=risk/(entry*slDist);
   const posUsd=contracts*entry;
-  const margin=sp?posUsd:posUsd/calcLev;
-  const liq=sp?null:liqPrice(entry,calcLev,mmr,calcDir);
-  const slPctLev=sp?slDist*100:slDist*calcLev*100;
+  const margin=sp?posUsd:posUsd/lev;
+  const liq=sp?null:liqPrice(entry,lev,mmr,calcDir);
+  const slPctLev=sp?slDist*100:slDist*lev*100;
   const liqSafe=!liq||(sh?liq>sl:liq<sl);
   const warns=[];
   if(sh&&sl<=entry)warns.push('SL debe ser MAYOR al Entry para SHORT');
@@ -887,33 +908,41 @@ window.compute=function(){
     {l:'SL % margen',v:slPctLev.toFixed(1)+'%',cls:slPctLev>50?'red':''},
     ...(!sp&&liq?[{l:'Liquidación',v:'$'+fmt(liq),cls:liqSafe?'green':'red'}]:[]),
   ].map(m=>`<div class="metric"><div class="metric-label">${m.l}</div><div class="metric-value ${m.cls||''}">${m.v}</div></div>`).join('');
-  const sign=(sh||sp)?1:-1;
+  // PnL por TP considerando % de cierre y acumulado
+  const sign=sh?1:(sp?1:-1);
+  const pnlAtTP=(tpPrice,pct)=>contracts*pct*(tpPrice-entry)*(sh?-1:1);
+  let cumPnl=0;
+  const tpRows=[];
+  if(tp1){ const p=pnlAtTP(tp1,tp1pct); cumPnl+=p; const rr=Math.abs((tp1-entry)/(sl-entry)); tpRows.push({l:'TP1',p:tp1,pnl:p,cumPnl,rr,pct:tp1pct,t:'tp'}); }
+  if(tp2){ const p=pnlAtTP(tp2,tp2pct); cumPnl+=p; const rr=Math.abs((tp2-entry)/(sl-entry)); tpRows.push({l:'TP2',p:tp2,pnl:p,cumPnl,rr,pct:tp2pct,t:'tp'}); }
+  if(tp3){ const p=pnlAtTP(tp3,tp3pct); cumPnl+=p; const rr=Math.abs((tp3-entry)/(sl-entry)); tpRows.push({l:'TP3',p:tp3,pnl:p,cumPnl,rr,pct:tp3pct,t:'tp'}); }
   const rows=[
-    ...(tp1?[{l:'TP1',p:tp1,t:'tp'}]:[]),
-    ...(tp2?[{l:'TP2',p:tp2,t:'tp'}]:[]),
-    ...(tp3?[{l:'TP3',p:tp3,t:'tp'}]:[]),
-    {l:'SL',p:sl,t:'sl'},
-    ...(!sp&&liq?[{l:'LIQ',p:liq,t:'liq'}]:[]),
+    ...tpRows,
+    {l:'SL',p:sl,pnl:-risk,cumPnl:-risk,rr:null,t:'sl'},
+    ...(!sp&&liq?[{l:'LIQ',p:liq,pnl:null,cumPnl:null,rr:null,t:'liq'}]:[]),
   ];
   document.getElementById('calcLevels').innerHTML=`
-    <div style="display:grid;grid-template-columns:55px 1fr 80px 70px 60px;padding:5px 0;border-bottom:0.5px solid var(--border);">
-      ${['Nivel','Precio','PnL','R:R','Dist%'].map(h=>`<span style="font-size:9px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
+    <div style="display:grid;grid-template-columns:55px 1fr 70px 90px 60px 55px;padding:5px 0;border-bottom:0.5px solid var(--border);">
+      ${['Nivel','Precio','%','PnL parcial','PnL acum.','R:R'].map(h=>`<span style="font-size:9px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
     </div>
     ${rows.map(r=>{
-      const pnl=r.t==='tp'?contracts*(entry-r.p)*sign:r.t==='sl'?-risk:null;
-      const rr=r.t==='tp'?Math.abs((entry-r.p)/(entry-sl)):null;
       const dist=(r.p-entry)/entry*100;
-      return `<div style="display:grid;grid-template-columns:55px 1fr 80px 70px 60px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
+      const rrColor=r.rr===null?'var(--text2)':r.rr>=2?'var(--accent)':'var(--red)';
+      return `<div style="display:grid;grid-template-columns:55px 1fr 70px 90px 60px 55px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
         <span class="badge badge-${r.t==='tp'?'active':r.t==='sl'?'short':'watch'}">${r.l}</span>
-        <span style="font-family:var(--mono);font-size:12px;font-weight:700;">$${fmt(r.p)}</span>
-        <span style="font-family:var(--mono);font-size:11px;" class="${pnl===null?'':pnl>=0?'pnl-pos':'pnl-neg'}">${pnl!==null?(pnl>=0?'+':'')+fmt(pnl):''}</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text2);">${rr!==null?rr.toFixed(2)+':1':''}</span>
-        <span style="font-family:var(--mono);font-size:10px;color:var(--text3);">${fmtP(dist)}</span>
+        <div>
+          <span style="font-family:var(--mono);font-size:12px;font-weight:700;">$${fmt(r.p)}</span>
+          <span style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-left:4px;">${fmtP(dist)}</span>
+        </div>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text3);">${r.pct!==undefined?Math.round(r.pct*100)+'%':''}</span>
+        <span style="font-family:var(--mono);font-size:11px;" class="${r.pnl===null?'':r.pnl>=0?'pnl-pos':'pnl-neg'}">${r.pnl!==null?(r.pnl>=0?'+':'')+fmt(r.pnl):''}</span>
+        <span style="font-family:var(--mono);font-size:11px;" class="${r.cumPnl===null?'':r.cumPnl>=0?'pnl-pos':'pnl-neg'}">${r.cumPnl!==null?(r.cumPnl>=0?'+':'')+fmt(r.cumPnl):''}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:${rrColor};font-weight:700;">${r.rr!==null?r.rr.toFixed(2)+':1':''}</span>
       </div>`;
     }).join('')}`;
-  const all=[entry,sl,...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[])];
-  const minP=Math.min(...all)*.985,maxP=Math.max(...all)*1.015,range=maxP-minP;
-  const pct=v=>((v-minP)/range*100).toFixed(2);
+  const all=[entry,sl,...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[])].filter(v=>v>0);
+  const minP=Math.min(...all)*.985,maxP=Math.max(...all)*1.015,range=maxP-minP||1;
+  const pct=v=>Math.min(99,Math.max(1,((v-minP)/range*100))).toFixed(2);
   const pts=[{v:entry,l:'Entry',c:'var(--text1)'},{v:sl,l:'SL',c:'var(--red)'},
     ...(tp1?[{v:tp1,l:'TP1',c:'var(--accent)'}]:[]),
     ...(tp2?[{v:tp2,l:'TP2',c:'var(--accent)'}]:[]),
@@ -1014,8 +1043,8 @@ function renderWatchlist(){
       <td>$${fmt(t.risk)}</td>
       <td style="color:var(--text2);">${rr?rr.toFixed(2)+':1':'—'}</td>
       <td style="color:var(--text3);">${fmtD(t.createdAt)}</td>
-      <td><div style="display:flex;gap:4px;">
-        <button class="btn btn-sm btn-accent" onclick="window.moveToActive('${t.id}')">▶</button>
+      <td><div style="display:flex;gap:4px;white-space:nowrap;">
+        <button class="btn btn-sm btn-accent" onclick="window.moveToActive('${t.id}')">▶ Ejecutar</button>
         <button class="btn btn-sm btn-danger" onclick="window.deleteTrade('${t.id}')">✕</button>
       </div></td>
     </tr>`;
