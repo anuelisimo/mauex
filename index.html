@@ -6,9 +6,9 @@
 <title>MAUex — Trading Journal</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 90'><rect width='90' height='90' rx='18' fill='%230a0c0f'/><line x1='10' y1='8' x2='10' y2='78' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><line x1='80' y1='8' x2='80' y2='78' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><line x1='10' y1='8' x2='45' y2='26' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><line x1='80' y1='8' x2='45' y2='26' stroke='%23303840' stroke-width='2' stroke-linecap='round'/><polyline points='10,78 27,52 45,26' fill='none' stroke='%23f03d3d' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><polyline points='45,26 63,52 80,78' fill='none' stroke='%2300c47a' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><circle cx='45' cy='26' r='4' fill='%23e8edf3'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg0:#0a0c0f;--bg1:#0f1217;--bg2:#161b22;--bg3:#1e252f;--bg4:#252d38;--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);--text1:#e8edf3;--text2:#8a96a4;--text3:#505a66;--accent:#00c47a;--accent2:#00a865;--accent-dim:rgba(0,196,122,0.12);--red:#f03d3d;--red-dim:rgba(240,61,61,0.12);--amber:#f0a030;--amber-dim:rgba(240,160,48,0.12);--blue:#3d9cf0;--blue-dim:rgba(61,156,240,0.12);--mono:'JetBrains Mono',monospace;--sans:'DM Sans',sans-serif;--radius:8px;--radius-lg:12px;}
+:root{--bg0:#0a0c0f;--bg1:#0f1217;--bg2:#161b22;--bg3:#1e252f;--bg4:#252d38;--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);--text1:#e8edf3;--text2:#9aa8b8;--text3:#6a7585;--accent:#00c47a;--accent2:#00a865;--accent-dim:rgba(0,196,122,0.12);--red:#f03d3d;--red-dim:rgba(240,61,61,0.12);--amber:#f0a030;--amber-dim:rgba(240,160,48,0.12);--blue:#3d9cf0;--blue-dim:rgba(61,156,240,0.12);--mono:'IBM Plex Mono',monospace;--sans:'DM Sans',sans-serif;--radius:8px;--radius-lg:12px;}
 [data-theme="arctic"]{--bg0:#060c18;--bg1:#080f20;--bg2:#0d1628;--bg3:#0d2040;--bg4:#122650;--border:rgba(77,158,255,0.08);--border2:rgba(77,158,255,0.18);--text1:#c8e0ff;--text2:#3a6090;--text3:#1a3a60;--accent:#00e5ff;--accent2:#00b8cc;--accent-dim:rgba(0,229,255,0.12);--red:#ff4d6d;--red-dim:rgba(255,77,109,0.12);--blue:#4d9eff;--blue-dim:rgba(77,158,255,0.12);}
 [data-theme="amber"]{--bg0:#0c0900;--bg1:#100c00;--bg2:#160f00;--bg3:#2a1f00;--bg4:#3a2a00;--border:rgba(255,208,96,0.08);--border2:rgba(255,208,96,0.18);--text1:#ffd060;--text2:#7a5a00;--text3:#3a2a00;--accent:#00e5a0;--accent2:#00b880;--accent-dim:rgba(0,229,160,0.12);--red:#ff4d4d;--red-dim:rgba(255,77,77,0.12);--blue:#ff8c00;--blue-dim:rgba(255,140,0,0.12);}
 [data-theme="glass-purple"]{--bg0:#08041a;--bg1:#0f0623;--bg2:#130828;--bg3:#1e0c3c;--bg4:#281050;--border:rgba(120,60,255,0.2);--border2:rgba(120,60,255,0.35);--text1:#e8d8ff;--text2:rgba(180,130,255,0.5);--text3:rgba(120,60,255,0.35);--accent:#00ffcc;--accent2:#00cc99;--accent-dim:rgba(0,255,204,0.1);--red:#ff3399;--red-dim:rgba(255,51,153,0.1);--blue:#b060ff;--blue-dim:rgba(176,96,255,0.1);}
@@ -508,7 +508,7 @@ textarea{resize:vertical;min-height:70px;}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, orderBy, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const fbConfig = {
   apiKey:"AIzaSyCPM-j5VF1LbfyA6fntOxpUh9i6FpiIwPo",
@@ -574,20 +574,22 @@ async function loadAll(){ await Promise.all([loadTrades(),loadTraders()]); }
 
 async function loadTrades(){
   try{
-    const q=query(collection(db,'trades'),where('userId','==',CU.uid),orderBy('createdAt','desc'));
+    const q=query(collection(db,'trades'),where('userId','==',CU.uid));
     const s=await getDocs(q); allTrades=[];
     s.forEach(d=>allTrades.push({id:d.id,...d.data()}));
+    allTrades.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
     window._trades=()=>allTrades;
-  }catch(e){ console.error(e); }
+  }catch(e){ console.error('loadTrades:',e); }
 }
 async function loadTraders(){
   try{
-    const q=query(collection(db,'traders'),where('userId','==',CU.uid),orderBy('name'));
+    const q=query(collection(db,'traders'),where('userId','==',CU.uid));
     const s=await getDocs(q); allTraders=[];
     s.forEach(d=>allTraders.push({id:d.id,...d.data()}));
+    allTraders.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     window._traders=()=>allTraders;
     fillTraderSelects();
-  }catch(e){}
+  }catch(e){ console.error('loadTraders:',e); }
 }
 function fillTraderSelects(){
   const opts='<option value="">— Sin trader —</option>'+allTraders.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
@@ -626,7 +628,7 @@ async function saveTrade(status){
     });
     await loadTrades();
     toast(`Guardado en ${status==='watchlist'?'Watchlist':'Posiciones'}!`,'success');
-    showPage(status==='watchlist'?'watchlist':'positions');
+    setTimeout(()=>showPage(status==='watchlist'?'watchlist':'positions'),150);
   }catch(e){ toast('Error al guardar: '+e.message,'error'); console.error(e); }
 }
 
