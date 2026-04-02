@@ -473,6 +473,12 @@ textarea{resize:vertical;min-height:70px;}
           <label class="lbl">Par</label>
           <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTCUSDT..." style="text-transform:uppercase;">
         </div>
+        <div style="display:flex;gap:0;border:0.5px solid var(--border2);border-radius:var(--r);overflow:hidden;">
+          <button id="toggleSpot" onclick="setMarketType('spot')"
+            style="padding:9px 16px;border:none;background:var(--accent);color:#000;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">SPOT</button>
+          <button id="toggleFut" onclick="setMarketType('futures')"
+            style="padding:9px 16px;border:none;background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">FUTUROS</button>
+        </div>
         <button class="btn" onclick="loadCharts()" id="chartsBtn">↺ Cargar</button>
         <button class="btn acc" onclick="copyChartsToClipboard()" id="copyBtn">📋 Copiar para Claude</button>
       </div>
@@ -522,6 +528,18 @@ textarea{resize:vertical;min-height:70px;}
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
           <div id="rsi1H" style="height:50px;"></div>
         </div>
+      </div>
+
+      <!-- Monthly chart -->
+      <div class="card" style="padding:10px;margin-bottom:10px;" id="monthlyCard">
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1M — MENSUAL</div>
+        <div id="cs1M" style="height:160px;"></div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
+        <div id="vol1M" style="height:50px;"></div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
+        <div id="obv1M" style="height:50px;"></div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
+        <div id="rsi1M" style="height:50px;"></div>
       </div>
 
       <div id="copyStatus" style="display:none;text-align:center;padding:12px;font-family:var(--mono);font-size:12px;color:var(--accent);">
@@ -1785,17 +1803,37 @@ window.removeEntryRow = id => {
 // ── AI Analysis ────────────────────────────────────────────────────────────
 let lwCharts = {}; // lightweight chart instances
 
-async function fetchOHLCV(symbol, interval, limit=200) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+let aiMarketType = 'spot'; // 'spot' | 'futures'
+
+window.setMarketType = type => {
+  aiMarketType = type;
+  const sp = document.getElementById('toggleSpot');
+  const ft = document.getElementById('toggleFut');
+  if(!sp||!ft) return;
+  if(type==='spot'){
+    sp.style.background='var(--accent)'; sp.style.color='#000';
+    ft.style.background='var(--bg3)';    ft.style.color='var(--t2)';
+  } else {
+    ft.style.background='var(--accent)'; ft.style.color='#000';
+    sp.style.background='var(--bg3)';    sp.style.color='var(--t2)';
+  }
+};
+
+async function fetchOHLCV(symbol, interval, limit=300) {
+  const base = aiMarketType==='futures'
+    ? 'https://fapi.binance.com/fapi/v1/klines'
+    : 'https://api.binance.com/api/v3/klines';
+  const url = `${base}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
   const r = await fetch(url);
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
   const data = await r.json();
   return data.map(k=>({
-    time:    Math.floor(k[0]/1000),
-    open:    parseFloat(k[1]),
-    high:    parseFloat(k[2]),
-    low:     parseFloat(k[3]),
-    close:   parseFloat(k[4]),
-    volume:  parseFloat(k[5]),
+    time:   Math.floor(k[0]/1000),
+    open:   parseFloat(k[1]),
+    high:   parseFloat(k[2]),
+    low:    parseFloat(k[3]),
+    close:  parseFloat(k[4]),
+    volume: parseFloat(k[5]),
   }));
 }
 
@@ -1858,8 +1896,6 @@ function makeChart(el, height) {
 }
 
 async function renderTFCharts(tfKey, symbol, interval) {
-  // tfKey like '1W','1D','4H','1H'
-  // Containers: cs{tfKey}, vol{tfKey}, obv{tfKey}, rsi{tfKey}
   const csEl  = document.getElementById('cs'+tfKey);
   const volEl = document.getElementById('vol'+tfKey);
   const obvEl = document.getElementById('obv'+tfKey);
@@ -1875,76 +1911,128 @@ async function renderTFCharts(tfKey, symbol, interval) {
   });
 
   try {
-    const limit = tfKey==='1W'?100:tfKey==='1D'?120:150;
+    // More candles so EMA200 always renders
+    const limit = tfKey==='1M'?120:tfKey==='1W'?300:tfKey==='1D'?300:250;
     const candles = await fetchOHLCV(symbol, interval, limit);
     if(!candles.length) throw new Error('Sin datos');
 
-    // ── Candlestick chart with EMAs ──────────────────────────────────────
+    // ── Candlestick chart with EMAs ───────────────────────────────────────
     const csChart = makeChart(csEl, 160);
     lwCharts['cs'+tfKey] = csChart;
+
+    // Show time axis only on candle chart (top panel)
+    csChart.applyOptions({
+      timeScale:{ borderColor:'rgba(255,255,255,0.08)', timeVisible:true, visible:true,
+        tickMarkFormatter:(t,type,locale)=>{
+          const d=new Date(t*1000);
+          if(interval==='1w'||interval==='1M') return d.toLocaleDateString('es',{month:'short',year:'2-digit'});
+          if(interval==='1d') return d.toLocaleDateString('es',{day:'2-digit',month:'short'});
+          return d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
+        }
+      }
+    });
+
     const csSeries = csChart.addCandlestickSeries({
       upColor:'#00c47a', downColor:'#f03d3d',
       borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
       wickUpColor:'#00a85a', wickDownColor:'#c03030',
     });
     csSeries.setData(candles);
-    // EMA 20 (yellow), 50 (blue), 200 (red)
-    if(candles.length>=20){
-      const ema20 = csChart.addLineSeries({color:'rgba(240,200,60,0.8)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
-      ema20.setData(calcEMA(candles,20));
-    }
-    if(candles.length>=50){
-      const ema50 = csChart.addLineSeries({color:'rgba(61,156,240,0.8)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
-      ema50.setData(calcEMA(candles,50));
-    }
-    if(candles.length>=200){
-      const ema200 = csChart.addLineSeries({color:'rgba(240,80,80,0.7)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
-      ema200.setData(calcEMA(candles,200));
+
+    // EMA 20 (yellow) / 50 (blue) / 200 (red) — show last value
+    const emaConfigs = [
+      {p:20, color:'rgba(240,200,60,0.9)',  label:'E20'},
+      {p:50, color:'rgba(61,156,240,0.9)',  label:'E50'},
+      {p:200,color:'rgba(240,80,80,0.85)',  label:'E200'},
+    ];
+    const emaValues = {};
+    for(const {p,color,label} of emaConfigs){
+      if(candles.length>=p){
+        const emaData = calcEMA(candles,p);
+        const emaSeries = csChart.addLineSeries({
+          color, lineWidth:1,
+          priceLineVisible:false,
+          lastValueVisible:true,
+          title: label,
+        });
+        emaSeries.setData(emaData);
+        emaValues[label] = emaData[emaData.length-1]?.value;
+      }
     }
     csChart.timeScale().fitContent();
 
-    // ── Volume chart ─────────────────────────────────────────────────────
+    // ── Volume chart (no time axis) ────────────────────────────────────────
     const volChart = makeChart(volEl, 50);
     lwCharts['vol'+tfKey] = volChart;
     volChart.applyOptions({timeScale:{visible:false}});
+    // Calc avg volume for reference
+    const avgVol = candles.slice(-20).reduce((s,c)=>s+c.volume,0)/20;
     const volSeries = volChart.addHistogramSeries({
       priceFormat:{type:'volume'},
       priceScaleId:'right',
       scaleMargins:{top:0.1,bottom:0},
     });
     volSeries.setData(candles.map(c=>({
-      time:c.time,value:c.volume,
-      color:c.close>=c.open?'rgba(0,196,122,0.5)':'rgba(240,61,61,0.5)'
+      time:c.time, value:c.volume,
+      // Highlight volume spikes (>2x avg) in brighter color
+      color: c.volume>avgVol*2
+        ? (c.close>=c.open?'rgba(0,196,122,0.9)':'rgba(240,61,61,0.9)')
+        : (c.close>=c.open?'rgba(0,196,122,0.45)':'rgba(240,61,61,0.45)')
     })));
+    // Avg volume line
+    const avgSeries = volChart.addLineSeries({color:'rgba(255,200,60,0.5)',lineWidth:1,priceLineVisible:false,lastValueVisible:false,lineStyle:2});
+    avgSeries.setData(candles.slice(-20).map(c=>({time:c.time,value:avgVol})));
     volChart.timeScale().fitContent();
 
-    // ── OBV chart ─────────────────────────────────────────────────────────
+    // ── OBV chart (no time axis) ───────────────────────────────────────────
     const obvChart = makeChart(obvEl, 50);
     lwCharts['obv'+tfKey] = obvChart;
     obvChart.applyOptions({timeScale:{visible:false}});
-    const obvSeries = obvChart.addLineSeries({color:'rgba(61,156,240,0.8)',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false});
+    const obvSeries = obvChart.addLineSeries({color:'rgba(61,156,240,0.85)',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false});
     obvSeries.setData(calcOBV(candles));
     obvChart.timeScale().fitContent();
 
-    // ── RSI chart ─────────────────────────────────────────────────────────
-    const rsiChart = makeChart(rsiEl, 50);
+    // ── RSI chart — show time axis here (bottom panel) ─────────────────────
+    const rsiChart = makeChart(rsiEl, 60);
     lwCharts['rsi'+tfKey] = rsiChart;
-    rsiChart.applyOptions({timeScale:{visible:false}});
-    const rsiSeries = rsiChart.addLineSeries({color:'rgba(176,96,255,0.8)',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false});
+    rsiChart.applyOptions({
+      timeScale:{ borderColor:'rgba(255,255,255,0.08)', timeVisible:true, visible:true,
+        tickMarkFormatter:(t,type,locale)=>{
+          const d=new Date(t*1000);
+          if(interval==='1w'||interval==='1M') return d.toLocaleDateString('es',{month:'short',year:'2-digit'});
+          if(interval==='1d') return d.toLocaleDateString('es',{day:'2-digit',month:'short'});
+          return d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
+        }
+      }
+    });
     const rsiData = calcRSI(candles,14);
+    const rsiSeries = rsiChart.addLineSeries({
+      color:'rgba(176,96,255,0.85)',lineWidth:1.5,
+      priceLineVisible:false, lastValueVisible:true, title:'RSI',
+    });
     rsiSeries.setData(rsiData);
-    // Overbought/oversold lines
+    // OB/OS reference lines
     if(rsiData.length){
-      const obLine = rsiChart.addLineSeries({color:'rgba(240,61,61,0.3)',lineWidth:1,priceLineVisible:false,lastValueVisible:false,lineStyle:2});
-      obLine.setData(rsiData.map(d=>({time:d.time,value:70})));
-      const osLine = rsiChart.addLineSeries({color:'rgba(0,196,122,0.3)',lineWidth:1,priceLineVisible:false,lastValueVisible:false,lineStyle:2});
-      osLine.setData(rsiData.map(d=>({time:d.time,value:30})));
+      [[70,'rgba(240,61,61,0.4)'],[50,'rgba(255,255,255,0.15)'],[30,'rgba(0,196,122,0.4)']].forEach(([v,col])=>{
+        const s=rsiChart.addLineSeries({color:col,lineWidth:1,priceLineVisible:false,lastValueVisible:false,lineStyle:2});
+        s.setData(rsiData.map(d=>({time:d.time,value:v})));
+      });
     }
     rsiChart.timeScale().fitContent();
 
-    return candles;
+    // Sync all time scales
+    const syncTS = (master, slaves) => {
+      master.timeScale().subscribeVisibleLogicalRangeChange(range=>{
+        if(!range) return;
+        slaves.forEach(s=>{ try{s.timeScale().setVisibleLogicalRange(range);}catch(e){} });
+      });
+    };
+    syncTS(csChart, [volChart,obvChart,rsiChart]);
+
+    return {candles, emaValues};
   } catch(e) {
     csEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:150px;color:var(--t3);font-family:var(--mono);font-size:11px;">Error: ${e.message}</div>`;
+    console.error(tfKey, e);
     return null;
   }
 }
@@ -1987,20 +2075,30 @@ async function fetchMarketData(symbol) {
   return data;
 }
 
-function renderMarketStrip(symbol, md) {
+function renderMarketStrip(symbol, md, emaValues={}, mktType='spot') {
   const strip = document.getElementById('marketStrip');
-  if(!strip||!md.price) return;
-  const chgColor = md.change24h>=0?'var(--accent)':'var(--red)';
+  if(!strip) return;
+  const chgColor = (md.change24h||0)>=0?'var(--accent)':'var(--red)';
   const fngColor = md.fng>=60?'var(--red)':md.fng>=40?'var(--amber)':'var(--accent)';
-  const frColor  = md.fundingRate>0.05?'var(--red)':md.fundingRate<-0.01?'var(--accent)':'var(--t2)';
+  const frColor  = (md.fundingRate||0)>0.05?'var(--red)':(md.fundingRate||0)<-0.01?'var(--accent)':'var(--t2)';
+  const typeLabel = mktType==='futures'
+    ? '<span style="background:var(--amber-dim);color:var(--amber);padding:2px 6px;border-radius:4px;font-size:9px;">FUTUROS</span>'
+    : '<span style="background:var(--blue-dim);color:var(--blue);padding:2px 6px;border-radius:4px;font-size:9px;">SPOT</span>';
+
+  const emaStr = Object.entries(emaValues).map(([k,v])=>
+    v ? `<span style="color:var(--t3);">${k}: <span style="color:${k==='E20'?'rgba(240,200,60,0.9)':k==='E50'?'rgba(61,156,240,0.9)':'rgba(240,80,80,0.9)'}">$${fmtPx(v)}</span></span>` : ''
+  ).join('');
+
   strip.style.display='flex';
   strip.innerHTML=`
+    ${typeLabel}
     <span style="color:var(--t1);font-size:13px;font-weight:600;">${symbol}</span>
-    <span style="color:var(--t1);">$${fmtPx(md.price)}</span>
-    <span style="color:${chgColor};">${md.change24h>=0?'+':''}${md.change24h?.toFixed(2)}%</span>
-    <span style="color:var(--t3);">H: $${fmtPx(md.high24h)} · L: $${fmtPx(md.low24h)}</span>
-    <span style="color:var(--t3);">Vol 24h: $${(md.vol24h/1e9).toFixed(2)}B</span>
-    ${md.fundingRate!=null?`<span>FR: <span style="color:${frColor};">${md.fundingRate>=0?'+':''}${md.fundingRate?.toFixed(4)}%</span></span>`:''}
+    <span style="color:var(--t1);">${md.price?'$'+fmtPx(md.price):'—'}</span>
+    ${md.change24h!=null?`<span style="color:${chgColor};">${md.change24h>=0?'+':''}${md.change24h.toFixed(2)}%</span>`:''}
+    ${md.high24h?`<span style="color:var(--t3);">H: $${fmtPx(md.high24h)} · L: $${fmtPx(md.low24h)}</span>`:''}
+    ${md.vol24h?`<span style="color:var(--t3);">Vol: $${(md.vol24h/1e9).toFixed(2)}B</span>`:''}
+    ${emaStr}
+    ${md.fundingRate!=null?`<span>FR: <span style="color:${frColor};">${md.fundingRate>=0?'+':''}${md.fundingRate.toFixed(4)}%</span></span>`:''}
     ${md.openInterest?`<span style="color:var(--t3);">OI: $${(md.openInterest/1e9).toFixed(2)}B</span>`:''}
     ${md.fng!=null?`<span>F&G: <span style="color:${fngColor};">${md.fng} · ${md.fngLabel}</span></span>`:''}
   `;
@@ -2013,17 +2111,22 @@ window.loadCharts = async () => {
   document.getElementById('copyStatus').style.display='none';
 
   try {
-    const [candles1W,,md] = await Promise.all([
+    // Load all timeframes + market data in parallel
+    const [res1M, res1W, res1D, md] = await Promise.all([
+      renderTFCharts('1M', symbol, '1M'),
       renderTFCharts('1W', symbol, '1w'),
       renderTFCharts('1D', symbol, '1d'),
       fetchMarketData(symbol),
     ]);
-    await Promise.all([
+    const [res4H, res1H] = await Promise.all([
       renderTFCharts('4H', symbol, '4h'),
       renderTFCharts('1H', symbol, '1h'),
     ]);
-    renderMarketStrip(symbol, md);
-  } catch(e){ console.error(e); }
+
+    // Collect EMA values from 1D for the strip
+    const ema1D = res1D?.emaValues || {};
+    renderMarketStrip(symbol, md, ema1D, aiMarketType);
+  } catch(e){ console.error(e); toast('Error cargando charts: '+e.message,'error'); }
   btn.textContent='↺ Cargar'; btn.disabled=false;
 };
 
