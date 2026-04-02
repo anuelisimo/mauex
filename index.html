@@ -792,9 +792,22 @@ function isCryptoTicker(ticker){
 // livePrices[sym].spot  = spot price
 // livePrices[sym].futures = perpetual futures price
 
+const _firstPriceSeen=new Set();
 function setPx(sym, type, price){
+  const isFirst=!_firstPriceSeen.has(sym);
   if(!livePrices[sym]) livePrices[sym]={};
   livePrices[sym][type]=price;
+  updatePriceTimestamp();
+  if(isFirst){
+    // First time we get a price for this ticker — re-render the whole positions page
+    // so all elements get their data attributes properly populated
+    _firstPriceSeen.add(sym);
+    const posPage=document.getElementById('posPage');
+    if(posPage&&posPage.style.display!=='none'){
+      if(typeof renderPositions==='function') renderPositions();
+      return;
+    }
+  }
   updatePriceTick(sym, price, type);
 }
 
@@ -1082,6 +1095,22 @@ window.showPage=page=>{
   const ni=document.querySelectorAll('.nav-item');if(NAV_IDX[page]!==undefined)ni[NAV_IDX[page]]?.classList.add('active');
   const renders={dashboard:renderDashboard,watchlist:renderWatchlist,positions:renderPositions,history:renderHistory,traders:renderTraders};
   if(renders[page])renders[page]();
+  // When entering positions page, do an immediate REST fetch if WS hasn't fired yet
+  if(page==='positions'){
+    const active=(window._trades?window._trades():[]).filter(t=>t.status==='active');
+    active.forEach(t=>{
+      const sym=t.ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+      if(!livePrices[sym]){
+        // Quick REST fetch to show something immediately
+        if(isCryptoTicker(t.ticker)){
+          fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`)
+            .then(r=>r.json()).then(d=>{ if(d.price) setPx(sym,'spot',parseFloat(d.price)); }).catch(()=>{});
+          fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`)
+            .then(r=>r.json()).then(d=>{ if(d.markPrice) setPx(sym,'futures',parseFloat(d.markPrice)); }).catch(()=>{});
+        }
+      }
+    });
+  }
 };
 
 window.setDir=d=>{
@@ -1277,7 +1306,7 @@ function renderWRChart(closed){
 function renderAssetsChart(trades){
   const canvas=document.getElementById('chartAssets');
   if(!canvas) return;
-  const tickers={}; trades.forEach(t=>{ tickers[t.ticker]=(tickers[t.ticker]||0)+1; });
+  const tickers={}; trades.forEach(t=>{ if(!t.ticker||t.ticker==='undefined') return; tickers[t.ticker]=(tickers[t.ticker]||0)+1; });
   const sorted=Object.entries(tickers).sort((a,b)=>b[1]-a[1]).slice(0,8);
   if(chA){chA.destroy();chA=null;}
   if(!sorted.length){canvas.style.display='none';return;}
