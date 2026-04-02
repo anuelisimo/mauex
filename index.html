@@ -26,6 +26,46 @@
 [data-theme="glass-rose"]{--bg0:#10040a;--bg1:#14040c;--bg2:#18050e;--bg3:#230814;--bg4:#2d0a19;--border:rgba(255,60,120,0.15);--border2:rgba(255,60,120,0.3);--t1:#ffd8e8;--t2:rgba(255,100,150,0.7);--t3:rgba(255,100,150,0.5);--accent:#00ffaa;--accent-dim:rgba(0,255,170,0.1);--red:#ff3c78;--red-dim:rgba(255,60,120,0.1);}
 [data-theme="light"]{--bg0:#f0f2f5;--bg1:#f7f8fa;--bg2:#ffffff;--bg3:#f0f2f5;--bg4:#e4e7ec;--border:rgba(0,0,0,0.07);--border2:rgba(0,0,0,0.14);--t1:#0f1217;--t2:#3a4558;--t3:#6a7888;--accent:#00a865;--accent-dim:rgba(0,164,100,0.1);--red:#dc2626;--red-dim:rgba(220,38,38,0.1);}
 
+/* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .topbar-nav{display:none;}
+  .mobile-nav{display:flex!important;}
+  .page-wrap{padding:12px;}
+  .g4{grid-template-columns:1fr 1fr;}
+  .g3{grid-template-columns:1fr 1fr;}
+  .g2{grid-template-columns:1fr;}
+  .calc-layout{grid-template-columns:1fr!important;}
+  .auth-card{width:95vw;padding:24px 20px;}
+  .topbar{padding:0 12px;}
+  .logo-text{display:none;}
+}
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--bg1);border-top:0.5px solid var(--border);z-index:50;padding:8px 0 calc(8px + env(safe-area-inset-bottom));}
+.mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;color:var(--t3);cursor:pointer;font-size:9px;font-family:var(--mono);padding:4px 0;}
+.mobile-nav-btn.active{color:var(--accent);}
+.mobile-nav-btn svg{width:18px;height:18px;}
+
+/* ── POSITION CARD COMPACT ───────────────────────────────────────────────── */
+.pos-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:14px 16px;margin-bottom:8px;}
+.pos-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.pos-card-left{display:flex;align-items:center;gap:8px;}
+.pos-card-ticker{font-family:var(--mono);font-size:16px;font-weight:600;}
+.pos-card-pnl{font-family:var(--mono);font-size:18px;font-weight:600;}
+.pos-card-body{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px;}
+@media(max-width:768px){.pos-card-body{grid-template-columns:repeat(3,1fr);}}
+.pos-mini-metric{background:var(--bg3);border-radius:6px;padding:8px 10px;}
+.pos-mini-lbl{font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:3px;}
+.pos-mini-val{font-family:var(--mono);font-size:12px;font-weight:600;}
+.pos-tps{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.pos-tp-btn{flex:1;min-width:80px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;cursor:pointer;text-align:left;transition:all .2s;}
+.pos-tp-btn:hover{border-color:var(--accent);background:var(--accent-dim);}
+.pos-tp-label{font-size:8px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;}
+.pos-tp-price{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);}
+.pos-tp-dist{font-size:9px;color:var(--t3);font-family:var(--mono);}
+.pos-card-footer{display:flex;align-items:center;gap:6px;}
+
+/* ── DASHBOARD LIVE PNL ──────────────────────────────────────────────────── */
+.live-pnl-total{background:var(--bg3);border-radius:var(--r);padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;}
+
 /* ── RESET ───────────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg0);color:var(--t1);font-family:var(--sans);font-size:14px;min-height:100vh;}
@@ -144,6 +184,7 @@ textarea{resize:vertical;min-height:70px;}
 .toast-item.success{border-color:var(--accent);color:var(--accent);}
 .toast-item.error{border-color:var(--red);color:var(--red);}
 @keyframes tslide{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 
 /* ── CALC ────────────────────────────────────────────────────────────────── */
 .dir-toggle{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:3px;}
@@ -231,6 +272,7 @@ textarea{resize:vertical;min-height:70px;}
       <button class="nav-btn" data-page="positions" onclick="showPage('positions')">Posiciones</button>
       <button class="nav-btn" data-page="history" onclick="showPage('history')">Historial</button>
       <button class="nav-btn" data-page="traders" onclick="showPage('traders')">Traders</button>
+      <button class="nav-btn" data-page="analysis" onclick="showPage('analysis')">AI Analysis</button>
     </nav>
     <div class="topbar-right">
       <button class="icon-btn" onclick="openThemePicker()" title="Tema">
@@ -246,6 +288,38 @@ textarea{resize:vertical;min-height:70px;}
       </div>
     </div>
   </div>
+
+  <!-- MOBILE NAV -->
+  <nav class="mobile-nav" id="mobileNav">
+    <button class="mobile-nav-btn active" data-page="dashboard" onclick="showPage('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dash
+    </button>
+    <button class="mobile-nav-btn" data-page="calc" onclick="showPage('calc')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
+      Calc
+    </button>
+    <button class="mobile-nav-btn" data-page="watchlist" onclick="showPage('watchlist')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      Watch
+    </button>
+    <button class="mobile-nav-btn" data-page="positions" onclick="showPage('positions')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Pos.
+    </button>
+    <button class="mobile-nav-btn" data-page="history" onclick="showPage('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Hist.
+    </button>
+    <button class="mobile-nav-btn" data-page="traders" onclick="showPage('traders')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Traders
+    </button>
+    <button class="mobile-nav-btn" data-page="analysis" onclick="showPage('analysis')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/><circle cx="22" cy="12" r="0"/><path d="M14 2l4 4-4 4"/></svg>
+      AI
+    </button>
+  </nav>
 
   <div class="page-wrap">
 
@@ -269,7 +343,7 @@ textarea{resize:vertical;min-height:70px;}
     <!-- CALCULADORA -->
     <div id="calcPage" style="display:none;">
       <div style="font-family:var(--mono);font-size:18px;font-weight:600;margin-bottom:20px;">Calculadora de posición</div>
-      <div style="display:grid;grid-template-columns:340px 1fr;gap:20px;">
+      <div class="calc-layout" style="display:grid;grid-template-columns:340px 1fr;gap:20px;">
         <div>
           <div class="card-sm" style="margin-bottom:12px;">
             <div class="sec-label">Dirección</div>
@@ -304,8 +378,8 @@ textarea{resize:vertical;min-height:70px;}
           <div class="card-sm" style="margin-bottom:12px;">
             <div class="sec-label">Niveles</div>
             <div class="g2" style="gap:8px;margin-bottom:10px;">
-              <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="69000" oninput="compute()"></div>
-              <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="70500" oninput="compute()"></div>
+              <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="Entry" oninput="compute()"></div>
+              <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="Stop Loss" oninput="compute()"></div>
               <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
@@ -382,6 +456,53 @@ textarea{resize:vertical;min-height:70px;}
       <div class="card" style="padding:0;overflow:hidden;">
         <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry</th><th>Exit</th><th>PnL</th><th>PnL%</th><th>Días</th><th>Resultado</th><th>Fecha</th></tr></thead>
         <tbody id="histTbody"></tbody></table>
+      </div>
+    </div>
+
+    <!-- AI ANALYSIS -->
+    <div id="analysisPage" style="display:none;">
+      <div class="fxb" style="margin-bottom:20px;">
+        <div><div style="font-family:var(--mono);font-size:18px;font-weight:600;">AI Multi-Timeframe Analysis</div>
+        <div style="font-size:12px;color:var(--t2);margin-top:2px;">Análisis técnico con Claude AI · Datos Binance</div></div>
+      </div>
+      <div class="g2" style="gap:12px;margin-bottom:16px;align-items:end;">
+        <div>
+          <label class="lbl">Par de trading</label>
+          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTCUSDT, ETHUSDT..." style="text-transform:uppercase;">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn acc" onclick="runAIAnalysis()" id="aiBtn" style="flex:1;">🤖 Analizar con AI</button>
+          <button class="btn" onclick="loadCharts()" id="chartsBtn">↺ Cargar charts</button>
+        </div>
+      </div>
+      <!-- 2x2 chart grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;" id="chartGrid">
+        <div class="card" style="padding:12px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">1W — SEMANAL</div>
+          <div id="chart1W" style="height:220px;"></div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">1D — DIARIO</div>
+          <div id="chart1D" style="height:220px;"></div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">4H — 4 HORAS</div>
+          <div id="chart4H" style="height:220px;"></div>
+        </div>
+        <div class="card" style="padding:12px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">1H — 1 HORA</div>
+          <div id="chart1H" style="height:220px;"></div>
+        </div>
+      </div>
+      <!-- AI Result -->
+      <div id="aiResult" style="display:none;">
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;margin-bottom:12px;color:var(--accent);">Análisis AI</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;" id="aiCards"></div>
+        <div class="card" id="aiDetail"></div>
+      </div>
+      <div id="aiLoading" style="display:none;text-align:center;padding:40px;font-family:var(--mono);color:var(--t2);">
+        <div style="font-size:24px;margin-bottom:12px;animation:spin 1s linear infinite;display:inline-block;">⟳</div>
+        <div>Analizando charts con Claude AI...</div>
       </div>
     </div>
 
@@ -481,6 +602,7 @@ textarea{resize:vertical;min-height:70px;}
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      FIREBASE MODULE
@@ -903,7 +1025,7 @@ function updatePriceEl(sym) {
   document.querySelectorAll(`[data-px="${sym}"]`).forEach(el => {
     const dir = el.dataset.dir || 'spot';
     const p = getPrice(sym, dir);
-    if (p != null) el.textContent = '$' + p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:p>100?2:4});
+    if (p != null) el.textContent = '$' + fmtPx(p);
   });
   // Update PnL display elements
   document.querySelectorAll(`[data-pnl="${sym}"]`).forEach(el => {
@@ -1058,6 +1180,15 @@ G.prices   = prices;
 <script>
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt  = (n,d=0) => isNaN(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+// Smart price format: adapts decimals based on magnitude
+const fmtPx = n => {
+  if(isNaN(n)||n==null) return '—';
+  if(n>=1000)  return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+  if(n>=100)   return n.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
+  if(n>=1)     return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(n>=0.01)  return n.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
+  return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
+};
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
 const fmtD = d => { try{return new Date(d).toLocaleDateString('es',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(e){return d||'—';} };
 
@@ -1078,10 +1209,12 @@ document.querySelectorAll('.modal-overlay').forEach(el =>
 // ── Navigation ─────────────────────────────────────────────────────────────
 const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
-  positions:'posPage', history:'histPage', traders:'tradPage',
+  positions:'posPage', history:'histPage', traders:'tradPage', analysis:'analysisPage',
 };
 
 window.showPage = page => {
+  // Update mobile nav
+  document.querySelectorAll('.mobile-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
   Object.values(PAGES).forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -1100,6 +1233,11 @@ window.showPage = page => {
     traders:   renderTraders,
   };
   if (renders[page]) renders[page]();
+
+  // Load charts when entering analysis page
+  if (page === 'analysis' && typeof loadCharts === 'function') {
+    setTimeout(loadCharts, 100);
+  }
 
   // When entering positions, do immediate REST price fetch for any missing prices
   if (page === 'positions') {
@@ -1317,15 +1455,22 @@ function renderDashboard() {
   // Charts
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
 
-  // Active positions mini-list
-  const posHtml = active.length ? active.slice(0,5).map(t=>{
+  // Active positions mini-list with live PnL total
+  let liveTot=0, hasPx=false;
+  active.forEach(t=>{ const p=G.getPrice(t.ticker,t.dir); if(p==null) return; hasPx=true; liveTot+=Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100; });
+  const posHtml = active.length ? `
+    ${hasPx?`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:4px;">
+      <span style="font-size:9px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</span>
+      <span style="font-family:var(--mono);font-size:14px;font-weight:600;" class="${liveTot>=0?'pnl-pos':'pnl-neg'}">${liveTot>=0?'+':'-'}$${fmt(Math.abs(liveTot))}</span>
+    </div>`:''}
+    ${active.slice(0,5).map(t=>{
     const p = G.getPrice(t.ticker, t.dir);
     const pnl = p!=null ? Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100 : null;
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border);">
-      <div><span style="font-family:var(--mono);font-weight:600;font-size:12px;">${t.ticker}</span> <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${t.dir.toUpperCase()}${t.leverage>1?' x'+t.leverage:''}</span></div>
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);">
+      <div class="fx" style="gap:6px;"><span style="font-family:var(--mono);font-weight:600;font-size:12px;">${t.ticker}</span> <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${t.dir.toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span></div>
       <div class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}" style="font-family:var(--mono);font-size:11px;">${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}</div>
     </div>`;
-  }).join('') : `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Sin posiciones activas</div></div>`;
+  }).join('')}` : `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Sin posiciones activas</div></div>`;
   document.getElementById('dashActivePos').innerHTML = posHtml;
 }
 
@@ -1407,54 +1552,84 @@ function renderPositions() {
     return;
   }
 
-  container.innerHTML = active.map(t => {
+  // Total live PnL banner
+  let totalLivePnl = 0;
+  active.forEach(t=>{
+    const price=G.getPrice(t.ticker,t.dir);
+    if(price==null) return;
+    const sign=(t.dir==='short'||t.dir==='spot')?1:-1;
+    totalLivePnl+=Math.round((t.posSize/t.entry)*(t.entry-price)*sign*100)/100;
+  });
+  const hasPrices=active.some(t=>G.getPrice(t.ticker,t.dir)!=null);
+
+  container.innerHTML = (hasPrices?`<div class="live-pnl-total">
+    <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
+    <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalLivePnl>=0?'pnl-pos':'pnl-neg'}">${totalLivePnl>=0?'+':'-'}$${fmt(Math.abs(totalLivePnl))}</div>
+  </div>`:'') + active.map(t => {
     const sym   = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
     const price = G.getPrice(t.ticker, t.dir);
     const sign  = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
     const contr = (t.posSize||0) / (t.entry||1);
     const pnl   = price!=null ? Math.round(contr*(t.entry-price)*sign*100)/100 : null;
     const pnlPct= pnl!=null&&t.risk ? Math.round(pnl/t.risk*10000)/100 : null;
+    const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
+    const slPct = price&&t.sl ? (t.sl-price)/price*100 : null;
 
-    return `<div class="card" style="margin-bottom:12px;">
-      <div class="fxb" style="margin-bottom:16px;">
-        <div class="fx" style="gap:10px;">
-          <div style="font-family:var(--mono);font-size:20px;font-weight:600;">${t.ticker||'—'}</div>
+    return `<div class="pos-card">
+      <div class="pos-card-header">
+        <div class="pos-card-left">
+          <span class="pos-card-ticker">${t.ticker||'—'}</span>
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span>
-          <span style="font-size:11px;color:var(--t2);font-family:var(--mono);">${t.exchange?.toUpperCase()||''}</span>
-          ${t.traderName?`<span style="font-size:11px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+          <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">${t.exchange?.toUpperCase()||''}</span>
+          ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
         </div>
-        <div class="fx" style="gap:8px;">
-          <div style="font-family:var(--mono);font-size:22px;font-weight:600;"
-            class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
+        <div class="fx" style="gap:6px;align-items:baseline;">
+          <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
             data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}">
             ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
           </div>
-          ${pnlPct!=null?`<div style="font-size:12px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</div>`:''}
+          ${pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</span>`:''}
         </div>
       </div>
-      <div class="g4" style="margin-bottom:16px;">
-        <div class="metric"><div class="metric-lbl">Entry prom.</div><div class="metric-val" style="font-size:16px;">$${fmt(t.entry)}</div></div>
-        <div class="metric"><div class="metric-lbl">Precio actual</div><div class="metric-val" style="font-size:16px;" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmt(price):'—'}</div></div>
-        <div class="metric"><div class="metric-lbl">Stop Loss</div><div class="metric-val red" style="font-size:16px;">$${fmt(t.sl)}</div>${price&&t.sl?`<div class="metric-sub">${fmtP((t.sl-price)/price*100)} desde px</div>`:''}</div>
-        <div class="metric"><div class="metric-lbl">Posición</div><div class="metric-val" style="font-size:16px;">$${fmt(t.posSize)}</div><div class="metric-sub">Riesgo $${fmt(t.risk)}</div></div>
+      <div class="pos-card-body">
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Entry</div><div class="pos-mini-val">$${fmtPx(t.entry)}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio</div><div class="pos-mini-val" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Stop Loss</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>${slPct!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(slPct)}</div>`:''}</div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Posición</div><div class="pos-mini-val">$${fmt(t.posSize)}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Riesgo</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(t.risk)}</div></div>
       </div>
-      ${(t.tp1||t.tp2||t.tp3)?`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        ${[{l:'TP1',v:t.tp1},{l:'TP2',v:t.tp2},{l:'TP3',v:t.tp3}].filter(x=>x.v).map(tp=>`
-          <div style="flex:1;background:var(--bg3);border-radius:var(--r);padding:8px 14px;">
-            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-bottom:3px;">${tp.l}</div>
-            <div style="font-family:var(--mono);font-weight:600;color:var(--accent);">$${fmt(tp.v)}</div>
-            ${price?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${fmtP((tp.v-price)/price*100)}</div>`:''}
-          </div>`).join('')}
+      ${tps.length?`<div class="pos-tps">
+        ${tps.map(tp=>{
+          const dist=price?(tp.v-price)/price*100:null;
+          const tpPnl=price?Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*100)/100:null;
+          return `<button class="pos-tp-btn" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})">
+            <div class="pos-tp-label">${tp.l} — tap para cerrar parcial</div>
+            <div class="pos-tp-price">$${fmtPx(tp.v)}</div>
+            <div class="pos-tp-dist">${dist!=null?fmtP(dist):''} ${tpPnl!=null?'· '+(tpPnl>=0?'+':'')+fmt(tpPnl):''}
+            </div>
+          </button>`;
+        }).join('')}
       </div>`:''}
-      ${t.notes?`<div style="font-size:11px;color:var(--t2);margin-bottom:12px;padding:8px 12px;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--border2);">${t.notes}</div>`:''}
-      <div class="fx" style="gap:8px;justify-content:flex-end;">
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-right:auto;">Abierto ${fmtD(t.createdAt)}</div>
-        <button class="btn dan sm" onclick="deleteTrade('${t.id}')">Eliminar</button>
-        <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar trade</button>
+      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:8px;">${t.notes}</div>`:''}
+      <div class="pos-card-footer">
+        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${fmtD(t.createdAt)}</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn dan sm" onclick="deleteTrade('${t.id}')">Eliminar</button>
+          <button class="btn sm" onclick="openCloseTrade('${t.id}')">Cerrar</button>
+        </div>
       </div>
     </div>`;
   }).join('');
 }
+
+// Close trade at a specific TP price
+window.closeAtTP = (id, tpKey, tpPrice) => {
+  window._closeId = id;
+  document.getElementById('closePrice').value = tpPrice;
+  document.getElementById('closeDate').value  = new Date().toISOString().split('T')[0];
+  document.getElementById('closeNotes').value = `Cerrado en ${tpKey.toUpperCase()} @ $${tpPrice}`;
+  openModal('closeTradeModal');
+};
 
 // ── History ────────────────────────────────────────────────────────────────
 function renderHistory() {
@@ -1582,6 +1757,282 @@ window.addEntryRow = () => {
 window.removeEntryRow = id => {
   const el=document.getElementById('erow'+id);
   if(el && document.getElementById('entryRows').children.length>1) el.remove();
+};
+
+// ── AI Analysis ────────────────────────────────────────────────────────────
+let lwCharts = {}; // lightweight chart instances
+
+async function fetchOHLCV(symbol, interval, limit=200) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const r = await fetch(url);
+  const data = await r.json();
+  return data.map(k=>({
+    time:    Math.floor(k[0]/1000),
+    open:    parseFloat(k[1]),
+    high:    parseFloat(k[2]),
+    low:     parseFloat(k[3]),
+    close:   parseFloat(k[4]),
+    volume:  parseFloat(k[5]),
+  }));
+}
+
+function calcOBV(candles) {
+  let obv = 0;
+  return candles.map((c,i)=>{
+    if(i>0){
+      if(c.close>candles[i-1].close) obv+=c.volume;
+      else if(c.close<candles[i-1].close) obv-=c.volume;
+    }
+    return {time:c.time, value:obv};
+  });
+}
+
+async function renderLWChart(containerId, symbol, interval) {
+  const container = document.getElementById(containerId);
+  if(!container) return null;
+  container.innerHTML='';
+  
+  // Destroy existing
+  if(lwCharts[containerId]) { try{lwCharts[containerId].remove();}catch(e){} }
+  
+  const chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: 220,
+    layout:{ background:{color:'transparent'}, textColor:'#6a7888' },
+    grid:{ vertLines:{color:'rgba(255,255,255,0.04)'}, horzLines:{color:'rgba(255,255,255,0.04)'} },
+    crosshair:{ mode:1 },
+    rightPriceScale:{ borderColor:'rgba(255,255,255,0.1)' },
+    timeScale:{ borderColor:'rgba(255,255,255,0.1)', timeVisible:true },
+  });
+  lwCharts[containerId] = chart;
+
+  try {
+    const candles = await fetchOHLCV(symbol, interval);
+    
+    // Candlestick series
+    const cs = chart.addCandlestickSeries({
+      upColor:'#00c47a', downColor:'#f03d3d',
+      borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
+      wickUpColor:'#00c47a', wickDownColor:'#f03d3d',
+    });
+    cs.setData(candles);
+
+    // Volume (on separate pane via histogram)
+    const vs = chart.addHistogramSeries({
+      color:'rgba(100,150,200,0.3)',
+      priceFormat:{type:'volume'},
+      priceScaleId:'vol',
+      scaleMargins:{top:0.8,bottom:0},
+    });
+    vs.setData(candles.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(0,196,122,0.3)':'rgba(240,61,61,0.3)'})));
+
+    // OBV line
+    const obvData = calcOBV(candles);
+    const obvS = chart.addLineSeries({
+      color:'rgba(61,156,240,0.7)', lineWidth:1,
+      priceScaleId:'obv',
+      scaleMargins:{top:0.65,bottom:0.15},
+    });
+    obvS.setData(obvData);
+    chart.timeScale().fitContent();
+    return {chart, candles};
+  } catch(e) {
+    container.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:200px;color:var(--t3);font-family:var(--mono);font-size:11px;">Error cargando ${interval}</div>`;
+    return null;
+  }
+}
+
+window.loadCharts = async () => {
+  const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
+  document.getElementById('chartsBtn').textContent = '↺ Cargando...';
+  await Promise.all([
+    renderLWChart('chart1W', symbol, '1w'),
+    renderLWChart('chart1D', symbol, '1d'),
+    renderLWChart('chart4H', symbol, '4h'),
+    renderLWChart('chart1H', symbol, '1h'),
+  ]);
+  document.getElementById('chartsBtn').textContent = '↺ Cargar charts';
+};
+
+window.runAIAnalysis = async () => {
+  const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
+  const btn = document.getElementById('aiBtn');
+  const loading = document.getElementById('aiLoading');
+  const result  = document.getElementById('aiResult');
+  
+  btn.disabled = true;
+  btn.textContent = '⟳ Analizando...';
+  loading.style.display = 'block';
+  result.style.display  = 'none';
+
+  try {
+    // Fetch OHLCV data for all timeframes
+    const [w1,d1,h4,h1] = await Promise.all([
+      fetchOHLCV(symbol,'1w',52),
+      fetchOHLCV(symbol,'1d',90),
+      fetchOHLCV(symbol,'4h',120),
+      fetchOHLCV(symbol,'1h',120),
+    ]);
+
+    // Also render/update charts
+    await Promise.all([
+      renderLWChart('chart1W',symbol,'1w'),
+      renderLWChart('chart1D',symbol,'1d'),
+      renderLWChart('chart4H',symbol,'4h'),
+      renderLWChart('chart1H',symbol,'1h'),
+    ]);
+
+    // Capture charts as images
+    const captureChart = id => {
+      const canvas = document.querySelector(`#${id} canvas`);
+      return canvas ? canvas.toDataURL('image/png').split(',')[1] : null;
+    };
+
+    const imgs = {
+      '1W': captureChart('chart1W'),
+      '1D': captureChart('chart1D'),
+      '4H': captureChart('chart4H'),
+      '1H': captureChart('chart1H'),
+    };
+
+    // Prepare summary data (last 10 candles per TF)
+    const summarize = candles => candles.slice(-10).map(c=>
+      `${new Date(c.time*1000).toISOString().split('T')[0]} O:${c.open.toFixed(2)} H:${c.high.toFixed(2)} L:${c.low.toFixed(2)} C:${c.close.toFixed(2)} V:${Math.round(c.volume)}`
+    ).join('\n');
+
+    const dataText = `Par: ${symbol}
+Precio actual: $${fmtPx(h1[h1.length-1]?.close)}
+
+DATOS 1W (últimas 10 semanas):
+${summarize(w1)}
+
+DATOS 1D (últimos 10 días):
+${summarize(d1)}
+
+DATOS 4H (últimas 10 velas):
+${summarize(h4)}
+
+DATOS 1H (últimas 10 velas):
+${summarize(h1)}`;
+
+    const prompt = `Eres un analista técnico senior especializado en crypto trading. Analiza este par en múltiples timeframes.
+
+${dataText}
+
+Proporciona un análisis estructurado en JSON con este formato EXACTO (sin texto extra, solo JSON):
+{
+  "bias": "ALCISTA|BAJISTA|NEUTRAL",
+  "confidence": 1-10,
+  "summary": "resumen breve del contexto de mercado",
+  "trend_1w": "descripción tendencia semanal",
+  "trend_1d": "descripción tendencia diaria", 
+  "trend_4h": "descripción tendencia 4h",
+  "trend_1h": "descripción tendencia 1h",
+  "key_levels": ["nivel1", "nivel2", "nivel3"],
+  "setup": {
+    "tipo": "LONG|SHORT|NINGUNO",
+    "entry": "precio o zona de entrada",
+    "sl": "precio stop loss",
+    "tp1": "primer target",
+    "tp2": "segundo target",
+    "razon": "explicación del setup"
+  },
+  "risk": "descripción de riesgos principales",
+  "obv_analysis": "análisis del OBV en relación al precio"
+}`;
+
+    // Build message content - include images if available
+    const content = [
+      { type:'text', text: prompt }
+    ];
+    
+    // Add chart images if captured successfully
+    Object.entries(imgs).forEach(([tf, imgData]) => {
+      if(imgData) content.push(
+        { type:'text', text:`Chart ${tf}:` },
+        { type:'image', source:{ type:'base64', media_type:'image/png', data:imgData } }
+      );
+    });
+
+    // Call Claude API
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages:[{ role:'user', content }]
+      })
+    });
+
+    const aiData = await resp.json();
+    const rawText = aiData.content?.map(b=>b.text||'').join('');
+    
+    // Parse JSON from response
+    let analysis;
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      analysis = JSON.parse(jsonMatch?.[0] || rawText);
+    } catch(e) {
+      analysis = { bias:'NEUTRAL', confidence:5, summary: rawText, setup:{tipo:'NINGUNO'} };
+    }
+
+    // Render result
+    const biasColor = analysis.bias==='ALCISTA'?'var(--accent)':analysis.bias==='BAJISTA'?'var(--red)':'var(--amber)';
+    const confColor = analysis.confidence>=7?'var(--accent)':analysis.confidence>=4?'var(--amber)':'var(--red)';
+    
+    document.getElementById('aiCards').innerHTML=`
+      <div class="metric"><div class="metric-lbl">Bias</div><div class="metric-val" style="color:${biasColor};">${analysis.bias||'—'}</div></div>
+      <div class="metric"><div class="metric-lbl">Confianza</div><div class="metric-val" style="color:${confColor};">${analysis.confidence||'—'}/10</div></div>
+      <div class="metric"><div class="metric-lbl">Setup</div><div class="metric-val" style="font-size:14px;">${analysis.setup?.tipo||'NINGUNO'}</div></div>
+    `;
+
+    document.getElementById('aiDetail').innerHTML=`
+      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:0.5px solid var(--border);">
+        <div class="sec-label">Resumen</div>
+        <div style="font-size:13px;color:var(--t2);line-height:1.6;">${analysis.summary||'—'}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:0.5px solid var(--border);">
+        ${['1W','1D','4H','1H'].map(tf=>`
+        <div><div class="sec-label">${tf}</div>
+        <div style="font-size:12px;color:var(--t2);">${analysis['trend_'+tf.toLowerCase().replace('h','h')]||analysis['trend_'+tf]||'—'}</div></div>`).join('')}
+      </div>
+      ${analysis.setup?.tipo&&analysis.setup.tipo!=='NINGUNO'?`
+      <div style="margin-bottom:16px;padding:14px;background:var(--bg3);border-radius:var(--r);border-left:3px solid ${analysis.setup.tipo==='LONG'?'var(--accent)':'var(--red)'};">
+        <div class="sec-label" style="margin-bottom:8px;">Setup ${analysis.setup.tipo}</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;">
+          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">ENTRY</div><div style="font-family:var(--mono);font-size:12px;">${analysis.setup.entry||'—'}</div></div>
+          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">SL</div><div style="font-family:var(--mono);font-size:12px;color:var(--red);">${analysis.setup.sl||'—'}</div></div>
+          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">TP1</div><div style="font-family:var(--mono);font-size:12px;color:var(--accent);">${analysis.setup.tp1||'—'}</div></div>
+          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">TP2</div><div style="font-family:var(--mono);font-size:12px;color:var(--accent);">${analysis.setup.tp2||'—'}</div></div>
+        </div>
+        <div style="font-size:12px;color:var(--t2);">${analysis.setup.razon||''}</div>
+      </div>`:''}
+      ${analysis.key_levels?.length?`
+      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:0.5px solid var(--border);">
+        <div class="sec-label">Niveles clave</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">${analysis.key_levels.map(l=>`<span style="background:var(--bg3);padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;">${l}</span>`).join('')}</div>
+      </div>`:''}
+      <div style="margin-bottom:12px;">
+        <div class="sec-label">OBV</div>
+        <div style="font-size:12px;color:var(--t2);">${analysis.obv_analysis||'—'}</div>
+      </div>
+      <div>
+        <div class="sec-label">Riesgos</div>
+        <div style="font-size:12px;color:var(--amber);">${analysis.risk||'—'}</div>
+      </div>
+    `;
+
+    loading.style.display='none';
+    result.style.display='block';
+  } catch(e) {
+    loading.style.display='none';
+    toast('Error en análisis AI: '+e.message,'error');
+    console.error(e);
+  } finally {
+    btn.disabled=false;
+    btn.textContent='🤖 Analizar con AI';
+  }
 };
 
 // ── Init ───────────────────────────────────────────────────────────────────
