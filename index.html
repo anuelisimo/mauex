@@ -1101,15 +1101,22 @@ window.showPage=page=>{
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
   const el=document.getElementById(PAGES[page]);if(el)el.style.display='block';
   const ni=document.querySelectorAll('.nav-item');if(NAV_IDX[page]!==undefined)ni[NAV_IDX[page]]?.classList.add('active');
-  const renders={dashboard:renderDashboard,watchlist:renderWatchlist,positions:renderPositions,history:renderHistory,traders:renderTraders};
-  if(renders[page])renders[page]();
-  // When entering positions page, do an immediate REST fetch if WS hasn't fired yet
+  // Use window.renderXxx so we always get the latest definition (avoids hoisting issues)
+  const renderFns={
+    dashboard:()=>window.renderDashboard&&window.renderDashboard(),
+    watchlist:()=>window.renderWatchlist&&window.renderWatchlist(),
+    positions:()=>window.renderPositions&&window.renderPositions(),
+    history:()=>window.renderHistory&&window.renderHistory(),
+    traders:()=>window.renderTraders&&window.renderTraders(),
+  };
+  if(renderFns[page]) renderFns[page]();
+  // When entering positions, trigger immediate REST price fetch
   if(page==='positions'){
     const active=(window._trades?window._trades():[]).filter(t=>t.status==='active');
     active.forEach(t=>{
-      const sym=t.ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
-      if(!livePrices[sym]){
-        // Quick REST fetch to show something immediately
+      const sym=t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+      if(!sym) return;
+      if(!livePrices[sym]||(!livePrices[sym].spot&&!livePrices[sym].futures)){
         if(isCryptoTicker(t.ticker)){
           fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`)
             .then(r=>r.json()).then(d=>{ if(d.price) setPx(sym,'spot',parseFloat(d.price)); }).catch(()=>{});
@@ -1255,7 +1262,7 @@ window.compute=function(){
 
 let chPnl,chWR,chA;
 
-function renderDashboard(){
+window.renderDashboard=function renderDashboard(){
   const trades=(window._trades?window._trades():null)||[];
   const closed=trades.filter(t=>t.status==='closed');
   const active=trades.filter(t=>t.status==='active');
@@ -1323,7 +1330,7 @@ function renderAssetsChart(trades){
   chA=new Chart(canvas,{type:'doughnut',data:{labels:sorted.map(([k])=>k),datasets:[{data:sorted.map(([,v])=>v),backgroundColor:colors,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#a8b8cc',font:{size:10},boxWidth:10,padding:8}}}}});
 }
 
-function renderWatchlist(){
+window.renderWatchlist=function renderWatchlist(){
   const trades=(window._trades?window._trades():null)||[];
   const w=trades.filter(t=>t.status==='watchlist');
   const tb=document.getElementById('watchTbody');
@@ -1439,9 +1446,9 @@ window.renderHistory=function(){
     <td style="color:var(--text3);">${fmtD(t.closeDate||t.createdAt)}</td>
   </tr>`).join('');
 };
-function renderHistory(){ window.renderHistory(); }
+window.renderHistory=function renderHistory(){ window.renderHistory(); }
 
-function renderTraders(){
+window.renderTraders=function renderTraders(){
   const traders=window._traders?window._traders():[];
   const trades=window._trades?window._trades():[];
   const c=document.getElementById('traderCards');
