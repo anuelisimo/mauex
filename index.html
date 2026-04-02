@@ -570,27 +570,37 @@ async function loadPrefs(){
 window._saveTheme=async t=>{ try{ await setDoc(doc(db,'userPrefs',CU.uid),{theme:t},{merge:true}); }catch(e){} };
 
 let allTrades=[],allTraders=[];
+// Expose immediately so renderPositions never gets undefined
+window._trades=()=>allTrades;
+window._traders=()=>allTraders;
 
 async function loadAll(){ await Promise.all([loadTrades(),loadTraders()]); }
 
 async function loadTrades(){
   try{
     const q=query(collection(db,'trades'),where('userId','==',CU.uid));
-    const s=await getDocs(q); allTrades=[];
+    const s=await getDocs(q);
+    allTrades=[];
     s.forEach(d=>allTrades.push({id:d.id,...d.data()}));
     allTrades.sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
     window._trades=()=>allTrades;
-  }catch(e){ console.error('loadTrades:',e); }
+    console.log('loadTrades: loaded',allTrades.length,'trades');
+  }catch(e){
+    console.error('loadTrades ERROR:',e);
+    // Keep whatever was there before rather than wiping it
+  }
 }
 async function loadTraders(){
   try{
     const q=query(collection(db,'traders'),where('userId','==',CU.uid));
-    const s=await getDocs(q); allTraders=[];
+    const s=await getDocs(q);
+    allTraders=[];
     s.forEach(d=>allTraders.push({id:d.id,...d.data()}));
     allTraders.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     window._traders=()=>allTraders;
+    console.log('loadTraders: loaded',allTraders.length,'traders');
     fillTraderSelects();
-  }catch(e){ console.error('loadTraders:',e); }
+  }catch(e){ console.error('loadTraders ERROR:',e); }
 }
 function fillTraderSelects(){
   const opts='<option value="">— Sin trader —</option>'+allTraders.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
@@ -1246,7 +1256,7 @@ window.compute=function(){
 let chPnl,chWR,chA;
 
 function renderDashboard(){
-  const trades=window._trades?window._trades():[];
+  const trades=(window._trades?window._trades():null)||[];
   const closed=trades.filter(t=>t.status==='closed');
   const active=trades.filter(t=>t.status==='active');
   const wins=closed.filter(t=>(t.pnl||0)>0);
@@ -1314,7 +1324,7 @@ function renderAssetsChart(trades){
 }
 
 function renderWatchlist(){
-  const trades=window._trades?window._trades():[];
+  const trades=(window._trades?window._trades():null)||[];
   const w=trades.filter(t=>t.status==='watchlist');
   const tb=document.getElementById('watchTbody');
   if(!w.length){tb.innerHTML=`<tr><td colspan="12"><div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay setups en watchlist</div></div></td></tr>`;return;}
@@ -1341,7 +1351,7 @@ function renderWatchlist(){
 }
 
 window.renderPositions=function renderPositions(){
-  const trades=window._trades?window._trades():[];
+  const trades=(window._trades?window._trades():null)||[];
   const active=trades.filter(t=>t.status==='active');
   const container=document.getElementById('posList');
   if(!active.length){container.innerHTML=`<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay posiciones abiertas</div><div class="empty-sub">Ejecutá un trade desde Calculadora o Watchlist</div></div>`;return;}
