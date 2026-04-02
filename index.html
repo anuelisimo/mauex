@@ -461,48 +461,71 @@ textarea{resize:vertical;min-height:70px;}
 
     <!-- AI ANALYSIS -->
     <div id="analysisPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
-        <div><div style="font-family:var(--mono);font-size:18px;font-weight:600;">AI Multi-Timeframe Analysis</div>
-        <div style="font-size:12px;color:var(--t2);margin-top:2px;">Análisis técnico con Claude AI · Datos Binance</div></div>
-      </div>
-      <div class="g2" style="gap:12px;margin-bottom:16px;align-items:end;">
+      <div class="fxb" style="margin-bottom:16px;">
         <div>
-          <label class="lbl">Par de trading</label>
-          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTCUSDT, ETHUSDT..." style="text-transform:uppercase;">
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn acc" onclick="runAIAnalysis()" id="aiBtn" style="flex:1;">🤖 Analizar con AI</button>
-          <button class="btn" onclick="loadCharts()" id="chartsBtn">↺ Cargar charts</button>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">AI Chart Analysis</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Velas + EMA + RSI + OBV + datos de mercado · Binance</div>
         </div>
       </div>
-      <!-- 2x2 chart grid -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;" id="chartGrid">
-        <div class="card" style="padding:12px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">1W — SEMANAL</div>
-          <div id="chart1W" style="height:220px;"></div>
+      <!-- Controls -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:1;min-width:180px;">
+          <label class="lbl">Par</label>
+          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTCUSDT..." style="text-transform:uppercase;">
         </div>
-        <div class="card" style="padding:12px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">1D — DIARIO</div>
-          <div id="chart1D" style="height:220px;"></div>
+        <button class="btn" onclick="loadCharts()" id="chartsBtn">↺ Cargar</button>
+        <button class="btn acc" onclick="copyChartsToClipboard()" id="copyBtn">📋 Copiar para Claude</button>
+      </div>
+
+      <!-- Market data strip -->
+      <div id="marketStrip" style="display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:11px;"></div>
+
+      <!-- 2x2 chart grid — each with 3 subpanels -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;" id="aiChartGrid">
+        <div class="card" style="padding:10px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1W — SEMANAL</div>
+          <div id="cs1W" style="height:160px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
+          <div id="vol1W" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
+          <div id="obv1W" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
+          <div id="rsi1W" style="height:50px;"></div>
         </div>
-        <div class="card" style="padding:12px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">4H — 4 HORAS</div>
-          <div id="chart4H" style="height:220px;"></div>
+        <div class="card" style="padding:10px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1D — DIARIO</div>
+          <div id="cs1D" style="height:160px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
+          <div id="vol1D" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
+          <div id="obv1D" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
+          <div id="rsi1D" style="height:50px;"></div>
         </div>
-        <div class="card" style="padding:12px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">1H — 1 HORA</div>
-          <div id="chart1H" style="height:220px;"></div>
+        <div class="card" style="padding:10px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">4H — CUATRO HORAS</div>
+          <div id="cs4H" style="height:160px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
+          <div id="vol4H" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
+          <div id="obv4H" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
+          <div id="rsi4H" style="height:50px;"></div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1H — UNA HORA</div>
+          <div id="cs1H" style="height:160px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
+          <div id="vol1H" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
+          <div id="obv1H" style="height:50px;"></div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
+          <div id="rsi1H" style="height:50px;"></div>
         </div>
       </div>
-      <!-- AI Result -->
-      <div id="aiResult" style="display:none;">
-        <div style="font-family:var(--mono);font-size:13px;font-weight:600;margin-bottom:12px;color:var(--accent);">Análisis AI</div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;" id="aiCards"></div>
-        <div class="card" id="aiDetail"></div>
-      </div>
-      <div id="aiLoading" style="display:none;text-align:center;padding:40px;font-family:var(--mono);color:var(--t2);">
-        <div style="font-size:24px;margin-bottom:12px;animation:spin 1s linear infinite;display:inline-block;">⟳</div>
-        <div>Analizando charts con Claude AI...</div>
+
+      <div id="copyStatus" style="display:none;text-align:center;padding:12px;font-family:var(--mono);font-size:12px;color:var(--accent);">
+        ✅ Imagen copiada al portapapeles. Pegala directamente en Claude!
       </div>
     </div>
 
@@ -1236,7 +1259,7 @@ window.showPage = page => {
 
   // Load charts when entering analysis page
   if (page === 'analysis' && typeof loadCharts === 'function') {
-    setTimeout(loadCharts, 100);
+    setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
   }
 
   // When entering positions, do immediate REST price fetch for any missing prices
@@ -1787,253 +1810,303 @@ function calcOBV(candles) {
   });
 }
 
-async function renderLWChart(containerId, symbol, interval) {
-  const container = document.getElementById(containerId);
-  if(!container) return null;
-  container.innerHTML='';
-  
-  // Destroy existing
-  if(lwCharts[containerId]) { try{lwCharts[containerId].remove();}catch(e){} }
-  
-  const chart = LightweightCharts.createChart(container, {
-    width: container.clientWidth,
-    height: 220,
-    layout:{ background:{color:'transparent'}, textColor:'#6a7888' },
-    grid:{ vertLines:{color:'rgba(255,255,255,0.04)'}, horzLines:{color:'rgba(255,255,255,0.04)'} },
-    crosshair:{ mode:1 },
-    rightPriceScale:{ borderColor:'rgba(255,255,255,0.1)' },
-    timeScale:{ borderColor:'rgba(255,255,255,0.1)', timeVisible:true },
+// ── Indicator calculations ───────────────────────────────────────────────────
+function calcEMA(candles, period) {
+  const k = 2/(period+1);
+  let ema = candles[0].close;
+  return candles.map((c,i) => {
+    if(i===0){ ema=c.close; return {time:c.time,value:ema}; }
+    ema = c.close*k + ema*(1-k);
+    return {time:c.time,value:ema};
   });
-  lwCharts[containerId] = chart;
+}
+
+function calcRSI(candles, period=14) {
+  const result=[];
+  let gains=0, losses=0;
+  for(let i=1;i<=period;i++){
+    const d=candles[i].close-candles[i-1].close;
+    if(d>0) gains+=d; else losses+=Math.abs(d);
+  }
+  let avgG=gains/period, avgL=losses/period;
+  result.push({time:candles[period].time,value:avgL===0?100:100-(100/(1+avgG/avgL))});
+  for(let i=period+1;i<candles.length;i++){
+    const d=candles[i].close-candles[i-1].close;
+    avgG=(avgG*(period-1)+(d>0?d:0))/period;
+    avgL=(avgL*(period-1)+(d<0?Math.abs(d):0))/period;
+    result.push({time:candles[i].time,value:avgL===0?100:100-(100/(1+avgG/avgL))});
+  }
+  return result;
+}
+
+// Chart config helper
+const lwCfg = (height) => ({
+  width: 0, // will be set by container
+  height,
+  layout:{ background:{color:'transparent'}, textColor:'#6a7888' },
+  grid:{ vertLines:{color:'rgba(255,255,255,0.03)'}, horzLines:{color:'rgba(255,255,255,0.03)'} },
+  crosshair:{ mode:1 },
+  rightPriceScale:{ borderColor:'rgba(255,255,255,0.08)', scaleMargins:{top:0.05,bottom:0.05} },
+  timeScale:{ borderColor:'rgba(255,255,255,0.08)', timeVisible:true, visible:false },
+  handleScroll:false, handleScale:false,
+});
+
+function makeChart(el, height) {
+  const ch = LightweightCharts.createChart(el, {...lwCfg(height), width:el.clientWidth||400});
+  new ResizeObserver(()=>ch.applyOptions({width:el.clientWidth})).observe(el);
+  return ch;
+}
+
+async function renderTFCharts(tfKey, symbol, interval) {
+  // tfKey like '1W','1D','4H','1H'
+  // Containers: cs{tfKey}, vol{tfKey}, obv{tfKey}, rsi{tfKey}
+  const csEl  = document.getElementById('cs'+tfKey);
+  const volEl = document.getElementById('vol'+tfKey);
+  const obvEl = document.getElementById('obv'+tfKey);
+  const rsiEl = document.getElementById('rsi'+tfKey);
+  if(!csEl) return;
+
+  // Clear old charts
+  ['cs','vol','obv','rsi'].forEach(p=>{
+    const k=p+tfKey;
+    if(lwCharts[k]){try{lwCharts[k].remove();}catch(e){} delete lwCharts[k];}
+    const el=document.getElementById(k);
+    if(el) el.innerHTML='';
+  });
 
   try {
-    const candles = await fetchOHLCV(symbol, interval);
-    
-    // Candlestick series
-    const cs = chart.addCandlestickSeries({
+    const limit = tfKey==='1W'?100:tfKey==='1D'?120:150;
+    const candles = await fetchOHLCV(symbol, interval, limit);
+    if(!candles.length) throw new Error('Sin datos');
+
+    // ── Candlestick chart with EMAs ──────────────────────────────────────
+    const csChart = makeChart(csEl, 160);
+    lwCharts['cs'+tfKey] = csChart;
+    const csSeries = csChart.addCandlestickSeries({
       upColor:'#00c47a', downColor:'#f03d3d',
       borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
-      wickUpColor:'#00c47a', wickDownColor:'#f03d3d',
+      wickUpColor:'#00a85a', wickDownColor:'#c03030',
     });
-    cs.setData(candles);
+    csSeries.setData(candles);
+    // EMA 20 (yellow), 50 (blue), 200 (red)
+    if(candles.length>=20){
+      const ema20 = csChart.addLineSeries({color:'rgba(240,200,60,0.8)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+      ema20.setData(calcEMA(candles,20));
+    }
+    if(candles.length>=50){
+      const ema50 = csChart.addLineSeries({color:'rgba(61,156,240,0.8)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+      ema50.setData(calcEMA(candles,50));
+    }
+    if(candles.length>=200){
+      const ema200 = csChart.addLineSeries({color:'rgba(240,80,80,0.7)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+      ema200.setData(calcEMA(candles,200));
+    }
+    csChart.timeScale().fitContent();
 
-    // Volume (on separate pane via histogram)
-    const vs = chart.addHistogramSeries({
-      color:'rgba(100,150,200,0.3)',
+    // ── Volume chart ─────────────────────────────────────────────────────
+    const volChart = makeChart(volEl, 50);
+    lwCharts['vol'+tfKey] = volChart;
+    volChart.applyOptions({timeScale:{visible:false}});
+    const volSeries = volChart.addHistogramSeries({
       priceFormat:{type:'volume'},
-      priceScaleId:'vol',
-      scaleMargins:{top:0.8,bottom:0},
+      priceScaleId:'right',
+      scaleMargins:{top:0.1,bottom:0},
     });
-    vs.setData(candles.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(0,196,122,0.3)':'rgba(240,61,61,0.3)'})));
+    volSeries.setData(candles.map(c=>({
+      time:c.time,value:c.volume,
+      color:c.close>=c.open?'rgba(0,196,122,0.5)':'rgba(240,61,61,0.5)'
+    })));
+    volChart.timeScale().fitContent();
 
-    // OBV line
-    const obvData = calcOBV(candles);
-    const obvS = chart.addLineSeries({
-      color:'rgba(61,156,240,0.7)', lineWidth:1,
-      priceScaleId:'obv',
-      scaleMargins:{top:0.65,bottom:0.15},
-    });
-    obvS.setData(obvData);
-    chart.timeScale().fitContent();
-    return {chart, candles};
+    // ── OBV chart ─────────────────────────────────────────────────────────
+    const obvChart = makeChart(obvEl, 50);
+    lwCharts['obv'+tfKey] = obvChart;
+    obvChart.applyOptions({timeScale:{visible:false}});
+    const obvSeries = obvChart.addLineSeries({color:'rgba(61,156,240,0.8)',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false});
+    obvSeries.setData(calcOBV(candles));
+    obvChart.timeScale().fitContent();
+
+    // ── RSI chart ─────────────────────────────────────────────────────────
+    const rsiChart = makeChart(rsiEl, 50);
+    lwCharts['rsi'+tfKey] = rsiChart;
+    rsiChart.applyOptions({timeScale:{visible:false}});
+    const rsiSeries = rsiChart.addLineSeries({color:'rgba(176,96,255,0.8)',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false});
+    const rsiData = calcRSI(candles,14);
+    rsiSeries.setData(rsiData);
+    // Overbought/oversold lines
+    if(rsiData.length){
+      const obLine = rsiChart.addLineSeries({color:'rgba(240,61,61,0.3)',lineWidth:1,priceLineVisible:false,lastValueVisible:false,lineStyle:2});
+      obLine.setData(rsiData.map(d=>({time:d.time,value:70})));
+      const osLine = rsiChart.addLineSeries({color:'rgba(0,196,122,0.3)',lineWidth:1,priceLineVisible:false,lastValueVisible:false,lineStyle:2});
+      osLine.setData(rsiData.map(d=>({time:d.time,value:30})));
+    }
+    rsiChart.timeScale().fitContent();
+
+    return candles;
   } catch(e) {
-    container.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:200px;color:var(--t3);font-family:var(--mono);font-size:11px;">Error cargando ${interval}</div>`;
+    csEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:150px;color:var(--t3);font-family:var(--mono);font-size:11px;">Error: ${e.message}</div>`;
     return null;
   }
 }
 
-window.loadCharts = async () => {
-  const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
-  document.getElementById('chartsBtn').textContent = '↺ Cargando...';
-  await Promise.all([
-    renderLWChart('chart1W', symbol, '1w'),
-    renderLWChart('chart1D', symbol, '1d'),
-    renderLWChart('chart4H', symbol, '4h'),
-    renderLWChart('chart1H', symbol, '1h'),
-  ]);
-  document.getElementById('chartsBtn').textContent = '↺ Cargar charts';
-};
-
-window.runAIAnalysis = async () => {
-  const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
-  const btn = document.getElementById('aiBtn');
-  const loading = document.getElementById('aiLoading');
-  const result  = document.getElementById('aiResult');
-  
-  btn.disabled = true;
-  btn.textContent = '⟳ Analizando...';
-  loading.style.display = 'block';
-  result.style.display  = 'none';
+// ── Fetch market data (Binance + Fear&Greed) ─────────────────────────────
+async function fetchMarketData(symbol) {
+  const data = {};
+  try {
+    // 24h ticker
+    const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
+    const d = await r.json();
+    data.price     = parseFloat(d.lastPrice);
+    data.change24h = parseFloat(d.priceChangePercent);
+    data.vol24h    = parseFloat(d.quoteVolume); // in USDT
+    data.high24h   = parseFloat(d.highPrice);
+    data.low24h    = parseFloat(d.lowPrice);
+  } catch(e){}
 
   try {
-    // Fetch OHLCV data for all timeframes
-    const [w1,d1,h4,h1] = await Promise.all([
-      fetchOHLCV(symbol,'1w',52),
-      fetchOHLCV(symbol,'1d',90),
-      fetchOHLCV(symbol,'4h',120),
-      fetchOHLCV(symbol,'1h',120),
-    ]);
+    // Funding rate (futures)
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
+    const d = await r.json();
+    if(d[0]) data.fundingRate = parseFloat(d[0].fundingRate)*100;
+  } catch(e){}
 
-    // Also render/update charts
+  try {
+    // Open Interest
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`);
+    const d = await r.json();
+    if(d.openInterest) data.openInterest = parseFloat(d.openInterest)*data.price;
+  } catch(e){}
+
+  try {
+    // Fear & Greed
+    const r = await fetch('https://api.alternative.me/fng/?limit=1');
+    const d = await r.json();
+    if(d.data?.[0]) { data.fng = parseInt(d.data[0].value); data.fngLabel = d.data[0].value_classification; }
+  } catch(e){}
+
+  return data;
+}
+
+function renderMarketStrip(symbol, md) {
+  const strip = document.getElementById('marketStrip');
+  if(!strip||!md.price) return;
+  const chgColor = md.change24h>=0?'var(--accent)':'var(--red)';
+  const fngColor = md.fng>=60?'var(--red)':md.fng>=40?'var(--amber)':'var(--accent)';
+  const frColor  = md.fundingRate>0.05?'var(--red)':md.fundingRate<-0.01?'var(--accent)':'var(--t2)';
+  strip.style.display='flex';
+  strip.innerHTML=`
+    <span style="color:var(--t1);font-size:13px;font-weight:600;">${symbol}</span>
+    <span style="color:var(--t1);">$${fmtPx(md.price)}</span>
+    <span style="color:${chgColor};">${md.change24h>=0?'+':''}${md.change24h?.toFixed(2)}%</span>
+    <span style="color:var(--t3);">H: $${fmtPx(md.high24h)} · L: $${fmtPx(md.low24h)}</span>
+    <span style="color:var(--t3);">Vol 24h: $${(md.vol24h/1e9).toFixed(2)}B</span>
+    ${md.fundingRate!=null?`<span>FR: <span style="color:${frColor};">${md.fundingRate>=0?'+':''}${md.fundingRate?.toFixed(4)}%</span></span>`:''}
+    ${md.openInterest?`<span style="color:var(--t3);">OI: $${(md.openInterest/1e9).toFixed(2)}B</span>`:''}
+    ${md.fng!=null?`<span>F&G: <span style="color:${fngColor};">${md.fng} · ${md.fngLabel}</span></span>`:''}
+  `;
+}
+
+window.loadCharts = async () => {
+  const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
+  const btn = document.getElementById('chartsBtn');
+  btn.textContent='↺ Cargando...'; btn.disabled=true;
+  document.getElementById('copyStatus').style.display='none';
+
+  try {
+    const [candles1W,,md] = await Promise.all([
+      renderTFCharts('1W', symbol, '1w'),
+      renderTFCharts('1D', symbol, '1d'),
+      fetchMarketData(symbol),
+    ]);
     await Promise.all([
-      renderLWChart('chart1W',symbol,'1w'),
-      renderLWChart('chart1D',symbol,'1d'),
-      renderLWChart('chart4H',symbol,'4h'),
-      renderLWChart('chart1H',symbol,'1h'),
+      renderTFCharts('4H', symbol, '4h'),
+      renderTFCharts('1H', symbol, '1h'),
     ]);
+    renderMarketStrip(symbol, md);
+  } catch(e){ console.error(e); }
+  btn.textContent='↺ Cargar'; btn.disabled=false;
+};
 
-    // Capture charts as images
-    const captureChart = id => {
-      const canvas = document.querySelector(`#${id} canvas`);
-      return canvas ? canvas.toDataURL('image/png').split(',')[1] : null;
-    };
+// ── Copy all charts + market data as single image to clipboard ─────────────
+window.copyChartsToClipboard = async () => {
+  const btn = document.getElementById('copyBtn');
+  btn.textContent='⟳ Generando...'; btn.disabled=true;
 
-    const imgs = {
-      '1W': captureChart('chart1W'),
-      '1D': captureChart('chart1D'),
-      '4H': captureChart('chart4H'),
-      '1H': captureChart('chart1H'),
-    };
+  try {
+    const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
+    const grid = document.getElementById('aiChartGrid');
+    const strip = document.getElementById('marketStrip');
 
-    // Prepare summary data (last 10 candles per TF)
-    const summarize = candles => candles.slice(-10).map(c=>
-      `${new Date(c.time*1000).toISOString().split('T')[0]} O:${c.open.toFixed(2)} H:${c.high.toFixed(2)} L:${c.low.toFixed(2)} C:${c.close.toFixed(2)} V:${Math.round(c.volume)}`
-    ).join('\n');
+    // Build a single canvas from all chart canvases
+    const gridRect = grid.getBoundingClientRect();
+    const stripH = strip.offsetHeight||0;
+    const totalW = Math.round(gridRect.width);
+    const totalH = Math.round(gridRect.height) + stripH + 20;
 
-    const dataText = `Par: ${symbol}
-Precio actual: $${fmtPx(h1[h1.length-1]?.close)}
+    const canvas = document.createElement('canvas');
+    const dpr = window.devicePixelRatio||1;
+    canvas.width  = totalW * dpr;
+    canvas.height = totalH * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
 
-DATOS 1W (últimas 10 semanas):
-${summarize(w1)}
+    // Dark background
+    ctx.fillStyle = '#0a0c0f';
+    ctx.fillRect(0,0,totalW,totalH);
 
-DATOS 1D (últimos 10 días):
-${summarize(d1)}
-
-DATOS 4H (últimas 10 velas):
-${summarize(h4)}
-
-DATOS 1H (últimas 10 velas):
-${summarize(h1)}`;
-
-    const prompt = `Eres un analista técnico senior especializado en crypto trading. Analiza este par en múltiples timeframes.
-
-${dataText}
-
-Proporciona un análisis estructurado en JSON con este formato EXACTO (sin texto extra, solo JSON):
-{
-  "bias": "ALCISTA|BAJISTA|NEUTRAL",
-  "confidence": 1-10,
-  "summary": "resumen breve del contexto de mercado",
-  "trend_1w": "descripción tendencia semanal",
-  "trend_1d": "descripción tendencia diaria", 
-  "trend_4h": "descripción tendencia 4h",
-  "trend_1h": "descripción tendencia 1h",
-  "key_levels": ["nivel1", "nivel2", "nivel3"],
-  "setup": {
-    "tipo": "LONG|SHORT|NINGUNO",
-    "entry": "precio o zona de entrada",
-    "sl": "precio stop loss",
-    "tp1": "primer target",
-    "tp2": "segundo target",
-    "razon": "explicación del setup"
-  },
-  "risk": "descripción de riesgos principales",
-  "obv_analysis": "análisis del OBV en relación al precio"
-}`;
-
-    // Build message content - include images if available
-    const content = [
-      { type:'text', text: prompt }
-    ];
-    
-    // Add chart images if captured successfully
-    Object.entries(imgs).forEach(([tf, imgData]) => {
-      if(imgData) content.push(
-        { type:'text', text:`Chart ${tf}:` },
-        { type:'image', source:{ type:'base64', media_type:'image/png', data:imgData } }
-      );
-    });
-
-    // Call Claude API
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        messages:[{ role:'user', content }]
-      })
-    });
-
-    const aiData = await resp.json();
-    const rawText = aiData.content?.map(b=>b.text||'').join('');
-    
-    // Parse JSON from response
-    let analysis;
-    try {
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      analysis = JSON.parse(jsonMatch?.[0] || rawText);
-    } catch(e) {
-      analysis = { bias:'NEUTRAL', confidence:5, summary: rawText, setup:{tipo:'NINGUNO'} };
+    // Draw market strip as text
+    if(strip.offsetHeight){
+      ctx.fillStyle='#161b22';
+      ctx.fillRect(0,0,totalW,stripH+8);
+      ctx.fillStyle='#a8b8cc';
+      ctx.font='11px "Fira Code", monospace';
+      ctx.fillText(strip.innerText.replace(/\s+/g,' ').trim(), 10, (stripH/2)+5);
     }
 
-    // Render result
-    const biasColor = analysis.bias==='ALCISTA'?'var(--accent)':analysis.bias==='BAJISTA'?'var(--red)':'var(--amber)';
-    const confColor = analysis.confidence>=7?'var(--accent)':analysis.confidence>=4?'var(--amber)':'var(--red)';
-    
-    document.getElementById('aiCards').innerHTML=`
-      <div class="metric"><div class="metric-lbl">Bias</div><div class="metric-val" style="color:${biasColor};">${analysis.bias||'—'}</div></div>
-      <div class="metric"><div class="metric-lbl">Confianza</div><div class="metric-val" style="color:${confColor};">${analysis.confidence||'—'}/10</div></div>
-      <div class="metric"><div class="metric-lbl">Setup</div><div class="metric-val" style="font-size:14px;">${analysis.setup?.tipo||'NINGUNO'}</div></div>
-    `;
+    const offsetY = stripH+10;
 
-    document.getElementById('aiDetail').innerHTML=`
-      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:0.5px solid var(--border);">
-        <div class="sec-label">Resumen</div>
-        <div style="font-size:13px;color:var(--t2);line-height:1.6;">${analysis.summary||'—'}</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:0.5px solid var(--border);">
-        ${['1W','1D','4H','1H'].map(tf=>`
-        <div><div class="sec-label">${tf}</div>
-        <div style="font-size:12px;color:var(--t2);">${analysis['trend_'+tf.toLowerCase().replace('h','h')]||analysis['trend_'+tf]||'—'}</div></div>`).join('')}
-      </div>
-      ${analysis.setup?.tipo&&analysis.setup.tipo!=='NINGUNO'?`
-      <div style="margin-bottom:16px;padding:14px;background:var(--bg3);border-radius:var(--r);border-left:3px solid ${analysis.setup.tipo==='LONG'?'var(--accent)':'var(--red)'};">
-        <div class="sec-label" style="margin-bottom:8px;">Setup ${analysis.setup.tipo}</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;">
-          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">ENTRY</div><div style="font-family:var(--mono);font-size:12px;">${analysis.setup.entry||'—'}</div></div>
-          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">SL</div><div style="font-family:var(--mono);font-size:12px;color:var(--red);">${analysis.setup.sl||'—'}</div></div>
-          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">TP1</div><div style="font-family:var(--mono);font-size:12px;color:var(--accent);">${analysis.setup.tp1||'—'}</div></div>
-          <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">TP2</div><div style="font-family:var(--mono);font-size:12px;color:var(--accent);">${analysis.setup.tp2||'—'}</div></div>
-        </div>
-        <div style="font-size:12px;color:var(--t2);">${analysis.setup.razon||''}</div>
-      </div>`:''}
-      ${analysis.key_levels?.length?`
-      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:0.5px solid var(--border);">
-        <div class="sec-label">Niveles clave</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">${analysis.key_levels.map(l=>`<span style="background:var(--bg3);padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;">${l}</span>`).join('')}</div>
-      </div>`:''}
-      <div style="margin-bottom:12px;">
-        <div class="sec-label">OBV</div>
-        <div style="font-size:12px;color:var(--t2);">${analysis.obv_analysis||'—'}</div>
-      </div>
-      <div>
-        <div class="sec-label">Riesgos</div>
-        <div style="font-size:12px;color:var(--amber);">${analysis.risk||'—'}</div>
-      </div>
-    `;
+    // Collect all LW chart canvases and draw them
+    const chartCanvases = grid.querySelectorAll('canvas');
+    chartCanvases.forEach(cv => {
+      const r = cv.getBoundingClientRect();
+      const gr = grid.getBoundingClientRect();
+      const x = r.left - gr.left;
+      const y = r.top - gr.top + offsetY;
+      try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
+    });
 
-    loading.style.display='none';
-    result.style.display='block';
+    // Add symbol + timestamp watermark
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    ctx.font='12px "Fira Code", monospace';
+    ctx.fillText(`${symbol} · ${new Date().toLocaleString('es')} · MAUex`, 10, totalH-8);
+
+    // Copy to clipboard
+    canvas.toBlob(async blob => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+        btn.textContent='✅ Copiado!';
+        document.getElementById('copyStatus').style.display='block';
+        setTimeout(()=>{
+          btn.textContent='📋 Copiar para Claude';
+          btn.disabled=false;
+        },2000);
+      } catch(e) {
+        // Fallback: download the image
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href=url; a.download=`${symbol}_analysis_${Date.now()}.png`; a.click();
+        btn.textContent='📋 Copiar para Claude'; btn.disabled=false;
+        toast('Portapapeles no disponible — imagen descargada','error');
+      }
+    },'image/png');
   } catch(e) {
-    loading.style.display='none';
-    toast('Error en análisis AI: '+e.message,'error');
+    toast('Error generando imagen: '+e.message,'error');
+    btn.textContent='📋 Copiar para Claude'; btn.disabled=false;
     console.error(e);
-  } finally {
-    btn.disabled=false;
-    btn.textContent='🤖 Analizar con AI';
   }
 };
+
+
 
 // ── Init ───────────────────────────────────────────────────────────────────
 buildLevGrid();
