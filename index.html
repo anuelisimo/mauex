@@ -557,6 +557,7 @@ onAuthStateChanged(auth, async u=>{
     await loadPrefs();
     await loadAll();
     showPage('dashboard');
+    window.startLivePrices();
   } else {
     document.getElementById('authScreen').style.display='flex';
     document.getElementById('app').style.display='none';
@@ -752,7 +753,20 @@ function parseDate(d){
   return new Date().toISOString();
 }
 
+// livePrices[sym] = { spot: number, futures: number }
+// spot trades use .spot, long/short futures use .futures
 let livePrices={};
+let wsConnections={};
+let pollInterval=null;
+
+function getPrice(ticker, dir){
+  const p=livePrices[ticker];
+  if(!p) return null;
+  // For spot trades use spot price, for futures use futures price
+  // Fall back to whichever is available
+  if(dir==='spot') return p.spot||p.futures||null;
+  return p.futures||p.spot||null;
+}
 window._prices=()=>livePrices;
 window._currentUid=()=>CU?.uid||'';
 window._addTrade=async(trade)=>{
@@ -760,23 +774,252 @@ window._addTrade=async(trade)=>{
   trade.userId=CU.uid;
   await addDoc(collection(db,'trades'),trade);
   await loadTrades();
+  startLivePrices(); // reconnect with new tickers
 };
+
+// ── CRYPTO TICKERS ────────────────────────────────────────────────────────────
+const CRYPTO_LIST=['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK',
+  'UNI','ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','SHIB','LTC',
+  'BCH','ETC','XLM','TRX','IOTA','RSR','KAVA','OMG','WAXP','OVR','BLOK','VLX',
+  'KABY','AKRO','AAVE','CRV','MKR','COMP','ONDO','XMR','LINEA','ANKR','PAAL'];
+
+function isCryptoTicker(ticker){
+  const sym=ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+  return CRYPTO_LIST.includes(sym)||ticker.endsWith('USDT');
+}
+
+// ── WEBSOCKET: spot + futures streams per exchange ──────────────────────────
+// livePrices[sym].spot  = spot price
+// livePrices[sym].futures = perpetual futures price
+
+function setPx(sym, type, price){
+  if(!livePrices[sym]) livePrices[sym]={};
+  livePrices[sym][type]=price;
+  updatePriceTick(sym, price, type);
+}
+
+function startCryptoWS(cryptoTickers){
+  Object.values(wsConnections).forEach(ws=>{ try{ws.close();}catch(e){} });
+  wsConnections={};
+  if(!cryptoTickers.length) return;
+  const syms=cryptoTickers.map(t=>t.replace(/USDT|BUSD|USD$/,'').toUpperCase());
+
+  // ── BINANCE SPOT ─────────────────────────────────────────────────────────────
+  try{
+    const streams=syms.map(s=>`${s.toLowerCase()}usdt@miniTicker`).join('/');
+    const wsBnbS=new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
+    wsBnbS.onmessage=e=>{
+      try{ const d=(JSON.parse(e.data).data||JSON.parse(e.data));
+        if(d.s&&d.c) setPx(d.s.replace('USDT',''),'spot',parseFloat(d.c));
+      }catch(err){}
+    };
+    wsBnbS.onopen=()=>updatePriceTimestamp();
+    wsBnbS.onclose=()=>setTimeout(()=>{ if(!document.hidden) startLivePrices(); },5000);
+    wsConnections['bnb-spot']=wsBnbS;
+  }catch(e){ console.warn('Binance spot WS',e); }
+
+  // ── BINANCE FUTURES (USDT-M perpetuals) ──────────────────────────────────────
+  try{
+    const fstreams=syms.map(s=>`${s.toLowerCase()}usdt@markPrice`).join('/');
+    const wsBnbF=new WebSocket(`wss://fstream.binance.com/stream?streams=${fstreams}`);
+    wsBnbF.onmessage=e=>{
+      try{ const d=(JSON.parse(e.data).data||JSON.parse(e.data));
+        // markPrice stream: d.s = symbol, d.p = mark price
+        if(d.s&&d.p) setPx(d.s.replace('USDT',''),'futures',parseFloat(d.p));
+      }catch(err){}
+    };
+    wsConnections['bnb-futures']=wsBnbF;
+  }catch(e){ console.warn('Binance futures WS',e); }
+
+  // ── BYBIT SPOT ───────────────────────────────────────────────────────────────
+  try{
+    const wsBytS=new WebSocket('wss://stream.bybit.com/v5/public/spot');
+    wsBytS.onopen=()=>{
+      wsBytS.send(JSON.stringify({op:'subscribe',args:syms.map(s=>`tickers.${s}USDT`)}));
+    };
+    wsBytS.onmessage=e=>{
+      try{ const d=JSON.parse(e.data);
+        if(d.topic&&d.data?.lastPrice){
+          const sym=d.topic.replace('tickers.','').replace('USDT','');
+          setPx(sym,'spot',parseFloat(d.data.lastPrice));
+        }
+      }catch(err){}
+    };
+    wsConnections['bybit-spot']=wsBytS;
+  }catch(e){ console.warn('Bybit spot WS',e); }
+
+  // ── BYBIT FUTURES (linear perpetuals) ────────────────────────────────────────
+  try{
+    const wsBytF=new WebSocket('wss://stream.bybit.com/v5/public/linear');
+    wsBytF.onopen=()=>{
+      wsBytF.send(JSON.stringify({op:'subscribe',args:syms.map(s=>`tickers.${s}USDT`)}));
+    };
+    wsBytF.onmessage=e=>{
+      try{ const d=JSON.parse(e.data);
+        if(d.topic&&d.data?.markPrice){
+          const sym=d.topic.replace('tickers.','').replace('USDT','');
+          setPx(sym,'futures',parseFloat(d.data.markPrice));
+        }
+      }catch(err){}
+    };
+    wsConnections['bybit-futures']=wsBytF;
+  }catch(e){ console.warn('Bybit futures WS',e); }
+
+  // ── OKX SPOT ─────────────────────────────────────────────────────────────────
+  try{
+    const wsOkxS=new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+    wsOkxS.onopen=()=>{
+      wsOkxS.send(JSON.stringify({op:'subscribe',
+        args:syms.map(s=>({channel:'tickers',instId:`${s}-USDT`}))}));
+    };
+    wsOkxS.onmessage=e=>{
+      try{ const d=JSON.parse(e.data);
+        if(d.data?.[0]?.last){
+          const sym=d.data[0].instId.replace('-USDT','');
+          setPx(sym,'spot',parseFloat(d.data[0].last));
+        }
+      }catch(err){}
+    };
+    const pingS=setInterval(()=>{ if(wsOkxS.readyState===1) wsOkxS.send('ping'); },25000);
+    wsOkxS.onclose=()=>clearInterval(pingS);
+    wsConnections['okx-spot']=wsOkxS;
+  }catch(e){ console.warn('OKX spot WS',e); }
+
+  // ── OKX FUTURES (SWAP = perpetual) ───────────────────────────────────────────
+  try{
+    const wsOkxF=new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+    wsOkxF.onopen=()=>{
+      wsOkxF.send(JSON.stringify({op:'subscribe',
+        args:syms.map(s=>({channel:'mark-price',instId:`${s}-USDT-SWAP`}))}));
+    };
+    wsOkxF.onmessage=e=>{
+      try{ const d=JSON.parse(e.data);
+        if(d.data?.[0]?.markPx){
+          const sym=d.data[0].instId.replace('-USDT-SWAP','');
+          setPx(sym,'futures',parseFloat(d.data[0].markPx));
+        }
+      }catch(err){}
+    };
+    const pingF=setInterval(()=>{ if(wsOkxF.readyState===1) wsOkxF.send('ping'); },25000);
+    wsOkxF.onclose=()=>clearInterval(pingF);
+    wsConnections['okx-futures']=wsOkxF;
+  }catch(e){ console.warn('OKX futures WS',e); }
+
+  // ── MEXC SPOT ────────────────────────────────────────────────────────────────
+  try{
+    const wsMexc=new WebSocket('wss://wbs.mexc.com/ws');
+    wsMexc.onopen=()=>{
+      wsMexc.send(JSON.stringify({method:'SUBSCRIPTION',
+        params:syms.map(s=>`spot@public.miniTickers.v3.api@${s}USDT`)}));
+    };
+    wsMexc.onmessage=e=>{
+      try{ const d=JSON.parse(e.data);
+        if(d.d?.p&&d.s) setPx(d.s.replace('USDT',''),'spot',parseFloat(d.d.p));
+      }catch(err){}
+    };
+    wsConnections['mexc-spot']=wsMexc;
+  }catch(e){ console.warn('MEXC WS',e); }
+}
+
+// ── POLLING: fetch REST price for non-crypto every 30s ────────────────────────
+function startNonCryptoPoll(nonCryptoTickers){
+  if(pollInterval) clearInterval(pollInterval);
+  if(!nonCryptoTickers.length) return;
+  const poll=async()=>{
+    for(const t of nonCryptoTickers){
+      try{
+        const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?interval=1m&range=1d`);
+        const d=await r.json();
+        const p=d.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if(p){ livePrices[t]=p; updatePriceTick(t,p); }
+      }catch(e){}
+    }
+    updatePriceTimestamp();
+  };
+  poll();
+  pollInterval=setInterval(poll,30000);
+}
+
+// ── LIGHTWEIGHT UI UPDATE without full re-render ──────────────────────────────
+function updatePriceTick(sym, price, type){
+  // Update price elements that match sym AND correct type (spot vs futures)
+  document.querySelectorAll(`[data-price-ticker="${sym}"]`).forEach(el=>{
+    const elDir=el.dataset.dir||'futures';
+    const needsFutures=(elDir==='long'||elDir==='short');
+    if((needsFutures&&type==='futures')||(!needsFutures&&type==='spot')||!type){
+      el.textContent='$'+price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:price>100?2:4});
+    }
+  });
+  // Update PnL displays
+  document.querySelectorAll(`[data-pnl-ticker="${sym}"]`).forEach(el=>{
+    const entry=parseFloat(el.dataset.entry)||0;
+    const posSize=parseFloat(el.dataset.possize)||0;
+    const dir=el.dataset.dir||'long';
+    if(!entry||!posSize) return;
+    const contracts=posSize/entry;
+    const pnl=Math.round(contracts*(entry-price)*(dir==='short'?1:-1)*100)/100;
+    el.textContent=(pnl>=0?'+':'')+pnl.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    el.className=el.className.replace(/pnl-pos|pnl-neg/g,'').trim()+(pnl>=0?' pnl-pos':' pnl-neg');
+  });
+  // Update PnL% displays
+  document.querySelectorAll(`[data-pnlpct-ticker="${sym}"]`).forEach(el=>{
+    const risk=parseFloat(el.dataset.risk)||0;
+    const pnlEl=document.querySelector(`[data-pnl-ticker="${sym}"]`);
+    if(!pnlEl||!risk) return;
+    const pnl=parseFloat(pnlEl.textContent.replace(/[^0-9.-]/g,''))||0;
+    const pct=Math.round(pnl/risk*10000)/100;
+    el.textContent='('+(pct>=0?'+':'')+pct.toFixed(2)+'%)';
+  });
+}
+
+function updatePriceTimestamp(){
+  const el=document.getElementById('priceTime');
+  if(el) el.textContent='En vivo · '+new Date().toLocaleTimeString('es');
+}
+
+// ── MAIN ENTRY POINT ──────────────────────────────────────────────────────────
+window.startLivePrices=function(){
+  const active=allTrades.filter(t=>t.status==='active');
+  const tickers=[...new Set(active.map(t=>t.ticker))];
+  const cryptoTickers=tickers.filter(isCryptoTicker);
+  const nonCryptoTickers=tickers.filter(t=>!isCryptoTicker(t));
+  startCryptoWS(cryptoTickers);
+  startNonCryptoPoll(nonCryptoTickers);
+};
+
+// Manual refresh — fetches both spot and futures REST prices
 window.refreshPrices=async()=>{
   const active=allTrades.filter(t=>t.status==='active');
   const tickers=[...new Set(active.map(t=>t.ticker))];
-  for(const t of tickers){ const p=await fetchPrice(t); if(p) livePrices[t]=p; }
-  document.getElementById('priceTime').textContent='Actualizado '+new Date().toLocaleTimeString('es');
-  renderPositions(); renderDashboard();
+  for(const t of tickers){
+    const sym=t.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    try{
+      if(isCryptoTicker(t)){
+        // Spot price
+        const rs=await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
+        const ds=await rs.json(); if(ds.price) setPx(sym,'spot',parseFloat(ds.price));
+        // Futures mark price
+        const rf=await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`);
+        const df=await rf.json(); if(df.markPrice) setPx(sym,'futures',parseFloat(df.markPrice));
+      } else {
+        const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?interval=1m&range=1d`);
+        const d=await r.json(); const p=d.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if(p){ if(!livePrices[t]) livePrices[t]={}; livePrices[t].spot=p; livePrices[t].futures=p; updatePriceTick(t,p,'spot'); }
+      }
+    }catch(e){}
+  }
+  updatePriceTimestamp();
+  renderPositions();
 };
+
 async function fetchPrice(ticker){
-  const cryptos=['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI','ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','SHIB','LTC','BCH','ETC','XLM','TRX','IOTA','RSR','KAVA','OMG','WAXP','OVR','BLOK','VLX','KABY','AKRO','AAVE','CRV','MKR','COMP'];
   const sym=ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
-  const isCrypto=cryptos.includes(sym)||ticker.endsWith('USDT');
-  if(isCrypto){
+  if(isCryptoTicker(ticker)){
     try{ const r=await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`); const d=await r.json(); return parseFloat(d.price); }
-    catch(e){ try{ const r=await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${sym.toLowerCase()}&vs_currencies=usd`); const d=await r.json(); return Object.values(d)[0]?.usd; }catch(e2){ return null; } }
+    catch(e){ return null; }
   } else {
-    try{ const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`); const d=await r.json(); return d.chart?.result?.[0]?.meta?.regularMarketPrice; }catch(e){ return null; }
+    try{ const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`); const d=await r.json(); return d.chart?.result?.[0]?.meta?.regularMarketPrice; }
+    catch(e){ return null; }
   }
 }
 </script>
@@ -999,7 +1242,7 @@ function renderDashboard(){
   renderPnlChart(closed); renderWRChart(closed); renderAssetsChart(trades);
   const prices=window._prices?window._prices():{};
   const posHtml=active.length?active.slice(0,5).map(t=>{
-    const price=prices[t.ticker];
+    const price=getPrice(t.ticker, t.dir);
     const pnlL=price?((t.dir==='short'||t.dir==='spot')?1:-1)*(t.entry-price)*(t.posSize/t.entry):null;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border);">
       <div><span style="font-family:var(--mono);font-weight:700;font-size:12px;">${t.ticker}</span> <span class="badge badge-${t.dir}">${t.dir.toUpperCase()}${t.leverage>1?' x'+t.leverage:''}</span></div>
@@ -1073,11 +1316,10 @@ function renderWatchlist(){
 function renderPositions(){
   const trades=window._trades?window._trades():[];
   const active=trades.filter(t=>t.status==='active');
-  const prices=window._prices?window._prices():{};
   const container=document.getElementById('posList');
   if(!active.length){container.innerHTML=`<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay posiciones abiertas</div><div class="empty-sub">Ejecutá un trade desde Calculadora o Watchlist</div></div>`;return;}
   container.innerHTML=active.map(t=>{
-    const price=prices[t.ticker];
+    const price=getPrice(t.ticker, t.dir);
     const sign=(t.dir==='short'||t.dir==='spot')?1:-1;
     const contracts=t.posSize/t.entry;
     const pnlL=price?Math.round(contracts*(t.entry-price)*sign*100)/100:null;
@@ -1091,15 +1333,20 @@ function renderPositions(){
           ${t.traderName?`<span style="font-size:11px;color:var(--text3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
         </div>
         <div class="flex" style="gap:8px;">
-          <div style="font-family:var(--mono);font-size:22px;font-weight:700;" class="${pnlL===null?'':pnlL>=0?'pnl-pos':'pnl-neg'}">
-            ${pnlL!==null?(pnlL>=0?'+':'-')+'$'+fmt(Math.abs(pnlL)):'Actualizar precio ↻'}
+          <div style="font-family:var(--mono);font-size:22px;font-weight:700;"
+            class="${pnlL===null?'':pnlL>=0?'pnl-pos':'pnl-neg'}"
+            data-pnl-ticker="${t.ticker}" data-entry="${t.entry}" data-possize="${t.posSize}" data-dir="${t.dir}">
+            ${pnlL!==null?(pnlL>=0?'+':'-')+'$'+fmt(Math.abs(pnlL)):'Cargando...'}
           </div>
-          ${pnlPct!==null?`<div style="font-size:12px;color:var(--text2);font-family:var(--mono);">(${fmtP(pnlPct)})</div>`:''}
+          <div style="font-size:12px;color:var(--text2);font-family:var(--mono);"
+            data-pnlpct-ticker="${t.ticker}" data-risk="${t.risk}">
+            ${pnlPct!==null?'('+fmtP(pnlPct)+')':''}
+          </div>
         </div>
       </div>
       <div class="grid4" style="margin-bottom:16px;">
         <div class="metric"><div class="metric-label">Entry</div><div class="metric-value" style="font-size:16px;">$${fmt(t.entry)}</div></div>
-        <div class="metric"><div class="metric-label">Precio actual</div><div class="metric-value" style="font-size:16px;">${price?'$'+fmt(price):'—'}</div></div>
+        <div class="metric"><div class="metric-label">Precio actual</div><div class="metric-value" style="font-size:16px;" data-price-ticker="${t.ticker}" data-dir="${t.dir}">${price?'$'+fmt(price):'—'}</div></div>
         <div class="metric"><div class="metric-label">Stop Loss</div><div class="metric-value red" style="font-size:16px;">$${fmt(t.sl)}</div>${price&&t.sl?`<div class="metric-sub">${fmtP((t.sl-price)/price*100)} desde precio</div>`:''}</div>
         <div class="metric"><div class="metric-label">Posición</div><div class="metric-value" style="font-size:16px;">$${fmt(t.posSize)}</div><div class="metric-sub">Riesgo $${fmt(t.risk)}</div></div>
       </div>
