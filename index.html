@@ -454,7 +454,7 @@ textarea{resize:vertical;min-height:70px;}
         <select id="filtResult" style="width:100px;" onchange="renderHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
       </div>
       <div class="card" style="padding:0;overflow:hidden;">
-        <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry</th><th>Exit</th><th>PnL</th><th>PnL%</th><th>Días</th><th>Resultado</th><th>Fecha</th></tr></thead>
+        <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry</th><th>Exit</th><th>PnL</th><th>PnL%</th><th>Días</th><th>Resultado</th><th>Fecha</th><th>Notas</th><th></th></tr></thead>
         <tbody id="histTbody"></tbody></table>
       </div>
     </div>
@@ -576,6 +576,53 @@ textarea{resize:vertical;min-height:70px;}
       <div><label class="lbl">Notas</label><textarea id="tNotes" placeholder="Especialidad..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('traderModal')">Cancelar</button><button class="btn acc" onclick="saveTrader()">Guardar</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editTradeModal">
+  <div class="modal" style="width:560px;">
+    <div class="modal-hdr">
+      <div class="modal-title">Editar trade</div>
+      <button class="modal-close" onclick="closeModal('editTradeModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="g2" style="gap:10px;margin-bottom:12px;">
+        <div><label class="lbl">Ticker</label><input type="text" id="eTicker" oninput="this.value=this.value.toUpperCase()"></div>
+        <div><label class="lbl">Exchange</label><input type="text" id="eExchange"></div>
+      </div>
+      <div class="g2" style="gap:10px;margin-bottom:12px;">
+        <div>
+          <label class="lbl">Dirección</label>
+          <div class="dir-toggle" style="margin-top:4px;">
+            <button class="dir-btn al" data-ed="long" onclick="setEditDir('long')">LONG ↑</button>
+            <button class="dir-btn" data-ed="short" onclick="setEditDir('short')">SHORT ↓</button>
+            <button class="dir-btn" data-ed="spot" onclick="setEditDir('spot')">SPOT</button>
+          </div>
+        </div>
+        <div><label class="lbl">Apalancamiento</label><input type="number" id="eLev" min="1" max="125"></div>
+      </div>
+      <div class="g2" style="gap:10px;margin-bottom:12px;">
+        <div><label class="lbl">Entry</label><input type="number" id="eEntry"></div>
+        <div><label class="lbl">Stop Loss</label><input type="number" id="eSL"></div>
+      </div>
+      <div class="g2" style="gap:10px;margin-bottom:12px;">
+        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk"></div>
+        <div><label class="lbl">Trader</label><select id="eTrader"></select></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
+        <input type="number" id="eTP1" placeholder="TP1 precio">
+        <input type="number" id="eTP1pct" style="text-align:center;" placeholder="%">
+        <input type="number" id="eTP2" placeholder="TP2 precio">
+        <input type="number" id="eTP2pct" style="text-align:center;" placeholder="%">
+        <input type="number" id="eTP3" placeholder="TP3 precio">
+        <input type="number" id="eTP3pct" style="text-align:center;" placeholder="%">
+      </div>
+      <div><label class="lbl">Notas</label><textarea id="eNotes" style="min-height:60px;"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('editTradeModal')">Cancelar</button>
+      <button class="btn acc" onclick="saveEditTrade()">Guardar cambios</button>
+    </div>
   </div>
 </div>
 
@@ -868,13 +915,14 @@ window.confirmClose = async () => {
   if (!closePrice) { toast('Ingresá el precio de salida.','error'); return; }
   const t = trades.find(x => x.id === id);
   if (!t) return;
-  const sign = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
-  const pnl  = Math.round((t.posSize/t.entry) * (t.entry-closePrice) * sign * 100) / 100;
-  const days = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
+  const sign   = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
+  const pnl    = Math.round((t.posSize/t.entry) * (t.entry-closePrice) * sign * 100) / 100;
+  const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
+  const days   = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
   try {
     await updateDoc(doc(db,'trades',id), {
       status:'closed', closePrice, closeDate, closeNotes,
-      pnl, pnlPct: Math.round(pnl/t.risk*10000)/100,
+      pnl, pnlPct: Math.round(pnl/(margin||t.risk)*10000)/100,
       daysOpen: days, updatedAt: new Date().toISOString(),
     });
     await loadTrades();
@@ -1575,6 +1623,7 @@ function renderWatchlist() {
       <td style="color:var(--t3);">${fmtD(t.createdAt)}</td>
       <td><div style="display:flex;gap:4px;white-space:nowrap;">
         <button class="btn acc sm" onclick="moveToActive('${t.id}')">▶ Ejecutar</button>
+        <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
         <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
       </div></td>
     </tr>`;
@@ -1612,7 +1661,9 @@ function renderPositions() {
     const sign  = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
     const contr = (t.posSize||0) / (t.entry||1);
     const pnl   = price!=null ? Math.round(contr*(t.entry-price)*sign*100)/100 : null;
-    const pnlPct= pnl!=null&&t.risk ? Math.round(pnl/t.risk*10000)/100 : null;
+    // PnL% over margin (posSize/leverage) for futures, over posSize for spot
+    const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
+    const pnlPct= pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
     const slPct = price&&t.sl ? (t.sl-price)/price*100 : null;
 
@@ -1697,19 +1748,27 @@ function renderHistory() {
     tbody.innerHTML = `<tr><td colspan="11"><div class="empty"><div class="empty-text">Sin trades cerrados</div></div></td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map(t=>`<tr>
+  tbody.innerHTML = filtered.map(t=>{
+    const allNotes = [t.notes, t.closeNotes].filter(Boolean).join(' · ');
+    return `<tr style="cursor:pointer;" onclick="toggleHistNote('note-${t.id}')">
     <td><strong>${t.ticker||'—'}</strong></td>
     <td><span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}</span></td>
     <td style="color:var(--t2);">${t.exchange?.toUpperCase()||'—'}</td>
     <td style="color:var(--t2);">${t.traderName||'—'}</td>
-    <td>$${fmt(t.entry)}</td>
-    <td>${t.closePrice?'$'+fmt(t.closePrice):'—'}</td>
+    <td style="font-family:var(--mono);">$${fmtPx(t.entry)}</td>
+    <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'—'}</td>
     <td class="${(t.pnl||0)>=0?'pnl-pos':'pnl-neg'}">${t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'—'}</td>
     <td class="${(t.pnlPct||0)>=0?'pnl-pos':'pnl-neg'}">${t.pnlPct!=null?fmtP(t.pnlPct):'—'}</td>
     <td style="color:var(--t2);">${t.daysOpen||'—'}</td>
     <td><span class="badge ${(t.pnl||0)>=0?'bl':'bs'}">${(t.pnl||0)>=0?'WIN':'LOSS'}</span></td>
     <td style="color:var(--t3);">${fmtD(t.closeDate||t.createdAt)}</td>
-  </tr>`).join('');
+    <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'—'}</td>
+    <td onclick="event.stopPropagation()">
+      <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
+    </td>
+  </tr>
+  ${allNotes?`<tr id="note-${t.id}" style="display:none;"><td colspan="13" style="background:var(--bg3);padding:10px 12px;font-size:11px;color:var(--t2);border-left:2px solid var(--border2);">${allNotes}</td></tr>`:''}`;
+  }).join('');
 }
 
 // ── Traders page ───────────────────────────────────────────────────────────
@@ -1744,6 +1803,107 @@ function renderTraders() {
     </div>`;
   }).join('');
 }
+
+// ── Toggle history note row ────────────────────────────────────────────────
+window.toggleHistNote = id => {
+  const el = document.getElementById(id);
+  if(el) el.style.display = el.style.display==='none'?'table-row':'none';
+};
+
+// ── Edit trade ─────────────────────────────────────────────────────────────
+let editDir = 'long';
+
+window.setEditDir = d => {
+  editDir = d;
+  document.querySelectorAll('[data-ed]').forEach(b=>{
+    b.className='dir-btn';
+    if(b.dataset.ed===d) b.classList.add(d==='long'?'al':d==='short'?'as':'asp');
+  });
+};
+
+window.openEditTrade = id => {
+  const t = (window.G?.trades()||[]).find(x=>x.id===id);
+  if(!t){ toast('Trade no encontrado','error'); return; }
+  window._editTradeId = id;
+  editDir = t.dir||'long';
+
+  // Fill form
+  document.getElementById('eTicker').value   = t.ticker||'';
+  document.getElementById('eExchange').value = t.exchange||'';
+  document.getElementById('eLev').value      = t.leverage||1;
+  document.getElementById('eEntry').value    = t.entry||'';
+  document.getElementById('eSL').value       = t.sl||'';
+  document.getElementById('eRisk').value     = t.risk||'';
+  document.getElementById('eTP1').value      = t.tp1||'';
+  document.getElementById('eTP1pct').value   = t.tp1pct||33;
+  document.getElementById('eTP2').value      = t.tp2||'';
+  document.getElementById('eTP2pct').value   = t.tp2pct||33;
+  document.getElementById('eTP3').value      = t.tp3||'';
+  document.getElementById('eTP3pct').value   = t.tp3pct||34;
+  document.getElementById('eNotes').value    = t.notes||'';
+
+  // Direction buttons
+  document.querySelectorAll('[data-ed]').forEach(b=>{
+    b.className='dir-btn';
+    if(b.dataset.ed===editDir) b.classList.add(editDir==='long'?'al':editDir==='short'?'as':'asp');
+  });
+
+  // Trader dropdown
+  const traders = window.G?.traders()||[];
+  document.getElementById('eTrader').innerHTML =
+    '<option value="">— Sin trader —</option>' +
+    traders.map(tr=>`<option value="${tr.id}"${tr.id===t.traderId?' selected':''}>${tr.name}</option>`).join('');
+
+  openModal('editTradeModal');
+};
+
+window.saveEditTrade = async () => {
+  const id = window._editTradeId;
+  if(!id){ toast('Error: trade no identificado','error'); return; }
+
+  const ticker   = document.getElementById('eTicker').value.trim().toUpperCase();
+  const exchange = document.getElementById('eExchange').value.trim().toUpperCase();
+  const lev      = parseInt(document.getElementById('eLev').value)||1;
+  const entry    = parseFloat(document.getElementById('eEntry').value)||0;
+  const sl       = parseFloat(document.getElementById('eSL').value)||0;
+  const risk     = parseFloat(document.getElementById('eRisk').value)||0;
+  const tp1      = parseFloat(document.getElementById('eTP1').value)||0;
+  const tp1pct   = parseFloat(document.getElementById('eTP1pct').value)||33;
+  const tp2      = parseFloat(document.getElementById('eTP2').value)||0;
+  const tp2pct   = parseFloat(document.getElementById('eTP2pct').value)||33;
+  const tp3      = parseFloat(document.getElementById('eTP3').value)||0;
+  const tp3pct   = parseFloat(document.getElementById('eTP3pct').value)||34;
+  const notes    = document.getElementById('eNotes').value;
+  const traderId = document.getElementById('eTrader').value;
+  const traders  = window.G?.traders()||[];
+  const traderName = traders.find(tr=>tr.id===traderId)?.name||'';
+
+  if(!ticker||!entry||!sl||!risk){ toast('Completá ticker, entry, SL y riesgo.','error'); return; }
+
+  const slDist = Math.abs(sl-entry)/entry;
+  const posSize = risk/slDist;
+
+  try {
+    await updateDoc(doc(db,'trades',id), {
+      ticker, exchange, leverage:lev, dir:editDir,
+      entry, sl, risk, posSize,
+      tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
+      notes, traderId, traderName,
+      updatedAt: new Date().toISOString(),
+    });
+    await loadTrades();
+    closeModal('editTradeModal');
+    // Re-render current page
+    ['dashPage','watchPage','posPage','histPage'].forEach(pid=>{
+      const el=document.getElementById(pid);
+      if(el&&el.style.display!=='none'){
+        const fn={dashPage:renderDashboard,watchPage:renderWatchlist,posPage:renderPositions,histPage:renderHistory}[pid];
+        if(fn) fn();
+      }
+    });
+    toast('Trade actualizado.');
+  } catch(e){ toast('Error: '+e.message,'error'); console.error(e); }
+};
 
 // ── Manual trade modal ─────────────────────────────────────────────────────
 let manualDir = 'long';
