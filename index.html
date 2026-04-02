@@ -273,6 +273,7 @@ textarea{resize:vertical;min-height:70px;}
       <button class="nav-btn" data-page="history" onclick="showPage('history')">Historial</button>
       <button class="nav-btn" data-page="traders" onclick="showPage('traders')">Traders</button>
       <button class="nav-btn" data-page="analysis" onclick="showPage('analysis')">AI Analysis</button>
+      <button class="nav-btn" data-page="settings" onclick="showPage('settings')">⚙ Settings</button>
     </nav>
     <div class="topbar-right">
       <button class="icon-btn" onclick="openThemePicker()" title="Tema">
@@ -469,9 +470,13 @@ textarea{resize:vertical;min-height:70px;}
       </div>
       <!-- Controls -->
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
-        <div style="flex:1;min-width:180px;">
-          <label class="lbl">Par</label>
-          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTCUSDT..." style="text-transform:uppercase;">
+        <div style="flex:1;min-width:180px;position:relative;">
+          <label class="lbl">Par (crypto, acciones, ETFs, commodities)</label>
+          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTC, AAPL, SPY, GC=F..."
+            style="text-transform:uppercase;"
+            oninput="showTickerSuggestions(this.value)"
+            onblur="setTimeout(()=>{const d=document.getElementById('aiTickerDD');if(d)d.style.display='none';},200)">
+          <div id="aiTickerDD" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);z-index:50;max-height:280px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:2px;"></div>
         </div>
         <div style="display:flex;gap:0;border:0.5px solid var(--border2);border-radius:var(--r);overflow:hidden;">
           <button id="toggleSpot" onclick="setMarketType('spot')"
@@ -544,6 +549,105 @@ textarea{resize:vertical;min-height:70px;}
 
       <div id="copyStatus" style="display:none;text-align:center;padding:12px;font-family:var(--mono);font-size:12px;color:var(--accent);">
         ✅ Imagen copiada al portapapeles. Pegala directamente en Claude!
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="settingsPage" style="display:none;">
+      <div class="fxb" style="margin-bottom:20px;">
+        <div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">⚙ Configuración</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">API Keys de exchanges · Solo lectura</div>
+        </div>
+      </div>
+
+      <!-- Master password warning -->
+      <div style="background:var(--amber-dim);border:0.5px solid var(--amber);border-radius:var(--r);padding:12px 16px;margin-bottom:20px;font-size:12px;color:var(--amber);line-height:1.7;">
+        🔐 Tus API Keys se encriptan con tu contraseña maestra antes de guardarse. Si la olvidás, podés regenerar las keys en el exchange. <strong>Nunca compartás tu Secret Key.</strong>
+      </div>
+
+      <!-- Master password -->
+      <div class="card" style="margin-bottom:16px;">
+        <div class="sec-label">Contraseña maestra de encriptación</div>
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div style="flex:1;"><label class="lbl">Contraseña</label><input type="password" id="masterPass" placeholder="Mínimo 8 caracteres"></div>
+          <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
+        </div>
+        <div style="font-size:11px;color:var(--t3);margin-top:8px;">Esta contraseña encripta tus API Keys. No la guardamos, solo la usamos para encriptar/desencriptar.</div>
+        <div id="masterStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
+      </div>
+
+      <!-- Exchange cards -->
+      <div class="g3" style="gap:12px;margin-bottom:16px;">
+
+        <!-- BINANCE -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <div style="width:28px;height:28px;background:#f0b90b;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">⬡</div>
+            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">Binance</div>
+            <div id="bnbStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+          </div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="bnbKey" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bnbSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('binance')">Guardar</button>
+            <button class="btn sm" onclick="testExchangeKeys('binance')">Probar</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('binance')">✕</button>
+          </div>
+        </div>
+
+        <!-- BYBIT -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <div style="width:28px;height:28px;background:#f7a600;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">◈</div>
+            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">Bybit</div>
+            <div id="bybitStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+          </div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="bybitKey" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bybitSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('bybit')">Guardar</button>
+            <button class="btn sm" onclick="testExchangeKeys('bybit')">Probar</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('bybit')">✕</button>
+          </div>
+        </div>
+
+        <!-- OKX -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <div style="width:28px;height:28px;background:#000;border:1px solid var(--border2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:white;">OK</div>
+            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">OKX</div>
+            <div id="okxStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+          </div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="okxKey" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="okxSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="okxPass" placeholder="Tu passphrase de OKX"></div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('okx')">Guardar</button>
+            <button class="btn sm" onclick="testExchangeKeys('okx')">Probar</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('okx')">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sync status -->
+      <div class="card" id="syncCard" style="display:none;">
+        <div class="sec-label">Estado de sincronización</div>
+        <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn acc sm" onclick="syncAllExchanges()">↻ Sincronizar ahora</button>
+          <button class="btn sm" onclick="showPage('positions')">Ver posiciones</button>
+        </div>
+      </div>
+
+      <!-- Instructions -->
+      <div class="card" style="margin-top:16px;">
+        <div class="sec-label">Cómo crear API Keys de solo lectura</div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.8;">
+          <div style="margin-bottom:8px;"><strong style="color:var(--t1);">Binance:</strong> Perfil → Gestión de API → Crear API → Nombre: "MAUex" → Solo habilitar "Leer información" → Sin IP restrictions</div>
+          <div style="margin-bottom:8px;"><strong style="color:var(--t1);">Bybit:</strong> Perfil → API → Crear nueva key → Nombre: "MAUex" → Permisos: solo "Ver" (sin trading ni retiros)</div>
+          <div><strong style="color:var(--t1);">OKX:</strong> Perfil → API → Crear API Key → Nombre: "MAUex" → Permiso: "Solo lectura" → Creá un Passphrase que recuerdes</div>
+        </div>
       </div>
     </div>
 
@@ -784,8 +888,10 @@ onAuthStateChanged(auth, async user => {
     // Load data then show dashboard
     await loadPrefs();
     await loadAll();
+    await G._loadExchangeKeys();
     showPage('dashboard');
     startLivePrices();
+    startAutoSync();
   } else {
     document.getElementById('authScreen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
@@ -1298,7 +1404,7 @@ document.querySelectorAll('.modal-overlay').forEach(el =>
 // ── Navigation ─────────────────────────────────────────────────────────────
 const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
-  positions:'posPage', history:'histPage', traders:'tradPage', analysis:'analysisPage',
+  positions:'posPage', history:'histPage', traders:'tradPage', analysis:'analysisPage', settings:'settingsPage',
 };
 
 window.showPage = page => {
@@ -1324,8 +1430,12 @@ window.showPage = page => {
   if (renders[page]) renders[page]();
 
   // Load charts when entering analysis page
-  if (page === 'analysis' && typeof loadCharts === 'function') {
+  if (page === 'analysis') {
+    loadBinanceSymbols();
     setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
+  }
+  if (page === 'positions' && _masterPass) {
+    syncAllExchanges();
   }
 
   // When entering positions, do immediate REST price fetch for any missing prices
@@ -1637,8 +1747,13 @@ function renderPositions() {
   const container = document.getElementById('posList');
   if (!container) return;
 
-  if (!active.length) {
-    container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay posiciones abiertas</div><div class="empty-sub">Ejecutá un trade desde Calculadora o Watchlist</div></div>`;
+  // If exchange positions available, show those; otherwise show manual
+  const exPos = window.exchangePositions || [];
+  if(!active.length && !exPos.length){
+    container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div>
+      <div class="empty-text">No hay posiciones abiertas</div>
+      <div class="empty-sub">Configurá tus exchanges en ⚙ Settings para sincronizar automáticamente</div>
+    </div>`;
     return;
   }
 
@@ -1651,6 +1766,42 @@ function renderPositions() {
     totalLivePnl+=Math.round((t.posSize/t.entry)*(t.entry-price)*sign*100)/100;
   });
   const hasPrices=active.some(t=>G.getPrice(t.ticker,t.dir)!=null);
+
+  // Render exchange positions first, then manual
+  const exPos2 = (window.exchangePositions||[]).filter(p=>p.type==='futures'||p.type==='spot');
+  const exHtml = exPos2.length ? exPos2.map(p=>{
+    const sym = p.ticker;
+    const price = G.getPrice(p.ticker, p.dir) || p.mark || 0;
+    const livePnl = price&&p.entry ? Math.round((p.posSize/p.entry)*(p.entry-price)*(p.dir==='short'?1:-1)*100)/100 : p.pnl||0;
+    const exColor = p.exchange==='BINANCE'?'#f0b90b':p.exchange==='BYBIT'?'#f7a600':'#00a0ea';
+    return `<div class="pos-card" style="border-left:3px solid ${exColor};">
+      <div class="pos-card-header">
+        <div class="pos-card-left">
+          <span class="pos-card-ticker">${p.ticker}</span>
+          <span class="badge ${p.dir==='long'?'bl':p.dir==='short'?'bs':'bsp'}">${(p.dir||'').toUpperCase()}${p.leverage>1?' x'+p.leverage:''}</span>
+          <span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:${exColor}22;color:${exColor};">${p.exchange}</span>
+          <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${p.type==='futures'?'PERP':'SPOT'}</span>
+        </div>
+        <div class="pos-card-pnl ${livePnl>=0?'pnl-pos':'pnl-neg'}" data-pnl="${sym}" data-entry="${p.entry}" data-pos="${p.posSize}" data-dir="${p.dir}">
+          ${livePnl>=0?'+':'-'}$${fmt(Math.abs(livePnl))}
+          ${p.pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);margin-left:4px;">(${fmtP(p.pnlPct)})</span>`:''}
+        </div>
+      </div>
+      <div class="pos-card-body">
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Entry</div><div class="pos-mini-val">$${fmtPx(p.entry)}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio</div><div class="pos-mini-val" data-px="${sym}" data-dir="${p.dir}">${price?'$'+fmtPx(price):'—'}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Posición</div><div class="pos-mini-val">$${fmt(p.posSize)}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Margen</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(p.margin)}</div></div>
+        ${p.sl?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Liq/SL</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(p.sl)}</div></div>`:''}
+      </div>
+      <div class="pos-card-footer">
+        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">Sync: ${lastSyncTime?lastSyncTime.toLocaleTimeString('es'):'—'}</span>
+        <div style="margin-left:auto;">
+          <button class="btn sm" onclick="window.syncAllExchanges()">↻ Sync</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') : '';
 
   container.innerHTML = (hasPrices?`<div class="live-pnl-total">
     <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
@@ -1711,7 +1862,7 @@ function renderPositions() {
         </div>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + exHtml;
 }
 
 // Close trade at a specific TP price
@@ -2370,6 +2521,452 @@ window.copyChartsToClipboard = async () => {
 };
 
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXCHANGE INTEGRATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Crypto helpers (AES-GCM via WebCrypto) ────────────────────────────────
+async function deriveKey(password) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt: enc.encode('mauex-salt-v1'), iterations:100000, hash:'SHA-256' },
+    keyMaterial, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']
+  );
+}
+
+async function encryptData(plaintext, password) {
+  const key = await deriveKey(password);
+  const iv  = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const ct  = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(plaintext));
+  // Combine iv + ciphertext, encode as base64
+  const combined = new Uint8Array(iv.length + ct.byteLength);
+  combined.set(iv); combined.set(new Uint8Array(ct), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(b64, password) {
+  const key  = await deriveKey(password);
+  const data = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  const iv   = data.slice(0,12);
+  const ct   = data.slice(12);
+  const dec  = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+  return new TextDecoder().decode(dec);
+}
+
+// ── HMAC-SHA256 for request signing ─────────────────────────────────────────
+async function hmacSHA256(secret, message) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(sig)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── Master password state ─────────────────────────────────────────────────
+let _masterPass = '';
+
+window.saveMasterPass = () => {
+  const p = document.getElementById('masterPass').value;
+  if(p.length < 8){ toast('Mínimo 8 caracteres.','error'); return; }
+  _masterPass = p;
+  const st = document.getElementById('masterStatus');
+  st.style.display='block'; st.style.color='var(--accent)';
+  st.textContent='✅ Contraseña guardada en memoria (sesión actual)';
+  toast('Contraseña maestra lista.');
+};
+
+// ── Save/load exchange keys (Firestore encrypted) ─────────────────────────
+window.saveExchangeKeys = async exchange => {
+  if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
+  const keys = {
+    binance: { key: document.getElementById('bnbKey')?.value.trim(),    secret: document.getElementById('bnbSecret')?.value.trim() },
+    bybit:   { key: document.getElementById('bybitKey')?.value.trim(),   secret: document.getElementById('bybitSecret')?.value.trim() },
+    okx:     { key: document.getElementById('okxKey')?.value.trim(),     secret: document.getElementById('okxSecret')?.value.trim(), passphrase: document.getElementById('okxPass')?.value.trim() },
+  }[exchange];
+
+  if(!keys.key || !keys.secret){ toast('Completá Key y Secret.','error'); return; }
+
+  try {
+    const encrypted = await encryptData(JSON.stringify(keys), _masterPass);
+    if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, encrypted);
+    updateExchangeStatus(exchange, 'saved');
+    toast(`${exchange.toUpperCase()} guardado correctamente.`);
+  } catch(e){ toast('Error encriptando: '+e.message,'error'); }
+};
+
+window.clearExchangeKeys = async exchange => {
+  if(!confirm(`¿Eliminar las keys de ${exchange}?`)) return;
+  if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, null);
+  updateExchangeStatus(exchange, 'none');
+  toast(`Keys de ${exchange} eliminadas.`);
+};
+
+function updateExchangeStatus(exchange, status) {
+  const el = document.getElementById(exchange==='binance'?'bnbStatus':exchange==='bybit'?'bybitStatus':'okxStatus');
+  if(!el) return;
+  if(status==='saved')    { el.textContent='✅ Configurado'; el.style.color='var(--accent)'; }
+  else if(status==='ok')  { el.textContent='✅ Conectado';   el.style.color='var(--accent)'; }
+  else if(status==='err') { el.textContent='❌ Error';       el.style.color='var(--red)'; }
+  else                    { el.textContent='No configurado'; el.style.color='var(--t3)'; }
+}
+
+// ── Test connection ────────────────────────────────────────────────────────
+window.testExchangeKeys = async exchange => {
+  if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
+  toast(`Probando ${exchange}...`);
+  try {
+    const keys = await getDecryptedKeys(exchange);
+    if(!keys){ toast('No hay keys guardadas para '+exchange,'error'); return; }
+    const ok = await pingExchange(exchange, keys);
+    updateExchangeStatus(exchange, ok?'ok':'err');
+    toast(ok ? `✅ ${exchange} conectado!` : `❌ Error conectando a ${exchange}`, ok?'success':'error');
+  } catch(e){ toast('Error: '+e.message,'error'); }
+};
+
+async function getDecryptedKeys(exchange) {
+  const encrypted = window.G?._getExchangeKey?.(exchange);
+  if(!encrypted) return null;
+  try { return JSON.parse(await decryptData(encrypted, _masterPass)); }
+  catch(e){ toast('Contraseña maestra incorrecta.','error'); return null; }
+}
+
+// ── Ping each exchange (test read-only) ───────────────────────────────────
+async function pingExchange(exchange, keys) {
+  try {
+    if(exchange==='binance') {
+      const ts  = Date.now();
+      const sig = await hmacSHA256(keys.secret, `timestamp=${ts}`);
+      const r   = await fetch(`https://api.binance.com/api/v3/account?timestamp=${ts}&signature=${sig}`,
+        { headers:{'X-MBX-APIKEY': keys.key} });
+      return r.ok;
+    }
+    if(exchange==='bybit') {
+      const ts  = Date.now().toString();
+      const msg = ts + keys.key + '5000';
+      const sig = await hmacSHA256(keys.secret, msg);
+      const r   = await fetch('https://api.bybit.com/v5/account/wallet-balance?accountType=UNIFIED',
+        { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} });
+      const d   = await r.json();
+      return d.retCode === 0;
+    }
+    if(exchange==='okx') {
+      const ts  = new Date().toISOString();
+      const msg = ts + 'GET' + '/api/v5/account/balance';
+      const sig = btoa(String.fromCharCode(...new Uint8Array(
+        await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', new TextEncoder().encode(keys.secret),
+          {name:'HMAC',hash:'SHA-256'}, false, ['sign']), new TextEncoder().encode(msg))
+      )));
+      const r = await fetch('https://www.okx.com/api/v5/account/balance',
+        { headers:{'OK-ACCESS-KEY':keys.key,'OK-ACCESS-SIGN':sig,'OK-ACCESS-TIMESTAMP':ts,'OK-ACCESS-PASSPHRASE':keys.passphrase,'x-simulated-trading':'0'} });
+      const d = await r.json();
+      return d.code === '0';
+    }
+  } catch(e){ return false; }
+}
+
+// ── Fetch open positions from exchange ────────────────────────────────────
+async function fetchExchangePositions(exchange, keys) {
+  const positions = [];
+  try {
+    if(exchange==='binance') {
+      // Futures positions
+      const ts   = Date.now();
+      const qF   = `timestamp=${ts}`;
+      const sigF = await hmacSHA256(keys.secret, qF);
+      const rF   = await fetch(`https://fapi.binance.com/fapi/v2/positionRisk?timestamp=${ts}&signature=${sigF}`,
+        { headers:{'X-MBX-APIKEY': keys.key} });
+      const dF   = await rF.json();
+      if(Array.isArray(dF)) {
+        dF.filter(p=>parseFloat(p.positionAmt)!==0).forEach(p=>{
+          const amt    = parseFloat(p.positionAmt);
+          const entry  = parseFloat(p.entryPrice);
+          const mark   = parseFloat(p.markPrice);
+          const pnl    = parseFloat(p.unRealizedProfit);
+          const lev    = parseInt(p.leverage)||1;
+          const notional = Math.abs(amt)*entry;
+          positions.push({
+            exchange:'BINANCE', type:'futures',
+            ticker: p.symbol.replace('USDT',''),
+            symbol: p.symbol,
+            dir:    amt>0?'long':'short',
+            entry, mark, pnl,
+            posSize: notional,
+            margin:  notional/lev,
+            leverage: lev,
+            sl: parseFloat(p.liquidationPrice)||0,
+            pnlPct: Math.round(pnl/(notional/lev)*10000)/100,
+            exchangeId: `binance-fut-${p.symbol}`,
+            raw: p,
+          });
+        });
+      }
+      // Spot balances (show as open positions)
+      const ts2  = Date.now();
+      const qs   = `timestamp=${ts2}`;
+      const sigs = await hmacSHA256(keys.secret, qs);
+      const rS   = await fetch(`https://api.binance.com/api/v3/account?timestamp=${ts2}&signature=${sigs}`,
+        { headers:{'X-MBX-APIKEY': keys.key} });
+      const dS   = await rS.json();
+      if(dS.balances) {
+        dS.balances.filter(b=>parseFloat(b.free)+parseFloat(b.locked)>0.0001&&b.asset!=='USDT'&&b.asset!=='BUSD').forEach(b=>{
+          const total = parseFloat(b.free)+parseFloat(b.locked);
+          positions.push({
+            exchange:'BINANCE', type:'spot',
+            ticker: b.asset,
+            symbol: b.asset+'USDT',
+            dir: 'spot',
+            entry: 0, mark: 0, pnl: 0,
+            qty: total,
+            posSize: 0,
+            exchangeId: `binance-spot-${b.asset}`,
+            raw: b,
+          });
+        });
+      }
+    }
+
+    if(exchange==='bybit') {
+      const ts  = Date.now().toString();
+      const qF  = 'category=linear&settleCoin=USDT';
+      const msg = ts + keys.key + '5000' + qF;
+      const sig = await hmacSHA256(keys.secret, msg);
+      const r   = await fetch(`https://api.bybit.com/v5/position/list?${qF}`,
+        { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} });
+      const d   = await r.json();
+      if(d.retCode===0&&d.result?.list) {
+        d.result.list.filter(p=>parseFloat(p.size)>0).forEach(p=>{
+          const entry   = parseFloat(p.avgPrice);
+          const mark    = parseFloat(p.markPrice);
+          const pnl     = parseFloat(p.unrealisedPnl);
+          const lev     = parseInt(p.leverage)||1;
+          const notional= parseFloat(p.positionValue)||0;
+          positions.push({
+            exchange:'BYBIT', type:'futures',
+            ticker: p.symbol.replace('USDT',''),
+            symbol: p.symbol,
+            dir:    p.side==='Buy'?'long':'short',
+            entry, mark, pnl,
+            posSize: notional,
+            margin:  parseFloat(p.positionIM)||notional/lev,
+            leverage: lev,
+            sl: parseFloat(p.stopLoss)||0,
+            tp1: parseFloat(p.takeProfit)||0,
+            pnlPct: Math.round(pnl/(parseFloat(p.positionIM)||1)*10000)/100,
+            exchangeId: `bybit-fut-${p.symbol}-${p.side}`,
+            raw: p,
+          });
+        });
+      }
+    }
+
+    if(exchange==='okx') {
+      const ts  = new Date().toISOString();
+      const sig = async (path) => {
+        const msg = ts+'GET'+path;
+        return btoa(String.fromCharCode(...new Uint8Array(
+          await crypto.subtle.sign('HMAC',
+            await crypto.subtle.importKey('raw',new TextEncoder().encode(keys.secret),{name:'HMAC',hash:'SHA-256'},false,['sign']),
+            new TextEncoder().encode(msg)))));
+      };
+      const hdr = async (path) => ({
+        'OK-ACCESS-KEY': keys.key,
+        'OK-ACCESS-SIGN': await sig(path),
+        'OK-ACCESS-TIMESTAMP': ts,
+        'OK-ACCESS-PASSPHRASE': keys.passphrase,
+      });
+
+      // Futures positions
+      const pPath = '/api/v5/account/positions?instType=SWAP';
+      const rF = await fetch('https://www.okx.com'+pPath, {headers: await hdr(pPath)});
+      const dF = await rF.json();
+      if(dF.code==='0'&&dF.data) {
+        dF.data.filter(p=>parseFloat(p.pos)!==0).forEach(p=>{
+          const entry   = parseFloat(p.avgPx);
+          const mark    = parseFloat(p.markPx);
+          const pnl     = parseFloat(p.upl);
+          const lev     = parseInt(p.lever)||1;
+          const notional= parseFloat(p.notionalUsd)||0;
+          positions.push({
+            exchange:'OKX', type:'futures',
+            ticker: p.instId.replace('-USDT-SWAP','').replace('-',''),
+            symbol: p.instId,
+            dir:    p.posSide==='long'?'long':'short',
+            entry, mark, pnl,
+            posSize: notional,
+            margin:  parseFloat(p.imr)||notional/lev,
+            leverage: lev,
+            sl: parseFloat(p.sl)||0,
+            tp1: parseFloat(p.tp)||0,
+            pnlPct: Math.round(pnl/(parseFloat(p.imr)||1)*10000)/100,
+            exchangeId: `okx-fut-${p.instId}-${p.posSide}`,
+            raw: p,
+          });
+        });
+      }
+    }
+  } catch(e){ console.error(`fetchExchangePositions ${exchange}:`, e); }
+  return positions;
+}
+
+// ── Live exchange positions state ─────────────────────────────────────────
+let exchangePositions = []; // positions from all exchanges
+let lastSyncTime = null;
+
+window.syncAllExchanges = async () => {
+  if(!_masterPass){ toast('Configurá tu contraseña maestra en Settings.','error'); return; }
+  const exchanges = ['binance','bybit','okx'];
+  const all = [];
+  const statusLines = [];
+  for(const ex of exchanges) {
+    const keys = await getDecryptedKeys(ex);
+    if(!keys){ statusLines.push(`${ex.toUpperCase()}: no configurado`); continue; }
+    try {
+      const pos = await fetchExchangePositions(ex, keys);
+      all.push(...pos);
+      updateExchangeStatus(ex, 'ok');
+      statusLines.push(`✅ ${ex.toUpperCase()}: ${pos.filter(p=>p.type==='futures').length} futuros, ${pos.filter(p=>p.type==='spot').length} spot`);
+    } catch(e){
+      updateExchangeStatus(ex, 'err');
+      statusLines.push(`❌ ${ex.toUpperCase()}: ${e.message}`);
+    }
+  }
+  exchangePositions = all;
+  lastSyncTime = new Date();
+  // Show sync card
+  const sc = document.getElementById('syncCard');
+  if(sc){ sc.style.display='block'; document.getElementById('syncStatus').innerHTML=statusLines.join('<br>'); }
+  // Update positions page if visible
+  const posPage = document.getElementById('posPage');
+  if(posPage&&posPage.style.display!=='none') renderPositions();
+  toast(`Sync completo: ${all.filter(p=>p.type==='futures').length} posiciones`);
+  return all;
+};
+
+// Auto-sync every 30s when on positions page
+let syncTimer = null;
+function startAutoSync() {
+  if(syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(async ()=>{
+    const posPage = document.getElementById('posPage');
+    if(posPage&&posPage.style.display!=='none'&&_masterPass) {
+      await syncAllExchanges();
+    }
+  }, 30000);
+}
+
+// ── AI Analysis autocomplete ───────────────────────────────────────────────
+let _bnbSymbols = []; // all Binance USDT pairs
+
+const STOCK_LIST = [
+  {s:'AAPL',n:'Apple',t:'stock'},{s:'MSFT',n:'Microsoft',t:'stock'},{s:'GOOGL',n:'Alphabet',t:'stock'},
+  {s:'AMZN',n:'Amazon',t:'stock'},{s:'NVDA',n:'NVIDIA',t:'stock'},{s:'TSLA',n:'Tesla',t:'stock'},
+  {s:'META',n:'Meta',t:'stock'},{s:'NFLX',n:'Netflix',t:'stock'},{s:'AMD',n:'AMD',t:'stock'},
+  {s:'INTC',n:'Intel',t:'stock'},{s:'BA',n:'Boeing',t:'stock'},{s:'JPM',n:'JPMorgan',t:'stock'},
+  {s:'GS',n:'Goldman Sachs',t:'stock'},{s:'V',n:'Visa',t:'stock'},{s:'WMT',n:'Walmart',t:'stock'},
+  {s:'SPY',n:'S&P 500 ETF',t:'etf'},{s:'QQQ',n:'Nasdaq ETF',t:'etf'},{s:'IWM',n:'Russell 2000',t:'etf'},
+  {s:'GLD',n:'Gold ETF',t:'etf'},{s:'SLV',n:'Silver ETF',t:'etf'},{s:'TLT',n:'Bonds 20Y ETF',t:'etf'},
+  {s:'VIX',n:'Volatility Index',t:'index'},{s:'DXY',n:'Dollar Index',t:'index'},
+  {s:'GC=F',n:'Oro (Futures)',t:'commodity'},{s:'SI=F',n:'Plata (Futures)',t:'commodity'},
+  {s:'CL=F',n:'Petróleo WTI',t:'commodity'},{s:'BZ=F',n:'Petróleo Brent',t:'commodity'},
+  {s:'NG=F',n:'Gas Natural',t:'commodity'},{s:'HG=F',n:'Cobre',t:'commodity'},
+];
+
+async function loadBinanceSymbols() {
+  if(_bnbSymbols.length) return;
+  try {
+    const r = await fetch('https://api.binance.com/api/v3/exchangeInfo');
+    const d = await r.json();
+    _bnbSymbols = d.symbols
+      .filter(s=>s.quoteAsset==='USDT'&&s.status==='TRADING')
+      .map(s=>({ s:s.symbol, n:s.baseAsset, t:'crypto' }));
+  } catch(e){ console.warn('Could not load Binance symbols'); }
+}
+
+window.showTickerSuggestions = async (val) => {
+  const dd = document.getElementById('aiTickerDD');
+  if(!dd) return;
+  const q = val.toUpperCase().trim();
+  if(q.length < 2){ dd.style.display='none'; return; }
+
+  await loadBinanceSymbols();
+
+  // Match crypto
+  const cryptoMatches = _bnbSymbols
+    .filter(s=>s.s.startsWith(q)||s.n.startsWith(q))
+    .slice(0,6)
+    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
+
+  // Match stocks/etfs/commodities
+  const stockMatches = STOCK_LIST
+    .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
+    .slice(0,4)
+    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
+
+  const all = [...cryptoMatches, ...stockMatches];
+  if(!all.length){ dd.style.display='none'; return; }
+
+  const typeIcon = {crypto:'₿',stock:'📈',etf:'📊',commodity:'🪙',index:'📉'};
+  const typeColor = {crypto:'var(--accent)',stock:'var(--blue)',etf:'var(--amber)',commodity:'var(--amber)',index:'var(--t2)'};
+
+  dd.innerHTML = all.map((r,i)=>`
+    <div onclick="selectTicker('${r.ticker}','${r.source}','${r.type}')"
+      style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
+      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <span style="font-size:12px;">${typeIcon[r.type]||'•'}</span>
+      <div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
+        <div style="font-size:10px;color:var(--t3);">${r.label.split('—')[1]?.trim()||''} · <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
+      </div>
+      ${r.source==='binance'?'<span style="margin-left:auto;font-size:9px;color:var(--t3);">SPOT/FUT</span>':'<span style="margin-left:auto;font-size:9px;color:var(--t3);">Yahoo</span>'}
+    </div>`).join('');
+  dd.style.display='block';
+};
+
+window.selectTicker = (ticker, source, type) => {
+  document.getElementById('aiSymbol').value = ticker;
+  document.getElementById('aiTickerDD').style.display='none';
+  // Auto-set market type based on asset type
+  if(type==='crypto'){
+    // Show toggle, default to futures
+    document.getElementById('toggleSpot').style.display='';
+    document.getElementById('toggleFut').style.display='';
+    setMarketType('futures');
+  } else {
+    // Hide toggle (yahoo finance, always spot)
+    setMarketType('spot');
+    // Override fetch to use Yahoo for non-crypto
+  }
+  // Store source for fetchOHLCV
+  window._aiSource = source;
+  window._aiType   = type;
+  loadCharts();
+};
+
+// Override fetchOHLCV to support Yahoo Finance for stocks
+const _origFetchOHLCV = fetchOHLCV;
+window.fetchOHLCV = async (symbol, interval, limit=300) => {
+  if(window._aiSource==='yahoo') {
+    // Map LW intervals to Yahoo intervals
+    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h'};
+    const yhIv  = ivMap[interval]||'1d';
+    const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':'1mo';
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yhIv}&range=${range}`);
+      const d = await r.json();
+      const res = d.chart?.result?.[0];
+      if(!res) throw new Error('Sin datos Yahoo');
+      const ts = res.timestamp;
+      const q  = res.indicators.quote[0];
+      return ts.map((t,i)=>({
+        time:t, open:q.open[i]||0, high:q.high[i]||0,
+        low:q.low[i]||0, close:q.close[i]||0, volume:q.volume[i]||0
+      })).filter(c=>c.open>0);
+    } catch(e){ return _origFetchOHLCV(symbol, interval, limit); }
+  }
+  return _origFetchOHLCV(symbol, interval, limit);
+};
 
 // ── Init ───────────────────────────────────────────────────────────────────
 buildLevGrid();
