@@ -1439,6 +1439,12 @@ window.refreshPricesManual = async () => {
   renderPositions();
 };
 
+// Expose firebase internals for UI script
+window._fb = { addDoc, collection, db, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, query, where };
+window._getCU = () => CU;
+window._loadTrades = loadTrades;
+window._loadAll = loadAll;
+
 // Expose startLivePrices so it can be called after adding a new trade
 window.startLivePrices = startLivePrices;
 
@@ -2166,11 +2172,11 @@ window.saveEditTrade = async () => {
   // Exchange trade: only update trader + notes
   if(window._editFromExchange) {
     try {
-      await updateDoc(doc(db,'trades',id), { traderId, traderName, notes, updatedAt:new Date().toISOString() });
+      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), { traderId, traderName, notes, updatedAt:new Date().toISOString() });
       // Also update local exchange position
       const pos = exchangePositions.find(p=>p.exchangeId===id||p.id===id);
       if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; }
-      await loadTrades();
+      await window._loadTrades();
       closeModal('editTradeModal');
       renderPositions();
       renderHistory();
@@ -2202,14 +2208,14 @@ window.saveEditTrade = async () => {
   const posSize = risk/slDist;
 
   try {
-    await updateDoc(doc(db,'trades',id), {
+    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
       ticker, exchange, leverage:lev, dir:editDir,
       entry, sl, risk, posSize,
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName,
       updatedAt: new Date().toISOString(),
     });
-    await loadTrades();
+    await window._loadTrades();
     closeModal('editTradeModal');
     // Re-render current page
     ['dashPage','watchPage','posPage','histPage'].forEach(pid=>{
@@ -3132,7 +3138,7 @@ async function importExchangeHistory(exchange, keys) {
   for(const t of history) {
     if(existing.has(t.exchangeId)) continue;
     try {
-      await addDoc(collection(db,'trades'), { userId:CU.uid, ...t });
+      await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'), { userId:window._getCU()?.uid, ...t });
       count++;
     } catch(e){}
   }
@@ -3166,8 +3172,8 @@ window.syncAllExchanges = async () => {
   for(const closed of closedNow){
     try {
       // Fetch the actual close price from exchange history
-      await addDoc(collection(db,'trades'),{
-        userId:CU.uid,
+      await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'),{
+        userId:window._getCU()?.uid,
         exchangeSource: closed.exchange,
         exchangeId: closed.exchangeId+'-closed-'+Date.now(),
         ticker: closed.ticker, dir: closed.dir,
@@ -3188,7 +3194,7 @@ window.syncAllExchanges = async () => {
     } catch(e){ console.error('Auto-close error:',e); }
   }
   if(closedNow.length>0) {
-    await loadTrades();
+    await window._loadTrades();
     renderHistory();
   }
 
@@ -3227,7 +3233,7 @@ window.importAllHistory = async () => {
     }
   }
   if(totalImported>0){
-    await loadTrades();
+    await window._loadTrades();
     renderHistory();
     renderDashboard();
   }
@@ -3514,9 +3520,9 @@ window.deleteAllData = async () => {
   try {
     const all = G.trades();
     for(const t of all){
-      await deleteDoc(doc(db,'trades',t.id));
+      await window._fb.deleteDoc(window._fb.doc(window._fb.db,'trades',t.id));
     }
-    await loadTrades();
+    await window._loadTrades();
     renderDashboard();
     toast('Todos los trades eliminados.');
   } catch(e){ toast('Error: '+e.message,'error'); }
