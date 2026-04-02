@@ -792,19 +792,17 @@ function isCryptoTicker(ticker){
 // livePrices[sym].spot  = spot price
 // livePrices[sym].futures = perpetual futures price
 
-const _firstPriceSeen=new Set();
 function setPx(sym, type, price){
-  const isFirst=!_firstPriceSeen.has(sym);
   if(!livePrices[sym]) livePrices[sym]={};
+  const isNew=!livePrices[sym][type];
   livePrices[sym][type]=price;
   updatePriceTimestamp();
-  if(isFirst){
-    // First time we get a price for this ticker — re-render the whole positions page
-    // so all elements get their data attributes properly populated
-    _firstPriceSeen.add(sym);
+  // If positions page is visible and this is the first price for this ticker,
+  // call renderPositions so the DOM elements get their data-attributes populated
+  if(isNew){
     const posPage=document.getElementById('posPage');
-    if(posPage&&posPage.style.display!=='none'){
-      if(typeof renderPositions==='function') renderPositions();
+    if(posPage&&posPage.style.display!=='none'&&window.renderPositions){
+      window.renderPositions();
       return;
     }
   }
@@ -1342,7 +1340,7 @@ function renderWatchlist(){
   }).join('');
 }
 
-function renderPositions(){
+window.renderPositions=function renderPositions(){
   const trades=window._trades?window._trades():[];
   const active=trades.filter(t=>t.status==='active');
   const container=document.getElementById('posList');
