@@ -44,6 +44,14 @@
 .mobile-nav-btn.active{color:var(--accent);}
 .mobile-nav-btn svg{width:18px;height:18px;}
 
+/* ── STATUS BAR ─────────────────────────────────────────────────────────── */
+.status-bar{height:32px;background:var(--bg1);border-bottom:0.5px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:20px;font-family:var(--mono);font-size:11px;color:var(--t2);}
+.status-item{display:flex;align-items:center;gap:6px;}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+.status-dot.red{background:var(--red);}
+.status-dot.amber{background:var(--amber);}
+.status-sep{color:var(--border2);}
+
 /* ── POSITION CARD COMPACT ───────────────────────────────────────────────── */
 .pos-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:14px 16px;margin-bottom:8px;}
 .pos-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
@@ -269,6 +277,7 @@ textarea{resize:vertical;min-height:70px;}
       <button class="nav-btn" data-page="dashboard" onclick="window.showPage('dashboard')">Dashboard</button>
       <button class="nav-btn" data-page="calc" onclick="window.showPage('calc')">Calculadora</button>
       <button class="nav-btn" data-page="watchlist" onclick="window.showPage('watchlist')">Watchlist</button>
+      <button class="nav-btn" data-page="orders" onclick="window.showPage('orders')">Órdenes</button>
       <button class="nav-btn" data-page="positions" onclick="window.showPage('positions')">Posiciones</button>
       <button class="nav-btn" data-page="history" onclick="window.showPage('history')">Historial</button>
       <button class="nav-btn" data-page="traders" onclick="window.showPage('traders')">Traders</button>
@@ -321,6 +330,26 @@ textarea{resize:vertical;min-height:70px;}
       AI
     </button>
   </nav>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar" id="statusBar" style="display:none;">
+    <div class="status-item">
+      <div class="status-dot" id="sbDot"></div>
+      <span id="sbPositions">0 posiciones</span>
+    </div>
+    <div class="status-sep">·</div>
+    <div class="status-item">
+      <span id="sbPnl" style="color:var(--accent);">PnL —</span>
+    </div>
+    <div class="status-sep">·</div>
+    <div class="status-item">
+      <span id="sbOrders" style="color:var(--t3);">0 órdenes</span>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:16px;">
+      <span id="sbBtc" style="color:var(--t2);">BTC —</span>
+      <span id="sbFng" style="color:var(--t3);">F&G —</span>
+    </div>
+  </div>
 
   <div class="page-wrap">
 
@@ -426,6 +455,18 @@ textarea{resize:vertical;min-height:70px;}
         <table class="tbl" style="table-layout:auto;"><thead><tr><th>Ticker</th><th>Dir</th><th>Trader</th><th>Entry</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Riesgo</th><th>R:R</th><th>Fecha</th><th>Mapa</th><th></th></tr></thead>
         <tbody id="watchTbody"></tbody></table>
       </div>
+    </div>
+
+    <!-- ÓRDENES -->
+    <div id="ordersPage" style="display:none;">
+      <div class="fxb" style="margin-bottom:20px;">
+        <div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Órdenes abiertas</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes de ejecución en todos los exchanges</div>
+        </div>
+        <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
+      </div>
+      <div id="ordersList"></div>
     </div>
 
     <!-- POSICIONES -->
@@ -596,12 +637,12 @@ textarea{resize:vertical;min-height:70px;}
       </div>
 
       <!-- Exchange cards -->
-      <div class="g3" style="gap:12px;margin-bottom:16px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px;">
 
         <!-- BINANCE -->
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <div style="width:28px;height:28px;background:#f0b90b;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">⬡</div>
+            <img src="https://bin.bnbstatic.com/static/images/common/favicon.ico" width="24" height="24" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:24px;height:24px;background:#f0b90b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
             <div style="font-family:var(--mono);font-weight:600;font-size:14px;">Binance</div>
             <div id="bnbStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
           </div>
@@ -617,7 +658,7 @@ textarea{resize:vertical;min-height:70px;}
         <!-- BYBIT -->
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <div style="width:28px;height:28px;background:#f7a600;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">◈</div>
+            <img src="https://www.bybit.com/favicon.ico" width="24" height="24" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:24px;height:24px;background:#f7a600;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
             <div style="font-family:var(--mono);font-weight:600;font-size:14px;">Bybit</div>
             <div id="bybitStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
           </div>
@@ -633,7 +674,7 @@ textarea{resize:vertical;min-height:70px;}
         <!-- OKX -->
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <div style="width:28px;height:28px;background:#000;border:1px solid var(--border2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:white;">OK</div>
+            <img src="https://www.okx.com/favicon.ico" width="24" height="24" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:24px;height:24px;background:#1a1a2e;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;\'>OKX</div>'">
             <div style="font-family:var(--mono);font-weight:600;font-size:14px;">OKX</div>
             <div id="okxStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
           </div>
@@ -646,6 +687,22 @@ textarea{resize:vertical;min-height:70px;}
             <button class="btn dan sm" onclick="clearExchangeKeys('okx')">✕</button>
           </div>
         </div>
+      <!-- MEXC -->
+        <div class="card" style="margin-top:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <img src="https://www.mexc.com/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div style="width:22px;height:22px;background:#00b8d9;border-radius:4px;display:none;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#000;">M</div>
+            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">MEXC</div>
+            <div id="mexcStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+          </div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="mexcKey" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="mexcSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('mexc')">Guardar</button>
+            <button class="btn sm" onclick="testExchangeKeys('mexc')">Probar</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('mexc')">✕</button>
+          </div>
+        </div>
       </div>
 
       <!-- Sync status -->
@@ -654,7 +711,7 @@ textarea{resize:vertical;min-height:70px;}
         <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn acc sm" onclick="if(!_masterPass){toast('Ingresá tu contraseña maestra primero','error');}else{syncAllExchanges();}">↻ Sincronizar posiciones</button>
-          <button class="btn sm" onclick="importAllHistory()" id="importHistBtn">📥 Importar historial 2026</button>
+          <button class="btn sm" onclick="openImportHistoryModal()" id="importHistBtn">📥 Importar historial...</button>
           <button class="btn sm" onclick="window.showPage('positions')">Ver posiciones</button>
         </div>
         <div style="font-size:10px;color:var(--t3);margin-top:8px;font-family:var(--mono);">
@@ -895,6 +952,29 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
+<div class="modal-overlay" id="importHistoryModal">
+  <div class="modal" style="width:440px;">
+    <div class="modal-hdr"><div class="modal-title">📥 Importar historial de exchanges</div><button class="modal-close" onclick="closeModal('importHistoryModal')">✕</button></div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--t2);margin-bottom:16px;line-height:1.6;">
+        Importa trades cerrados de todos los exchanges configurados. Los trades ya importados no se duplican.
+      </div>
+      <div class="g2" style="gap:10px;margin-bottom:16px;">
+        <div><label class="lbl">Desde</label><input type="date" id="importFrom" value="2026-01-01"></div>
+        <div><label class="lbl">Hasta</label><input type="date" id="importTo"></div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--t2);">
+        Importará: futuros + spot de Binance, Bybit, OKX y MEXC (los que tenés configurados)
+      </div>
+      <div id="importHistProgress" style="margin-top:12px;display:none;font-family:var(--mono);font-size:11px;color:var(--t2);line-height:1.8;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('importHistoryModal')">Cancelar</button>
+      <button class="btn acc" onclick="runImportHistory()">Importar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="importModal">
   <div class="modal" style="width:460px;">
     <div class="modal-hdr"><div class="modal-title">Importar CSV</div><button class="modal-close" onclick="closeModal('importModal')">✕</button></div>
@@ -995,6 +1075,7 @@ onAuthStateChanged(auth, async user => {
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('app').style.flexDirection = 'column';
+    document.getElementById('statusBar').style.display = 'flex';
     const name = user.displayName || user.email?.split('@')[0] || 'Usuario';
     document.getElementById('userName').textContent = name;
     const av = document.getElementById('userAvatar');
@@ -1500,10 +1581,7 @@ window.startLivePrices = startLivePrices;
 
 // Expose exchange key helpers
 G._hasExchangeKeys  = () => ['binance','bybit','okx'].some(ex=>G._hasExchangeKey?.(ex));
-G._hasExchangeKey   = ex => {
-  // Check if encrypted key exists in exchangeKeyStore
-  return !!window._exchangeKeyStore?.[ex];
-};
+G._hasExchangeKey   = ex => !!window._exchangeKeyStore?.[ex];
 G._saveExchangeKey  = async (exchange, encrypted) => {
   window._exchangeKeyStore = window._exchangeKeyStore||{};
   window._exchangeKeyStore[exchange] = encrypted;
@@ -1584,7 +1662,8 @@ document.querySelectorAll('.modal-overlay').forEach(el =>
 // ── Navigation ─────────────────────────────────────────────────────────────
 const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
-  positions:'posPage', history:'histPage', traders:'tradPage', analysis:'analysisPage', settings:'settingsPage',
+  orders:'ordersPage', positions:'posPage', history:'histPage',
+  traders:'tradPage', analysis:'analysisPage', settings:'settingsPage',
 };
 
 window.showPage = page => {
@@ -1603,12 +1682,18 @@ window.showPage = page => {
   const renders = {
     dashboard: renderDashboard,
     watchlist: renderWatchlist,
+    orders:    renderOrders,
     positions: renderPositions,
     history:   renderHistory,
     traders:   renderTraders,
   };
   if (renders[page]) renders[page]();
   if (page === 'settings') { loadProxyUrlField(); }
+
+  // Sync orders when entering orders page
+  if (page === 'orders' && _masterPass && window.G?._hasExchangeKeys?.()) {
+    window.syncAllOrders();
+  }
 
   // Load charts when entering analysis page
   if (page === 'analysis') {
@@ -2390,11 +2475,41 @@ window.setMarketType = type => {
 };
 
 async function fetchOHLCV(symbol, interval, limit=300) {
+  // Detect non-crypto (no USDT suffix or in stock list)
+  const isStock = window._aiType === 'stock' || window._aiType === 'etf' ||
+                  window._aiType === 'commodity' || window._aiType === 'index' ||
+                  (!symbol.endsWith('USDT') && !symbol.endsWith('BUSD'));
+
+  if(isStock) {
+    // Yahoo Finance via proxy (avoids CORS)
+    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h'};
+    const rangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo'};
+    const yhIv = ivMap[interval]||'1d';
+    const range = rangeMap[interval]||'1y';
+    const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yhIv}&range=${range}`;
+    try {
+      const r = await (PROXY_URL ? window.proxyFetch(yhUrl) : fetch(yhUrl));
+      const d = await r.json();
+      const res = d.chart?.result?.[0];
+      if(!res) throw new Error('Sin datos Yahoo');
+      const ts = res.timestamp;
+      const q  = res.indicators.quote[0];
+      return ts.map((t,i)=>({
+        time:t, open:q.open[i]||0, high:q.high[i]||0,
+        low:q.low[i]||0, close:q.close[i]||0, volume:q.volume[i]||0
+      })).filter(c=>c.open>0&&c.close>0);
+    } catch(e) {
+      throw new Error(`Yahoo Finance error: ${e.message}`);
+    }
+  }
+
+  // Crypto: Binance (use proxy to avoid CORS from Vercel)
   const base = aiMarketType==='futures'
     ? 'https://fapi.binance.com/fapi/v1/klines'
     : 'https://api.binance.com/api/v3/klines';
   const url = `${base}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  const r = await fetch(url);
+  const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
+  const r = await fetchFn(url);
   if(!r.ok) throw new Error(`HTTP ${r.status}`);
   const data = await r.json();
   return data.map(k=>({
@@ -2612,7 +2727,7 @@ async function fetchMarketData(symbol) {
   const data = {};
   try {
     // 24h ticker
-    const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
+    const r = await (PROXY_URL?window.proxyFetch:fetch)(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
     const d = await r.json();
     data.price     = parseFloat(d.lastPrice);
     data.change24h = parseFloat(d.priceChangePercent);
@@ -2967,6 +3082,19 @@ async function pingExchange(exchange, keys) {
       console.log('Bybit test response:', d);
       return d.retCode === 0;
     }
+    if(exchange==='mexc') {
+      const ts  = Date.now().toString();
+      const q   = '';
+      const toSign = keys.key + ts + q;
+      const sig = await hmacSHA256(keys.secret, toSign);
+      const r   = await (window.proxyFetch||fetch)(
+        'https://contract.mexc.com/api/v1/private/account/assets',
+        { headers:{'ApiKey':keys.key,'Request-Time':ts,'Signature':sig,'Content-Type':'application/json'} }
+      );
+      const txt = await r.text();
+      let d; try{d=JSON.parse(txt);}catch(e){return false;}
+      return d.success===true;
+    }
     if(exchange==='okx') {
       const ts  = new Date().toISOString();
       const msg = ts + 'GET' + '/api/v5/account/balance';
@@ -3058,6 +3186,19 @@ async function fetchExchangePositions(exchange, keys) {
       }
     }
 
+    if(exchange==='mexc') {
+      const ts  = Date.now().toString();
+      const q   = '';
+      const toSign = keys.key + ts + q;
+      const sig = await hmacSHA256(keys.secret, toSign);
+      const r   = await (window.proxyFetch||fetch)(
+        'https://contract.mexc.com/api/v1/private/account/assets',
+        { headers:{'ApiKey':keys.key,'Request-Time':ts,'Signature':sig,'Content-Type':'application/json'} }
+      );
+      const txt = await r.text();
+      let d; try{d=JSON.parse(txt);}catch(e){return false;}
+      return d.success===true;
+    }
     if(exchange==='okx') {
       const ts  = new Date().toISOString();
       const sig = async (path) => {
@@ -3207,6 +3348,19 @@ async function fetchExchangeHistory(exchange, keys) {
       }
     }
 
+    if(exchange==='mexc') {
+      const ts  = Date.now().toString();
+      const q   = '';
+      const toSign = keys.key + ts + q;
+      const sig = await hmacSHA256(keys.secret, toSign);
+      const r   = await (window.proxyFetch||fetch)(
+        'https://contract.mexc.com/api/v1/private/account/assets',
+        { headers:{'ApiKey':keys.key,'Request-Time':ts,'Signature':sig,'Content-Type':'application/json'} }
+      );
+      const txt = await r.text();
+      let d; try{d=JSON.parse(txt);}catch(e){return false;}
+      return d.success===true;
+    }
     if(exchange==='okx') {
       const ts  = new Date().toISOString();
       const makeSig = async (path) => {
@@ -3280,7 +3434,7 @@ window.syncAllExchanges = async () => {
   if(!_masterPass) { toast('Ingresá tu contraseña maestra primero','error'); return; }
   const syncBtn = document.getElementById('syncBtn');
   if(syncBtn){ syncBtn.textContent='⟳ Sincronizando...'; syncBtn.disabled=true; }
-  const exchanges = ['binance','bybit','okx'];
+  const exchanges = ['binance','bybit','okx','mexc'];
   const all = [];
   const statusLines = [];
   for(const ex of exchanges) {
@@ -3321,6 +3475,7 @@ window.syncAllExchanges = async () => {
   if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled=false; }
   // Always re-render positions after sync
   renderPositions();
+  updateStatusBar();
   return all;
 };
 
@@ -3708,15 +3863,30 @@ window.openTradeInAnalysis = (id) => {
   const t = G.trades().find(x=>x.id===id);
   if(!t){ toast('Trade no encontrado','error'); return; }
 
-  // Store trade data for chart rendering
   _analysisTradeData = t;
 
-  // Set the symbol in AI Analysis
-  const sym = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
-  const aiSym = document.getElementById('aiSymbol');
-  if(aiSym) aiSym.value = sym+'USDT';
+  // Detect if crypto or stock/etf
+  const rawTicker = t.ticker||'';
+  const isCryptoTicker = rawTicker.endsWith('USDT') || rawTicker.endsWith('BUSD') ||
+    ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','DOGE','LTC',
+     'XLM','TRX','ATOM','NEAR','AAVE','UNI','ONDO','XMR','ANKR'].includes(rawTicker.toUpperCase());
 
-  // Switch to analysis page and load charts
+  const aiSym = document.getElementById('aiSymbol');
+  if(isCryptoTicker) {
+    const sym = rawTicker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    if(aiSym) aiSym.value = sym+'USDT';
+    window._aiSource = 'binance';
+    window._aiType   = 'crypto';
+    // Default to futures for crypto trades
+    setMarketType(t.dir==='spot'?'spot':'futures');
+  } else {
+    // Stock/ETF/Commodity — use ticker directly for Yahoo
+    if(aiSym) aiSym.value = rawTicker;
+    window._aiSource = 'yahoo';
+    window._aiType   = 'stock';
+    setMarketType('spot');
+  }
+
   window.showPage('analysis');
 };
 
@@ -3784,6 +3954,418 @@ function renderTradeInfoPanel(trade) {
       </div>
       ${trade.notes?`<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);font-size:10px;color:var(--t2);">${trade.notes}</div>`:''}
     </div>`;
+}
+
+// ── Status bar update ────────────────────────────────────────────────────────
+function updateStatusBar() {
+  const G = window.G; if(!G) return;
+  const bar = document.getElementById('statusBar');
+  if(!bar) return;
+  bar.style.display = 'flex';
+
+  const exPos = window.exchangePositions||[];
+  const manPos = G.trades().filter(t=>t.status==='active');
+  const totalPos = exPos.length + manPos.length;
+  const orders = window.exchangeOrders||[];
+
+  // PnL total
+  let totalPnl = 0;
+  exPos.forEach(p=>{ totalPnl += p.pnl||0; });
+
+  const dot = document.getElementById('sbDot');
+  const sbPos = document.getElementById('sbPositions');
+  const sbPnl = document.getElementById('sbPnl');
+  const sbOrd = document.getElementById('sbOrders');
+  const sbBtc = document.getElementById('sbBtc');
+
+  if(dot) dot.className = 'status-dot' + (totalPos>0?'':' amber');
+  if(sbPos) sbPos.textContent = `${totalPos} posición${totalPos!==1?'es':''}`;
+  if(sbPnl) {
+    sbPnl.textContent = totalPos>0 ? `PnL ${totalPnl>=0?'+':'-'}$${Math.abs(totalPnl).toFixed(0)}` : 'PnL —';
+    sbPnl.style.color = totalPnl>=0?'var(--accent)':'var(--red)';
+  }
+  if(sbOrd) sbOrd.textContent = `${orders.length} orden${orders.length!==1?'es':''}`;
+
+  // BTC price
+  const btcPrice = G.getPrice('BTCUSDT','futures') || G.getPrice('BTC','futures');
+  if(sbBtc && btcPrice) sbBtc.textContent = `BTC $${Math.round(btcPrice).toLocaleString('en-US')}`;
+}
+
+// Update status bar every 2s
+setInterval(updateStatusBar, 2000);
+
+// ── Favorite pairs ────────────────────────────────────────────────────────────
+function loadFavPairs() {
+  try {
+    const stored = localStorage.getItem('mauex_favpairs');
+    return stored ? JSON.parse(stored) : ['BTCUSDT','ETHUSDT','SOLUSDT'];
+  } catch(e){ return ['BTCUSDT','ETHUSDT']; }
+}
+
+function saveFavPairs(pairs) {
+  localStorage.setItem('mauex_favpairs', JSON.stringify(pairs));
+}
+
+function renderFavPairsBar() {
+  const bar = document.getElementById('favPairsBar');
+  if(!bar) return;
+  const pairs = loadFavPairs();
+  bar.innerHTML = pairs.map(p=>`
+    <button onclick="selectFavPair('${p}')" style="
+      padding:4px 10px;border-radius:20px;border:0.5px solid var(--border2);
+      background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;
+      cursor:pointer;transition:all .2s;" 
+      onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+      onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--t2)'">
+      ${p}
+    </button>`).join('');
+}
+
+window.selectFavPair = (sym) => {
+  const el = document.getElementById('aiSymbol');
+  if(el) el.value = sym;
+  _analysisTradeData = null;
+  // Auto-detect type
+  window._aiType = sym.endsWith('USDT')||sym.endsWith('BUSD') ? 'crypto' : 'stock';
+  window._aiSource = window._aiType==='crypto' ? 'binance' : 'yahoo';
+  loadCharts();
+};
+
+window.toggleFavPair = () => {
+  const sym = document.getElementById('aiSymbol')?.value?.trim().toUpperCase();
+  if(!sym) return;
+  const pairs = loadFavPairs();
+  const idx = pairs.indexOf(sym);
+  if(idx>-1) {
+    pairs.splice(idx,1);
+    toast(`${sym} eliminado de favoritos`);
+  } else {
+    pairs.unshift(sym);
+    if(pairs.length>10) pairs.pop();
+    toast(`${sym} guardado como favorito ★`);
+  }
+  saveFavPairs(pairs);
+  renderFavPairsBar();
+};
+
+// ── Open import history modal ─────────────────────────────────────────────────
+window.openImportHistoryModal = () => {
+  const today = new Date().toISOString().split('T')[0];
+  const fromEl = document.getElementById('importFrom');
+  const toEl   = document.getElementById('importTo');
+  if(fromEl) fromEl.value = '2026-01-01';
+  if(toEl)   toEl.value   = today;
+  document.getElementById('importHistProgress').style.display='none';
+  document.getElementById('importHistProgress').textContent='';
+  openModal('importHistoryModal');
+};
+
+window.runImportHistory = async () => {
+  if(!_masterPass){ toast('Ingresá tu contraseña maestra primero.','error'); return; }
+  const fromDate = document.getElementById('importFrom')?.value;
+  const toDate   = document.getElementById('importTo')?.value;
+  if(!fromDate){ toast('Seleccioná fecha desde.','error'); return; }
+
+  const startTs = new Date(fromDate).getTime();
+  const endTs   = toDate ? new Date(toDate).getTime() : Date.now();
+
+  const prog = document.getElementById('importHistProgress');
+  prog.style.display='block';
+  prog.innerHTML = '⟳ Importando...';
+
+  const exchanges = ['binance','bybit','okx','mexc'];
+  let totalImported = 0;
+  const lines = [];
+
+  for(const ex of exchanges) {
+    const keys = await getDecryptedKeys(ex);
+    if(!keys){ lines.push(`${ex.toUpperCase()}: no configurado`); continue; }
+    try {
+      const history = await fetchExchangeHistory(ex, keys, startTs, endTs);
+      const G = window.G;
+      const existing = new Set((G?.trades()||[]).map(t=>t.exchangeId).filter(Boolean));
+      let count = 0;
+      for(const t of history) {
+        if(existing.has(t.exchangeId)) continue;
+        try {
+          await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'),
+            { userId:window._getCU()?.uid, ...t });
+          count++;
+        } catch(e){}
+      }
+      totalImported += count;
+      lines.push(`✅ ${ex.toUpperCase()}: ${count} trades importados (${history.length} encontrados)`);
+    } catch(e) {
+      lines.push(`❌ ${ex.toUpperCase()}: ${e.message}`);
+    }
+    prog.innerHTML = lines.join('<br>') + '<br>⟳ Continuando...';
+  }
+
+  if(totalImported>0) {
+    await window._loadTrades();
+    renderHistory();
+    renderDashboard();
+  }
+  prog.innerHTML = lines.join('<br>') + `<br><strong>✅ Total: ${totalImported} trades importados</strong>`;
+  toast(`Importación completa: ${totalImported} trades`);
+};
+
+// ── Orders rendering ─────────────────────────────────────────────────────────
+let exchangeOrders = [];
+
+function renderOrders() {
+  const container = document.getElementById('ordersList');
+  if(!container) return;
+
+  if(!_masterPass || !window.G?._hasExchangeKeys?.()) {
+    container.innerHTML = `<div class="empty">
+      <div class="empty-icon">◻</div>
+      <div class="empty-text">Conectá tus exchanges para ver órdenes</div>
+      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>
+    </div>`;
+    return;
+  }
+
+  if(!exchangeOrders.length) {
+    container.innerHTML = `<div class="empty">
+      <div class="empty-icon">◻</div>
+      <div class="empty-text">No hay órdenes pendientes</div>
+      <div class="empty-sub">Las limit orders aparecerán aquí</div>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Exchange</th><th>Par</th><th>Dir</th><th>Tipo</th>
+          <th>Precio orden</th><th>Precio actual</th><th>Distancia</th>
+          <th>Tamaño</th><th>Estado</th>
+        </tr></thead>
+        <tbody>${exchangeOrders.map(o=>{
+          const currentPrice = window.G?.getPrice(o.ticker, o.dir) || 0;
+          const dist = currentPrice && o.price ? ((o.price-currentPrice)/currentPrice*100) : null;
+          const exColor = o.exchange==='BINANCE'?'#f0b90b':o.exchange==='BYBIT'?'#f7a600':o.exchange==='OKX'?'#00a0ea':'#00b8d9';
+          return `<tr>
+            <td><span style="background:${exColor}22;color:${exColor};padding:2px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span></td>
+            <td><strong style="font-family:var(--mono);">${o.ticker}</strong></td>
+            <td><span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span></td>
+            <td style="font-family:var(--mono);font-size:11px;color:var(--t2);">${o.type||'LIMIT'}</td>
+            <td style="font-family:var(--mono);">$${fmtPx(o.price)}</td>
+            <td style="font-family:var(--mono);">${currentPrice?'$'+fmtPx(currentPrice):'—'}</td>
+            <td style="font-family:var(--mono);color:${dist!=null&&Math.abs(dist)<2?'var(--accent)':dist!=null&&Math.abs(dist)<5?'var(--amber)':'var(--t2)'};">${dist!=null?fmtP(dist):'—'}</td>
+            <td style="font-family:var(--mono);">$${fmt(o.size||0)}</td>
+            <td><span style="font-size:10px;color:var(--amber);font-family:var(--mono);">PENDIENTE</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Fetch open orders from exchanges ─────────────────────────────────────────
+async function fetchAllOrders() {
+  const orders = [];
+  const exchanges = ['binance','bybit','okx','mexc'];
+  for(const ex of exchanges) {
+    const keys = await getDecryptedKeys(ex);
+    if(!keys) continue;
+    try {
+      if(ex==='binance') {
+        const ts  = Date.now();
+        const q   = `timestamp=${ts}`;
+        const sig = await hmacSHA256(keys.secret, q);
+        const r   = await (window.proxyFetch||fetch)(
+          `https://fapi.binance.com/fapi/v1/openOrders?timestamp=${ts}&signature=${sig}`,
+          { headers:{'X-MBX-APIKEY':keys.key} }
+        );
+        const d = await r.json();
+        if(Array.isArray(d)) d.forEach(o=>{
+          orders.push({
+            exchange:'BINANCE', ticker:o.symbol.replace('USDT',''),
+            dir: o.side==='BUY'?'long':'short',
+            type: o.type, price: parseFloat(o.price),
+            size: parseFloat(o.origQty)*parseFloat(o.price),
+            orderId: o.orderId,
+          });
+        });
+      }
+      if(ex==='bybit') {
+        const ts  = Date.now().toString();
+        const q   = 'category=linear&settleCoin=USDT';
+        const msg = ts+keys.key+'5000'+q;
+        const sig = await hmacSHA256(keys.secret, msg);
+        const r   = await (window.proxyFetch||fetch)(
+          `https://api.bybit.com/v5/order/realtime?${q}`,
+          { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} }
+        );
+        const txt = await r.text();
+        let d; try{d=JSON.parse(txt);}catch(e){continue;}
+        if(d.retCode===0&&d.result?.list) d.result.list.forEach(o=>{
+          orders.push({
+            exchange:'BYBIT', ticker:o.symbol.replace('USDT',''),
+            dir: o.side==='Buy'?'long':'short',
+            type: o.orderType, price: parseFloat(o.price),
+            size: parseFloat(o.qty)*parseFloat(o.price),
+            orderId: o.orderId,
+          });
+        });
+      }
+    } catch(e){ console.warn(`fetchOrders ${ex}:`, e); }
+  }
+  return orders;
+}
+
+window.syncAllOrders = async () => {
+  if(!_masterPass) return;
+  const btn = document.getElementById('syncOrdersBtn');
+  if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
+  try {
+    exchangeOrders = await fetchAllOrders();
+    window.exchangeOrders = exchangeOrders;
+    renderOrders();
+    updateStatusBar();
+    if(btn){ btn.textContent=`↻ ${exchangeOrders.length} órdenes`; btn.disabled=false; }
+  } catch(e) {
+    console.error('syncAllOrders:', e);
+    if(btn){ btn.textContent='↻ Sync órdenes'; btn.disabled=false; }
+  }
+};
+
+// ── Update fetchExchangeHistory to accept date range ──────────────────────────
+// Wrap existing function with date params
+const _origFetchHistory = typeof fetchExchangeHistory !== 'undefined' ? fetchExchangeHistory : null;
+// Override to add MEXC support and date range
+async function fetchExchangeHistory(exchange, keys, startTs, endTs) {
+  startTs = startTs || new Date('2026-01-01').getTime();
+  endTs   = endTs   || Date.now();
+  const trades = [];
+
+  try {
+    if(exchange==='binance') {
+      // Futures closed trades
+      const ts  = Date.now();
+      const q   = `startTime=${startTs}&endTime=${endTs}&limit=1000&timestamp=${ts}`;
+      const sig = await hmacSHA256(keys.secret, q);
+      const r   = await (window.proxyFetch||fetch)(
+        `https://fapi.binance.com/fapi/v1/userTrades?${q}&signature=${sig}`,
+        { headers:{'X-MBX-APIKEY':keys.key} }
+      );
+      const d = await r.json();
+      if(Array.isArray(d)) {
+        const byOrder = {};
+        d.forEach(t=>{
+          if(!byOrder[t.orderId]) byOrder[t.orderId]={
+            trades:[],symbol:t.symbol,side:t.side,
+            realizedPnl:0,commission:0,qty:0,time:t.time
+          };
+          byOrder[t.orderId].trades.push(t);
+          byOrder[t.orderId].realizedPnl += parseFloat(t.realizedPnl);
+          byOrder[t.orderId].commission  += parseFloat(t.commission);
+          byOrder[t.orderId].qty         += parseFloat(t.qty);
+        });
+        Object.values(byOrder).filter(o=>o.realizedPnl!==0).forEach(o=>{
+          const pnl  = Math.round(o.realizedPnl*100)/100;
+          const fees = Math.round(o.commission*100)/100;
+          trades.push({
+            exchangeSource:'BINANCE', exchangeId:`bnb-${o.trades[0].orderId}`,
+            ticker:o.symbol.replace('USDT',''), dir:o.side==='BUY'?'long':'short',
+            exchange:'BINANCE', type:'futures',
+            entry:parseFloat(o.trades[0]?.price)||0,
+            closePrice:parseFloat(o.trades[o.trades.length-1]?.price)||0,
+            pnl:pnl-fees, pnlRaw:pnl, fees,
+            posSize:o.qty*parseFloat(o.trades[0]?.price||0),
+            status:'closed',
+            createdAt:new Date(o.time).toISOString(),
+            closeDate:new Date(o.time).toISOString().split('T')[0],
+            closeNotes:`Importado de Binance Futures`,
+          });
+        });
+      }
+    }
+
+    if(exchange==='bybit') {
+      const ts  = Date.now().toString();
+      const q   = `category=linear&startTime=${startTs}&endTime=${endTs}&limit=100`;
+      const msg = ts+keys.key+'5000'+q;
+      const sig = await hmacSHA256(keys.secret, msg);
+      const r   = await (window.proxyFetch||fetch)(
+        `https://api.bybit.com/v5/execution/list?${q}`,
+        { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} }
+      );
+      const txt = await r.text();
+      let d; try{d=JSON.parse(txt);}catch(e){return trades;}
+      if(d.retCode===0&&d.result?.list) {
+        const byOrder = {};
+        d.result.list.forEach(t=>{
+          if(!byOrder[t.orderId]) byOrder[t.orderId]={
+            trades:[],symbol:t.symbol,side:t.side,pnl:0,fee:0,time:parseInt(t.execTime)
+          };
+          byOrder[t.orderId].trades.push(t);
+          byOrder[t.orderId].pnl += parseFloat(t.closedPnl||0);
+          byOrder[t.orderId].fee += parseFloat(t.execFee||0);
+        });
+        Object.values(byOrder).filter(o=>o.pnl!==0).forEach(o=>{
+          const pnl  = Math.round(o.pnl*100)/100;
+          const fees = Math.round(o.fee*100)/100;
+          trades.push({
+            exchangeSource:'BYBIT', exchangeId:`bybit-${o.trades[0].orderId}`,
+            ticker:o.symbol.replace('USDT',''), dir:o.side==='Buy'?'long':'short',
+            exchange:'BYBIT', type:'futures',
+            entry:parseFloat(o.trades[0]?.execPrice)||0,
+            closePrice:parseFloat(o.trades[o.trades.length-1]?.execPrice)||0,
+            pnl:pnl-fees, pnlRaw:pnl, fees,
+            posSize:parseFloat(o.trades[0]?.execValue)||0,
+            status:'closed',
+            createdAt:new Date(o.time).toISOString(),
+            closeDate:new Date(o.time).toISOString().split('T')[0],
+            closeNotes:'Importado de Bybit',
+          });
+        });
+      }
+    }
+
+    if(exchange==='mexc') {
+      // MEXC futures history
+      const ts  = Date.now().toString();
+      const q   = `start_time=${Math.floor(startTs/1000)}&end_time=${Math.floor(endTs/1000)}&page_size=100`;
+      const toSign = keys.key + ts + q;
+      // MEXC uses different auth: sign = HMAC(secret, apiKey+ts+queryString)
+      const sig = await hmacSHA256(keys.secret, toSign);
+      const r   = await (window.proxyFetch||fetch)(
+        `https://contract.mexc.com/api/v1/private/order/history/new?${q}`,
+        { headers:{
+          'ApiKey':keys.key,
+          'Request-Time':ts,
+          'Signature':sig,
+          'Content-Type':'application/json'
+        }}
+      );
+      const txt = await r.text();
+      let d; try{d=JSON.parse(txt);}catch(e){return trades;}
+      if(d.success&&d.data?.resultList) {
+        d.data.resultList.forEach(o=>{
+          if(o.state!==3) return; // 3 = filled
+          const pnl = parseFloat(o.realizedPnl||0);
+          trades.push({
+            exchangeSource:'MEXC', exchangeId:`mexc-${o.orderId}`,
+            ticker:o.symbol.replace('_USDT','').replace('USDT',''),
+            dir:o.side===1?'long':'short',
+            exchange:'MEXC', type:'futures',
+            entry:parseFloat(o.openAvgPrice)||0,
+            closePrice:parseFloat(o.closeAvgPrice)||0,
+            pnl, pnlRaw:pnl, fees:0,
+            posSize:parseFloat(o.vol)*parseFloat(o.openAvgPrice||1),
+            status:'closed',
+            createdAt:new Date(o.createTime).toISOString(),
+            closeDate:new Date(o.updateTime||o.createTime).toISOString().split('T')[0],
+            closeNotes:'Importado de MEXC',
+          });
+        });
+      }
+    }
+  } catch(e){ console.error(`fetchExchangeHistory ${exchange}:`, e); }
+  return trades;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
