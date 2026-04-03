@@ -3033,6 +3033,7 @@ async function fetchExchangePositions(exchange, keys) {
 
 // ── Live exchange positions state ─────────────────────────────────────────
 let exchangePositions = []; // positions from all exchanges
+window.exchangePositions = exchangePositions;
 let lastSyncTime = null;
 
 // ── Fetch closed trade history from exchanges (from Jan 1 2026) ─────────────
@@ -3249,6 +3250,7 @@ window.syncAllExchanges = async () => {
   }
 
   exchangePositions = all;
+  window.exchangePositions = all; // expose for renderPositions
   lastSyncTime = new Date();
 
   // Show sync card in settings if open
