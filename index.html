@@ -433,10 +433,11 @@ textarea{resize:vertical;min-height:70px;}
     <div id="posPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Posiciones abiertas</div>
-        <div class="fx" style="gap:8px;">
+        <div class="fx" style="gap:8px;flex-wrap:wrap;">
           <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
           <button class="btn sm" onclick="refreshPricesManual()">↻ Precios</button>
-          <button class="btn acc sm" onclick="openManualTrade()">+ Carga manual</button>
+          <button class="btn acc sm" id="syncBtn" onclick="window.syncAllExchanges()">↻ Sync exchanges</button>
+          <button class="btn sm" onclick="window.showPage('settings')">⚙ Config</button>
         </div>
       </div>
       <div id="posList"></div>
@@ -1601,9 +1602,10 @@ window.showPage = page => {
     loadBinanceSymbols();
     setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
   }
-  if (page === 'positions' && _masterPass && window.G?._hasExchangeKeys?.()) {
-    // Only sync if we have both master pass AND configured keys
-    syncAllExchanges();
+  if (page === 'positions') {
+    if (_masterPass && window.G?._hasExchangeKeys?.()) {
+      syncAllExchanges();
+    }
   }
 
   // When entering positions, do immediate REST price fetch for any missing prices
@@ -2870,12 +2872,17 @@ async function pingExchange(exchange, keys) {
       return r.ok;
     }
     if(exchange==='bybit') {
-      const ts  = Date.now().toString();
-      const msg = ts + keys.key + '5000';
-      const sig = await hmacSHA256(keys.secret, msg);
-      const r   = await fetch('https://api.bybit.com/v5/account/wallet-balance?accountType=UNIFIED',
-        { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} });
-      const d   = await r.json();
+      const ts    = Date.now().toString();
+      const query = 'accountType=UNIFIED';
+      const msg   = ts + keys.key + '5000' + query;
+      const sig   = await hmacSHA256(keys.secret, msg);
+      const resp  = await (window.proxyFetch||fetch)(
+        `https://api.bybit.com/v5/account/wallet-balance?${query}`,
+        { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} }
+      );
+      const txt = await resp.text();
+      let d; try { d = JSON.parse(txt); } catch(e) { console.error('Bybit test parse error:', txt.slice(0,200)); return false; }
+      console.log('Bybit test response:', d);
       return d.retCode === 0;
     }
     if(exchange==='okx') {
@@ -3187,7 +3194,9 @@ async function importExchangeHistory(exchange, keys) {
 }
 
 window.syncAllExchanges = async () => {
-  if(!_masterPass) return; // Silent fail - don't show toast on auto-sync
+  if(!_masterPass) { toast('Ingresá tu contraseña maestra primero','error'); return; }
+  const syncBtn = document.getElementById('syncBtn');
+  if(syncBtn){ syncBtn.textContent='⟳ Sincronizando...'; syncBtn.disabled=true; }
   const exchanges = ['binance','bybit','okx'];
   const all = [];
   const statusLines = [];
@@ -3251,7 +3260,14 @@ window.syncAllExchanges = async () => {
   // Update positions page if visible
   const posPage = document.getElementById('posPage');
   if(posPage&&posPage.style.display!=='none') renderPositions();
-  if(all.length || closedNow.length) toast(`Sync: ${all.filter(p=>p.type==='futures').length} abiertas${closedNow.length?' · '+closedNow.length+' cerradas':''}`);
+  const openCount = all.filter(p=>p.type==='futures').length;
+  const msg = `✅ ${openCount} posición${openCount!==1?'es':''} sincronizada${openCount!==1?'s':''}${closedNow.length?' · '+closedNow.length+' cerradas':''}`;
+  if(all.length || closedNow.length) toast(msg);
+  // Update sync button
+  const syncBtnEl = document.getElementById('syncBtn');
+  if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled=false; }
+  // Always re-render positions after sync
+  renderPositions();
   return all;
 };
 
