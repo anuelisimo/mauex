@@ -401,9 +401,8 @@ textarea{resize:vertical;min-height:70px;}
             <div class="sec-label">Notas</div>
             <textarea id="cNotes" placeholder="Contexto del setup..."></textarea>
           </div>
-          <div class="g2" style="gap:8px;">
-            <button class="btn" onclick="saveTrade('watchlist')">+ Watchlist</button>
-            <button class="btn acc" onclick="saveTrade('active')">▶ Ejecutar</button>
+          <div style="margin-top:4px;">
+            <button class="btn acc" style="width:100%;" onclick="saveTrade('watchlist')">+ Agregar al Watchlist</button>
           </div>
         </div>
         <div>
@@ -424,7 +423,7 @@ textarea{resize:vertical;min-height:70px;}
         <button class="btn acc sm" onclick="window.showPage('calc')">+ Agregar setup</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden;">
-        <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Trader</th><th>Entry</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Riesgo</th><th>R:R</th><th>Fecha</th><th></th></tr></thead>
+        <table class="tbl" style="table-layout:auto;"><thead><tr><th>Ticker</th><th>Dir</th><th>Trader</th><th>Entry</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Riesgo</th><th>R:R</th><th>Fecha</th><th>Mapa</th><th></th></tr></thead>
         <tbody id="watchTbody"></tbody></table>
       </div>
     </div>
@@ -469,6 +468,9 @@ textarea{resize:vertical;min-height:70px;}
           <div style="font-size:12px;color:var(--t2);margin-top:2px;">Velas + EMA + RSI + OBV + datos de mercado · Binance</div>
         </div>
       </div>
+      <!-- Trade info panel (shown when opened from watchlist) -->
+      <div id="aiTradePanel" style="display:none;"></div>
+
       <!-- Controls -->
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:1;min-width:180px;position:relative;">
@@ -1337,6 +1339,17 @@ function updatePriceEl(sym) {
     const p = getPrice(sym, dir);
     if (p != null) el.textContent = '$' + fmtPx(p);
   });
+  // Update exchange position PnL in real time using WS price
+  (window.exchangePositions||[]).filter(p=>p.ticker===sym).forEach(pos=>{
+    const liveP = getPrice(sym, pos.dir);
+    if(!liveP||!pos.entry) return;
+    const livePnl = Math.round((pos.posSize/pos.entry)*(pos.entry-liveP)*(pos.dir==='short'?1:-1)*100)/100;
+    const el = document.querySelector(`[data-pnl="${sym}"][data-entry="${pos.entry}"]`);
+    if(el){
+      el.textContent = (livePnl>=0?'+':'-')+'$'+fmt(Math.abs(livePnl));
+      el.className = el.className.replace(/pnl-pos|pnl-neg/g,'').trim()+(livePnl>=0?' pnl-pos':' pnl-neg');
+    }
+  });
   // Update PnL display elements
   document.querySelectorAll(`[data-pnl="${sym}"]`).forEach(el => {
     const entry   = parseFloat(el.dataset.entry)||0;
@@ -1782,10 +1795,16 @@ window.compute = () => {
     ...(tp2?[{v:tp2,l:'TP2',c:'var(--accent)'}]:[]),
     ...(tp3?[{v:tp3,l:'TP3',c:'var(--accent)'}]:[]),
     ...(!sp&&liq?[{v:liq,l:'Liq',c:'var(--amber)'}]:[])];
+  // Build gradient TP zones: each zone gets progressively more opaque green
+  const tpZones = [
+    ...(tp1?[{from:entry,to:tp1,op:.25}]:[]),
+    ...(tp2?[{from:tp1||entry,to:tp2,op:.45}]:[]),
+    ...(tp3?[{from:tp2||tp1||entry,to:tp3,op:.65}]:[]),
+  ];
   document.getElementById('calcBar').innerHTML=`
     <div style="position:absolute;width:100%;height:6px;background:var(--bg4);border-radius:3px;top:0;"></div>
-    <div style="position:absolute;left:${pct(Math.min(entry,sl))}%;width:${Math.abs(pct(sl)-pct(entry))}%;height:6px;background:var(--red);opacity:.4;border-radius:3px;top:0;"></div>
-    ${tp1?`<div style="position:absolute;left:${pct(Math.min(entry,tp1))}%;width:${Math.abs(pct(tp1)-pct(entry))}%;height:6px;background:var(--accent);opacity:.35;border-radius:3px;top:0;"></div>`:''}
+    <div style="position:absolute;left:${pct(Math.min(entry,sl))}%;width:${Math.abs(pct(sl)-pct(entry))}%;height:6px;background:var(--red);opacity:.5;border-radius:3px;top:0;"></div>
+    ${tpZones.map(z=>`<div style="position:absolute;left:${pct(Math.min(entry,z.to))}%;width:${Math.abs(pct(z.to)-pct(z.from))}%;height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;top:0;"></div>`).join('')}
     ${pts.map(p=>`
       <div style="position:absolute;left:${pct(p.v)}%;transform:translateX(-50%);top:-20px;text-align:center;">
         <div style="font-size:8px;color:${p.c};font-family:var(--mono);font-weight:600;white-space:nowrap;">${p.l}</div>
@@ -1889,20 +1908,36 @@ function renderWatchlist() {
   }
   tbody.innerHTML = items.map(t=>{
     const rr = t.tp1&&t.entry&&t.sl ? Math.abs((t.entry-t.tp1)/(t.entry-t.sl)) : 0;
+    // Build compact price bar for watchlist
+    const wAll=[t.entry,t.sl,...(t.tp1?[t.tp1]:[]),...(t.tp2?[t.tp2]:[]),...(t.tp3?[t.tp3]:[])].filter(v=>v>0);
+    const wMin=Math.min(...wAll)*.99,wMax=Math.max(...wAll)*1.01,wRange=wMax-wMin||1;
+    const wPct=v=>Math.min(98,Math.max(2,((v-wMin)/wRange*100))).toFixed(1);
+    const miniBar = wAll.length>1?`<td style="min-width:120px;padding:8px 12px;">
+      <div style="position:relative;height:4px;background:var(--bg4);border-radius:2px;margin:14px 0 12px;">
+        <div style="position:absolute;left:${wPct(Math.min(t.entry,t.sl))}%;width:${Math.abs(wPct(t.sl)-wPct(t.entry))}%;height:4px;background:var(--red);opacity:.5;border-radius:2px;"></div>
+        ${t.tp1?`<div style="position:absolute;left:${wPct(Math.min(t.entry,t.tp1))}%;width:${Math.abs(wPct(t.tp1)-wPct(t.entry))}%;height:4px;background:var(--accent);opacity:.3;border-radius:2px;"></div>`:''}
+        ${t.tp2?`<div style="position:absolute;left:${wPct(Math.min(t.tp1||t.entry,t.tp2))}%;width:${Math.abs(wPct(t.tp2)-wPct(t.tp1||t.entry))}%;height:4px;background:var(--accent);opacity:.5;border-radius:2px;"></div>`:''}
+        ${t.tp3?`<div style="position:absolute;left:${wPct(Math.min(t.tp2||t.tp1||t.entry,t.tp3))}%;width:${Math.abs(wPct(t.tp3)-wPct(t.tp2||t.tp1||t.entry))}%;height:4px;background:var(--accent);opacity:.7;border-radius:2px;"></div>`:''}
+        ${[{v:t.entry,c:'var(--t1)'},{v:t.sl,c:'var(--red)'},...(t.tp1?[{v:t.tp1,c:'var(--accent)'}]:[]),...(t.tp2?[{v:t.tp2,c:'var(--accent)'}]:[]),...(t.tp3?[{v:t.tp3,c:'var(--accent)'}]:[])].map(p=>`
+          <div style="position:absolute;left:${wPct(p.v)}%;transform:translateX(-50%);top:-10px;width:1px;height:10px;background:${p.c};"></div>
+          <div style="position:absolute;left:${wPct(p.v)}%;transform:translateX(-50%);top:6px;font-size:7px;color:${p.c};font-family:var(--mono);white-space:nowrap;">$${fmtPx(p.v)}</div>`).join('')}
+      </div>
+    </td>`:'<td>—</td>';
     return `<tr>
       <td><strong>${t.ticker||'—'}</strong></td>
       <td><span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}</span></td>
       <td style="color:var(--t2);">${t.traderName||'—'}</td>
-      <td>$${fmt(t.entry)}</td>
-      <td style="color:var(--red);">$${fmt(t.sl)}</td>
-      <td style="color:var(--accent);">${t.tp1?'$'+fmt(t.tp1):'—'}</td>
-      <td style="color:var(--accent);">${t.tp2?'$'+fmt(t.tp2):'—'}</td>
-      <td style="color:var(--accent);">${t.tp3?'$'+fmt(t.tp3):'—'}</td>
+      <td style="font-family:var(--mono);">$${fmtPx(t.entry)}</td>
+      <td style="color:var(--red);font-family:var(--mono);">$${fmtPx(t.sl)}</td>
+      <td style="color:var(--accent);font-family:var(--mono);">${t.tp1?'$'+fmtPx(t.tp1):'—'}</td>
+      <td style="color:var(--accent);font-family:var(--mono);">${t.tp2?'$'+fmtPx(t.tp2):'—'}</td>
+      <td style="color:var(--accent);font-family:var(--mono);">${t.tp3?'$'+fmtPx(t.tp3):'—'}</td>
       <td>$${fmt(t.risk)}</td>
-      <td style="color:var(--t2);">${rr?rr.toFixed(2)+':1':'—'}</td>
+      <td style="color:${rr>=2?'var(--accent)':'var(--red)'};">${rr?rr.toFixed(2)+':1':'—'}</td>
       <td style="color:var(--t3);">${fmtD(t.createdAt)}</td>
+      ${miniBar}
       <td><div style="display:flex;gap:4px;white-space:nowrap;">
-        <button class="btn acc sm" onclick="moveToActive('${t.id}')">▶ Ejecutar</button>
+        <button class="btn acc sm" onclick="openTradeInAnalysis('${t.id}')">📊 Charts</button>
         <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
         <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
       </div></td>
@@ -2487,8 +2522,8 @@ async function renderTFCharts(tfKey, symbol, interval) {
         const emaSeries = csChart.addLineSeries({
           color, lineWidth:1,
           priceLineVisible:false,
-          lastValueVisible:true,
-          title: label,
+          lastValueVisible:false, // hide price label to avoid chart clutter
+          title:'',
         });
         emaSeries.setData(emaData);
         emaValues[label] = emaData[emaData.length-1]?.value;
@@ -2644,6 +2679,11 @@ window.loadCharts = async () => {
   const btn = document.getElementById('chartsBtn');
   btn.textContent='↺ Cargando...'; btn.disabled=true;
   document.getElementById('copyStatus').style.display='none';
+  // Clear trade overlay if user loads manually
+  if(!_analysisTradeData) {
+    const panel=document.getElementById('aiTradePanel');
+    if(panel) panel.style.display='none';
+  }
 
   try {
     // Load all timeframes + market data in parallel
@@ -2663,6 +2703,48 @@ window.loadCharts = async () => {
     renderMarketStrip(symbol, md, ema1D, aiMarketType);
   } catch(e){ console.error(e); toast('Error cargando charts: '+e.message,'error'); }
   btn.textContent='↺ Cargar'; btn.disabled=false;
+
+  // Draw trade levels if opened from watchlist
+  if(_analysisTradeData) {
+    renderTradeInfoPanel(_analysisTradeData);
+    // Draw price lines on all candlestick charts
+    ['1M','1W','1D','4H','1H'].forEach(tf=>{
+      const csChart = lwCharts['cs'+tf];
+      if(!csChart||!_analysisTradeData.entry) return;
+      try {
+        const trade = _analysisTradeData;
+        const levels = [
+          {price:trade.entry, color:'rgba(232,237,243,0.9)', title:'Entry', width:1},
+          ...(trade.sl?  [{price:trade.sl,  color:'rgba(240,61,61,0.9)',  title:'SL',  width:1}]:[]),
+          ...(trade.tp1? [{price:trade.tp1, color:'rgba(0,196,122,0.7)', title:'TP1', width:1}]:[]),
+          ...(trade.tp2? [{price:trade.tp2, color:'rgba(0,196,122,0.85)',title:'TP2', width:1}]:[]),
+          ...(trade.tp3? [{price:trade.tp3, color:'rgba(0,196,122,1.0)', title:'TP3', width:1}]:[]),
+        ];
+        // Get candlestick series to add price lines
+        // Use addLineSeries as horizontal reference lines
+        // We draw them by creating a series with 2 extreme time points
+        const series = lwCharts['cs'+tf+'_candles'] || null;
+        // Fallback: add as horizontal line series
+        levels.forEach(lvl=>{
+          try {
+            const ls = csChart.addLineSeries({
+              color: lvl.color, lineWidth: lvl.width,
+              lineStyle: 2, // dashed
+              priceLineVisible: false,
+              lastValueVisible: true,
+              title: lvl.title,
+              crosshairMarkerVisible: false,
+            });
+            // Get time range from existing data
+            const visible = csChart.timeScale().getVisibleRange();
+            if(visible) {
+              ls.setData([{time:visible.from,value:lvl.price},{time:visible.to,value:lvl.price}]);
+            }
+          } catch(e){}
+        });
+      } catch(e){ console.warn('Error drawing levels on '+tf, e); }
+    });
+  }
 };
 
 // ── Copy all charts + market data as single image to clipboard ─────────────
@@ -2789,7 +2871,7 @@ async function hmacSHA256(secret, message) {
 }
 
 // ── Master password state ─────────────────────────────────────────────────
-let _masterPass = '';
+let _masterPass = sessionStorage.getItem('mauex_mp') || '';
 
 window.saveMasterPass = () => {
   const p = document.getElementById('masterPass').value;
@@ -3214,40 +3296,9 @@ window.syncAllExchanges = async () => {
       statusLines.push(`❌ ${ex.toUpperCase()}: ${e.message}`);
     }
   }
-  // Detect closed positions (were open before, not in new sync)
-  const prevIds  = new Set(exchangePositions.map(p=>p.exchangeId));
-  const newIds   = new Set(all.map(p=>p.exchangeId));
-  const closedNow = exchangePositions.filter(p=>prevIds.has(p.exchangeId)&&!newIds.has(p.exchangeId));
-
-  // Auto-save closed positions to history
-  for(const closed of closedNow){
-    try {
-      // Fetch the actual close price from exchange history
-      await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'),{
-        userId:window._getCU()?.uid,
-        exchangeSource: closed.exchange,
-        exchangeId: closed.exchangeId+'-closed-'+Date.now(),
-        ticker: closed.ticker, dir: closed.dir,
-        exchange: closed.exchange, leverage: closed.leverage||1,
-        entry: closed.entry, posSize: closed.posSize,
-        risk: closed.margin||0,
-        traderId: closed.traderId||'', traderName: closed.traderName||'',
-        notes: closed.notes||'',
-        pnl: closed.pnl||0,
-        pnlPct: closed.pnlPct||0,
-        status:'closed',
-        closeDate: new Date().toISOString().split('T')[0],
-        closeNotes: 'Cerrado automáticamente (detectado por sync)',
-        createdAt: closed.openTime||new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-      toast(`📋 ${closed.ticker} cerrado → historial`, 'success');
-    } catch(e){ console.error('Auto-close error:',e); }
-  }
-  if(closedNow.length>0) {
-    await window._loadTrades();
-    renderHistory();
-  }
+  // Auto-close detection DISABLED — history comes from exchange import only
+  // (avoids fake entries when sync fluctuates)
+  const closedNow = [];
 
   exchangePositions = all;
   window.exchangePositions = all; // expose for renderPositions
@@ -3306,6 +3357,8 @@ window.importAllHistory = async () => {
 let syncTimer = null;
 function startAutoSync() {
   if(syncTimer) clearInterval(syncTimer);
+  // Sync positions every 30s (exchange rate limit friendly)
+  // PnL updates in real-time via WebSocket (setPrice → updatePriceEl)
   syncTimer = setInterval(async ()=>{
     const posPage = document.getElementById('posPage');
     if(posPage&&posPage.style.display!=='none'&&_masterPass&&window.G?._hasExchangeKeys?.()) {
@@ -3428,10 +3481,13 @@ window.fetchOHLCV = async (symbol, interval, limit=300) => {
 
 // ── Master password unlock flow ────────────────────────────────────────────
 window.checkMasterPassNeeded = async function() {
-  // Check if any exchange keys are stored
   const G = window.G;
-  if(!G?._hasExchangeKeys?.()) return; // no keys configured
-  if(_masterPass) return; // already unlocked
+  if(!G?._hasExchangeKeys?.()) return;
+  if(_masterPass) { // already unlocked (from sessionStorage or this session)
+    syncAllExchanges();
+    startAutoSync();
+    return;
+  }
 
   // Show which exchanges are configured
   const configured = ['binance','bybit','okx'].filter(ex=>G._hasExchangeKey?.(ex));
@@ -3452,6 +3508,7 @@ window.doUnlock = async () => {
   // Test decryption with a known exchange
   const G = window.G;
   _masterPass = pass;
+  sessionStorage.setItem('mauex_mp', pass);
   try {
     const configured = ['binance','bybit','okx'].filter(ex=>G?._hasExchangeKey?.(ex));
     if(configured.length){
@@ -3466,6 +3523,7 @@ window.doUnlock = async () => {
     startAutoSync();
   } catch(e){
     _masterPass='';
+    sessionStorage.removeItem('mauex_mp');
     document.getElementById('unlockError').textContent='Contraseña incorrecta. Intentá de nuevo.';
     document.getElementById('unlockError').style.display='block';
   }
@@ -3640,6 +3698,92 @@ window.testProxyUrl = async () => {
 function loadProxyUrlField() {
   const el = document.getElementById('proxyUrl');
   if(el) el.value = localStorage.getItem('mauex_proxy') || '';
+}
+
+// ── Open trade in AI Analysis with levels drawn ─────────────────────────────
+let _analysisTradeData = null; // trade to draw on charts
+
+window.openTradeInAnalysis = (id) => {
+  const G = window.G; if(!G) return;
+  const t = G.trades().find(x=>x.id===id);
+  if(!t){ toast('Trade no encontrado','error'); return; }
+
+  // Store trade data for chart rendering
+  _analysisTradeData = t;
+
+  // Set the symbol in AI Analysis
+  const sym = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+  const aiSym = document.getElementById('aiSymbol');
+  if(aiSym) aiSym.value = sym+'USDT';
+
+  // Switch to analysis page and load charts
+  window.showPage('analysis');
+};
+
+// Draw trade levels on a LW chart
+function drawTradeLevels(csChart, trade) {
+  if(!csChart||!trade) return;
+  if(!trade.entry) return;
+
+  const G = window.G;
+  // Get last candle time for extending lines
+  const levels = [
+    {price:trade.entry, color:'rgba(232,237,243,0.8)',  title:'Entry'},
+    ...(trade.sl?  [{price:trade.sl,   color:'rgba(240,61,61,0.8)',   title:'SL'}]:[]),
+    ...(trade.tp1? [{price:trade.tp1,  color:'rgba(0,196,122,0.6)',   title:'TP1'}]:[]),
+    ...(trade.tp2? [{price:trade.tp2,  color:'rgba(0,196,122,0.75)',  title:'TP2'}]:[]),
+    ...(trade.tp3? [{price:trade.tp3,  color:'rgba(0,196,122,0.9)',   title:'TP3'}]:[]),
+  ];
+
+  levels.forEach(lvl => {
+    try {
+      const line = csChart.addLineSeries({
+        color: lvl.color,
+        lineWidth: 1,
+        lineStyle: 2, // dashed
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: lvl.title,
+        crosshairMarkerVisible: false,
+      });
+      // We need at least 2 points for a line - use a priceLine instead
+      csChart.removeSeries(line); // remove the temp series
+      
+      // Use price line (horizontal line across whole chart)
+      const pl = {price: lvl.price, color: lvl.color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: lvl.title};
+      // Add to candlestick series - need reference to it
+    } catch(e){}
+  });
+}
+
+// Show trade info panel in AI Analysis
+function renderTradeInfoPanel(trade) {
+  const panel = document.getElementById('aiTradePanel');
+  if(!panel||!trade) { if(panel) panel.style.display='none'; return; }
+
+  const rr = trade.tp1&&trade.entry&&trade.sl ?
+    Math.abs((trade.tp1-trade.entry)/(trade.entry-trade.sl)).toFixed(2) : '—';
+
+  panel.style.display='block';
+  panel.innerHTML=`
+    <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:12px 16px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="font-family:var(--mono);font-size:14px;font-weight:600;">${trade.ticker}</span>
+        <span class="badge ${trade.dir==='long'?'bl':trade.dir==='short'?'bs':'bsp'}">${(trade.dir||'').toUpperCase()}${(trade.leverage||1)>1?' x'+(trade.leverage||1):''}</span>
+        ${trade.traderName?`<span style="font-size:11px;color:var(--t2);">· ${trade.traderName}</span>`:''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-family:var(--mono);font-size:11px;">
+        <div><div style="color:var(--t3);font-size:9px;">ENTRY</div><div>$${fmtPx(trade.entry)}</div></div>
+        <div><div style="color:var(--t3);font-size:9px;">STOP LOSS</div><div style="color:var(--red);">$${fmtPx(trade.sl)}</div></div>
+        <div><div style="color:var(--t3);font-size:9px;">RIESGO</div><div style="color:var(--amber);">$${fmt(trade.risk)}</div></div>
+        ${trade.tp1?`<div><div style="color:var(--t3);font-size:9px;">TP1</div><div style="color:var(--accent);">$${fmtPx(trade.tp1)}</div></div>`:''}
+        ${trade.tp2?`<div><div style="color:var(--t3);font-size:9px;">TP2</div><div style="color:var(--accent);">$${fmtPx(trade.tp2)}</div></div>`:''}
+        ${trade.tp3?`<div><div style="color:var(--t3);font-size:9px;">TP3</div><div style="color:var(--accent);">$${fmtPx(trade.tp3)}</div></div>`:''}
+        <div><div style="color:var(--t3);font-size:9px;">R:R</div><div style="color:${rr>=2?'var(--accent)':'var(--red)'};">${rr}:1</div></div>
+        <div><div style="color:var(--t3);font-size:9px;">POSICIÓN</div><div>$${fmt(trade.posSize)}</div></div>
+      </div>
+      ${trade.notes?`<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);font-size:10px;color:var(--t2);">${trade.notes}</div>`:''}
+    </div>`;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
