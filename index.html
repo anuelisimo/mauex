@@ -635,12 +635,16 @@ textarea{resize:vertical;min-height:70px;}
         <div class="sec-label">Estado de sincronización</div>
         <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn acc sm" onclick="syncAllExchanges()">↻ Sincronizar posiciones</button>
+          <button class="btn acc sm" onclick="if(!_masterPass){toast('Ingresá tu contraseña maestra primero','error');}else{syncAllExchanges();}">↻ Sincronizar posiciones</button>
           <button class="btn sm" onclick="importAllHistory()" id="importHistBtn">📥 Importar historial 2026</button>
           <button class="btn sm" onclick="window.showPage('positions')">Ver posiciones</button>
         </div>
         <div style="font-size:10px;color:var(--t3);margin-top:8px;font-family:var(--mono);">
           El historial se importa desde el 1 de enero 2026. Los trades ya importados no se duplican.
+        </div>
+        <div style="background:var(--amber-dim);border:0.5px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-top:10px;font-size:11px;color:var(--amber);line-height:1.6;">
+          ⚠️ <strong>Nota:</strong> Las APIs privadas de exchanges (posiciones, historial) requieren un proxy para funcionar desde el browser debido a restricciones CORS. Los precios en vivo via WebSocket funcionan sin proxy.
+          <br>Para habilitar sync completo, configurá el <a href="https://github.com/anuelisimo/mauex" target="_blank" style="color:var(--accent);">Cloudflare Worker proxy</a>.
         </div>
       </div>
 
@@ -688,6 +692,23 @@ textarea{resize:vertical;min-height:70px;}
             <button class="btn dan sm" onclick="deleteAllData()">🗑 Borrar todos los trades</button>
           </div>
         </div>
+      </div>
+
+      <!-- Proxy settings -->
+      <div class="card" style="margin-top:16px;margin-bottom:16px;">
+        <div class="sec-label">Proxy URL (para sync con exchanges)</div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:10px;line-height:1.6;">
+          Los exchanges bloquean llamadas directas desde el browser. Necesitás deployar el <strong>worker.js</strong> en Cloudflare (gratis) e ingresarlo acá.
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div style="flex:1;">
+            <label class="lbl">Cloudflare Worker URL</label>
+            <input type="text" id="proxyUrl" placeholder="https://mauex-proxy.tuusuario.workers.dev">
+          </div>
+          <button class="btn acc sm" onclick="saveProxyUrl()">Guardar</button>
+          <button class="btn sm" onclick="testProxyUrl()">Probar</button>
+        </div>
+        <div id="proxyStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
       </div>
 
       <!-- Instructions -->
@@ -1487,6 +1508,21 @@ G.prices   = prices;
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
 <script>
+// ── Proxy config ──────────────────────────────────────────────────────────
+// Set this to your Cloudflare Worker URL after deploying worker.js
+// Example: 'https://mauex-proxy.tuusuario.workers.dev'
+const PROXY_URL = localStorage.getItem('mauex_proxy') || '';
+
+// Wrap fetch to go through proxy for exchange private APIs
+window.proxyFetch = function proxyFetch(url, options={}) {
+  if (!PROXY_URL) {
+    // No proxy configured - try direct (will fail for private APIs due to CORS)
+    return fetch(url, options);
+  }
+  const proxyUrl = `${PROXY_URL}/proxy?url=${encodeURIComponent(url)}`;
+  return fetch(proxyUrl, options);
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt  = (n,d=0) => isNaN(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 // Smart price format: adapts decimals based on magnitude
@@ -1542,6 +1578,7 @@ window.showPage = page => {
     traders:   renderTraders,
   };
   if (renders[page]) renders[page]();
+  if (page === 'settings') { loadProxyUrlField(); }
 
   // Load charts when entering analysis page
   if (page === 'analysis') {
@@ -2838,12 +2875,13 @@ async function fetchExchangePositions(exchange, keys) {
   const positions = [];
   try {
     if(exchange==='binance') {
+      // Note: Binance private APIs require server-side proxy due to CORS
       // Futures positions
       const ts   = Date.now();
       const qF   = `timestamp=${ts}`;
       const sigF = await hmacSHA256(keys.secret, qF);
       const rF   = await fetch(`https://fapi.binance.com/fapi/v2/positionRisk?timestamp=${ts}&signature=${sigF}`,
-        { headers:{'X-MBX-APIKEY': keys.key} });
+        { headers:{'X-MBX-APIKEY': keys.key} }).catch(e=>{ throw new Error('CORS: requiere proxy'); });
       const dF   = await rF.json();
       if(Array.isArray(dF)) {
         dF.filter(p=>parseFloat(p.positionAmt)!==0).forEach(p=>{
@@ -2973,7 +3011,13 @@ async function fetchExchangePositions(exchange, keys) {
         });
       }
     }
-  } catch(e){ console.error(`fetchExchangePositions ${exchange}:`, e); }
+  } catch(e){
+    if(e.message?.includes('CORS') || e.message?.includes('fetch')) {
+      console.warn(`${exchange} API blocked by CORS - this exchange requires a proxy for private endpoints`);
+    } else {
+      console.error(`fetchExchangePositions ${exchange}:`, e);
+    }
+  }
   return positions;
 }
 
@@ -3140,7 +3184,7 @@ async function importExchangeHistory(exchange, keys) {
 }
 
 window.syncAllExchanges = async () => {
-  if(!_masterPass){ toast('Configurá tu contraseña maestra en Settings.','error'); return; }
+  if(!_masterPass) return; // Silent fail - don't show toast on auto-sync
   const exchanges = ['binance','bybit','okx'];
   const all = [];
   const statusLines = [];
@@ -3520,6 +3564,45 @@ window.deleteAllData = async () => {
     toast('Todos los trades eliminados.');
   } catch(e){ toast('Error: '+e.message,'error'); }
 };
+
+// ── Proxy URL management ────────────────────────────────────────────────────
+window.saveProxyUrl = () => {
+  const url = document.getElementById('proxyUrl')?.value?.trim();
+  if(url) {
+    localStorage.setItem('mauex_proxy', url);
+    // Update PROXY_URL - need to reload to take effect
+    const st = document.getElementById('proxyStatus');
+    if(st){ st.textContent='✅ Guardado. Recargá la página para aplicar.'; st.style.display='block'; st.style.color='var(--accent)'; }
+  } else {
+    localStorage.removeItem('mauex_proxy');
+    const st = document.getElementById('proxyStatus');
+    if(st){ st.textContent='Proxy eliminado.'; st.style.display='block'; st.style.color='var(--t2)'; }
+  }
+};
+
+window.testProxyUrl = async () => {
+  const url = document.getElementById('proxyUrl')?.value?.trim() || PROXY_URL;
+  const st = document.getElementById('proxyStatus');
+  if(!url){ if(st){ st.textContent='Ingresá una URL primero.'; st.style.display='block'; } return; }
+  if(st){ st.textContent='⟳ Probando...'; st.style.display='block'; st.style.color='var(--t2)'; }
+  try {
+    const r = await fetch(`${url}/health`);
+    const d = await r.json();
+    if(d.status==='ok'){
+      if(st){ st.textContent='✅ Proxy funcionando correctamente.'; st.style.color='var(--accent)'; }
+    } else {
+      if(st){ st.textContent='⚠️ Proxy respondió pero con estado inesperado.'; st.style.color='var(--amber)'; }
+    }
+  } catch(e) {
+    if(st){ st.textContent=`❌ Error: ${e.message}`; st.style.color='var(--red)'; }
+  }
+};
+
+// Load proxy URL into settings field
+function loadProxyUrlField() {
+  const el = document.getElementById('proxyUrl');
+  if(el) el.value = localStorage.getItem('mauex_proxy') || '';
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 buildLevGrid();
