@@ -2842,7 +2842,7 @@ async function pingExchange(exchange, keys) {
     if(exchange==='binance') {
       const ts  = Date.now();
       const sig = await hmacSHA256(keys.secret, `timestamp=${ts}`);
-      const r   = await fetch(`https://api.binance.com/api/v3/account?timestamp=${ts}&signature=${sig}`,
+      const r   = await (window.proxyFetch||fetch)(`https://api.binance.com/api/v3/account?timestamp=${ts}&signature=${sig}`,
         { headers:{'X-MBX-APIKEY': keys.key} });
       return r.ok;
     }
@@ -2862,7 +2862,7 @@ async function pingExchange(exchange, keys) {
         await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', new TextEncoder().encode(keys.secret),
           {name:'HMAC',hash:'SHA-256'}, false, ['sign']), new TextEncoder().encode(msg))
       )));
-      const r = await fetch('https://www.okx.com/api/v5/account/balance',
+      const r = await (window.proxyFetch||fetch)('https://www.okx.com/api/v5/account/balance',
         { headers:{'OK-ACCESS-KEY':keys.key,'OK-ACCESS-SIGN':sig,'OK-ACCESS-TIMESTAMP':ts,'OK-ACCESS-PASSPHRASE':keys.passphrase,'x-simulated-trading':'0'} });
       const d = await r.json();
       return d.code === '0';
@@ -2880,7 +2880,7 @@ async function fetchExchangePositions(exchange, keys) {
       const ts   = Date.now();
       const qF   = `timestamp=${ts}`;
       const sigF = await hmacSHA256(keys.secret, qF);
-      const rF   = await fetch(`https://fapi.binance.com/fapi/v2/positionRisk?timestamp=${ts}&signature=${sigF}`,
+      const rF   = await (window.proxyFetch||fetch)(`https://fapi.binance.com/fapi/v2/positionRisk?timestamp=${ts}&signature=${sigF}`,
         { headers:{'X-MBX-APIKEY': keys.key} }).catch(e=>{ throw new Error('CORS: requiere proxy'); });
       const dF   = await rF.json();
       if(Array.isArray(dF)) {
@@ -2911,7 +2911,7 @@ async function fetchExchangePositions(exchange, keys) {
       const ts2  = Date.now();
       const qs   = `timestamp=${ts2}`;
       const sigs = await hmacSHA256(keys.secret, qs);
-      const rS   = await fetch(`https://api.binance.com/api/v3/account?timestamp=${ts2}&signature=${sigs}`,
+      const rS   = await (window.proxyFetch||fetch)(`https://api.binance.com/api/v3/account?timestamp=${ts2}&signature=${sigs}`,
         { headers:{'X-MBX-APIKEY': keys.key} });
       const dS   = await rS.json();
       if(dS.balances) {
@@ -2937,7 +2937,7 @@ async function fetchExchangePositions(exchange, keys) {
       const qF  = 'category=linear&settleCoin=USDT';
       const msg = ts + keys.key + '5000' + qF;
       const sig = await hmacSHA256(keys.secret, msg);
-      const r   = await fetch(`https://api.bybit.com/v5/position/list?${qF}`,
+      const r   = await (window.proxyFetch||fetch)(`https://api.bybit.com/v5/position/list?${qF}`,
         { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} });
       const d   = await r.json();
       if(d.retCode===0&&d.result?.list) {
@@ -2984,7 +2984,7 @@ async function fetchExchangePositions(exchange, keys) {
 
       // Futures positions
       const pPath = '/api/v5/account/positions?instType=SWAP';
-      const rF = await fetch('https://www.okx.com'+pPath, {headers: await hdr(pPath)});
+      const rF = await (window.proxyFetch||fetch)('https://www.okx.com'+pPath, {headers: await hdr(pPath)});
       const dF = await rF.json();
       if(dF.code==='0'&&dF.data) {
         dF.data.filter(p=>parseFloat(p.pos)!==0).forEach(p=>{
@@ -3036,7 +3036,7 @@ async function fetchExchangeHistory(exchange, keys) {
       const ts  = Date.now();
       const q   = `startTime=${HISTORY_START}&limit=1000&timestamp=${ts}`;
       const sig = await hmacSHA256(keys.secret, q);
-      const r   = await fetch(`https://fapi.binance.com/fapi/v1/userTrades?${q}&signature=${sig}`,
+      const r   = await (window.proxyFetch||fetch)(`https://fapi.binance.com/fapi/v1/userTrades?${q}&signature=${sig}`,
         { headers:{'X-MBX-APIKEY':keys.key} });
       const d   = await r.json();
       if(Array.isArray(d)) {
@@ -3079,7 +3079,7 @@ async function fetchExchangeHistory(exchange, keys) {
       const q   = `category=linear&startTime=${HISTORY_START}&limit=100`;
       const msg = ts+keys.key+'5000'+q;
       const sig = await hmacSHA256(keys.secret, msg);
-      const r   = await fetch(`https://api.bybit.com/v5/execution/list?${q}`,
+      const r   = await (window.proxyFetch||fetch)(`https://api.bybit.com/v5/execution/list?${q}`,
         { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} });
       const d   = await r.json();
       if(d.retCode===0&&d.result?.list) {
@@ -3129,7 +3129,7 @@ async function fetchExchangeHistory(exchange, keys) {
       });
       const begin = HISTORY_START.toString();
       const path  = `/api/v5/trade/fills-history?instType=SWAP&begin=${begin}&limit=100`;
-      const r     = await fetch('https://www.okx.com'+path, {headers: await hdr(path)});
+      const r     = await (window.proxyFetch||fetch)('https://www.okx.com'+path, {headers: await hdr(path)});
       const d     = await r.json();
       if(d.code==='0'&&d.data) {
         const byOrder = {};
