@@ -1911,83 +1911,96 @@ function renderWatchlist() {
 // ── Positions ──────────────────────────────────────────────────────────────
 function renderPositions() {
   const G = window.G; if(!G) return;
-  const active = G.trades().filter(t=>t.status==='active');
   const container = document.getElementById('posList');
   if (!container) return;
 
-  // If exchange positions available, show those; otherwise show manual
-  const exPos = window.exchangePositions || [];
-  if(!active.length && !exPos.length){
-    container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div>
+  const exPos    = (window.exchangePositions || []);
+  const manualActive = G.trades().filter(t=>t.status==='active');
+
+  // Empty state
+  if (!exPos.length && !manualActive.length) {
+    container.innerHTML = `<div class="empty">
+      <div class="empty-icon">◻</div>
       <div class="empty-text">No hay posiciones abiertas</div>
-      <div class="empty-sub">Configurá tus exchanges en ⚙ Settings para sincronizar automáticamente</div>
+      <div class="empty-sub">${_masterPass ? 'No se detectaron posiciones en los exchanges' : 'Conectá tus exchanges en ⚙ Settings'}</div>
+      ${!_masterPass ? `<button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>` : ''}
     </div>`;
     return;
   }
 
-  // Total live PnL banner
-  let totalLivePnl = 0;
-  active.forEach(t=>{
-    const price=G.getPrice(t.ticker,t.dir);
-    if(price==null) return;
-    const sign=(t.dir==='short'||t.dir==='spot')?1:-1;
-    totalLivePnl+=Math.round((t.posSize/t.entry)*(t.entry-price)*sign*100)/100;
+  // PnL total from exchange positions
+  let totalPnl = 0;
+  exPos.forEach(p => { totalPnl += p.pnl || 0; });
+  manualActive.forEach(t => {
+    const price = G.getPrice(t.ticker, t.dir);
+    if (!price) return;
+    const sign = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
+    totalPnl += Math.round((t.posSize/t.entry)*(t.entry-price)*sign*100)/100;
   });
-  const hasPrices=active.some(t=>G.getPrice(t.ticker,t.dir)!=null);
 
-  // Render exchange positions first, then manual
-  const exPos2 = (window.exchangePositions||[]).filter(p=>p.type==='futures'||p.type==='spot');
-  const exHtml = exPos2.length ? exPos2.map(p=>{
-    const sym = p.ticker;
-    const price = G.getPrice(p.ticker, p.dir) || p.mark || 0;
-    const livePnl = price&&p.entry ? Math.round((p.posSize/p.entry)*(p.entry-price)*(p.dir==='short'?1:-1)*100)/100 : p.pnl||0;
-    const exColor = p.exchange==='BINANCE'?'#f0b90b':p.exchange==='BYBIT'?'#f7a600':'#00a0ea';
+  const totalHtml = (exPos.length||manualActive.length) ? `
+    <div class="live-pnl-total">
+      <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
+      <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
+      <div style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">
+        Sync: ${lastSyncTime?lastSyncTime.toLocaleTimeString('es'):'—'}
+        <button class="btn sm" style="margin-left:8px;" onclick="window.syncAllExchanges()">↻</button>
+      </div>
+    </div>` : '';
+
+  // Exchange positions cards
+  const exHtml = exPos.map(p => {
+    const sym      = p.ticker;
+    const livePrice = G.getPrice(p.ticker, p.dir) || p.mark || 0;
+    const livePnl  = livePrice && p.entry
+      ? Math.round((p.posSize/p.entry)*(p.entry-livePrice)*(p.dir==='short'?1:-1)*100)/100
+      : p.pnl || 0;
+    const exColor  = p.exchange==='BINANCE'?'#f0b90b':p.exchange==='BYBIT'?'#f7a600':'#00a0ea';
+    const traderBadge = p.traderName
+      ? `<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${p.traderName}</span>`
+      : `<button onclick="quickAssignTrader('${p.exchangeId}')" style="background:var(--amber-dim);border:0.5px solid var(--amber);padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--amber);cursor:pointer;">+ Trader</button>`;
+
     return `<div class="pos-card" style="border-left:3px solid ${exColor};">
       <div class="pos-card-header">
         <div class="pos-card-left">
           <span class="pos-card-ticker">${p.ticker}</span>
           <span class="badge ${p.dir==='long'?'bl':p.dir==='short'?'bs':'bsp'}">${(p.dir||'').toUpperCase()}${p.leverage>1?' x'+p.leverage:''}</span>
           <span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:${exColor}22;color:${exColor};">${p.exchange}</span>
-          <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${p.type==='futures'?'PERP':'SPOT'}</span>
+          ${traderBadge}
         </div>
-        <div class="pos-card-pnl ${livePnl>=0?'pnl-pos':'pnl-neg'}" data-pnl="${sym}" data-entry="${p.entry}" data-pos="${p.posSize}" data-dir="${p.dir}">
-          ${livePnl>=0?'+':'-'}$${fmt(Math.abs(livePnl))}
-          ${p.pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);margin-left:4px;">(${fmtP(p.pnlPct)})</span>`:''}
+        <div class="fx" style="gap:6px;align-items:baseline;">
+          <div class="pos-card-pnl ${livePnl>=0?'pnl-pos':'pnl-neg'}"
+            data-pnl="${sym}" data-entry="${p.entry}" data-pos="${p.posSize}" data-dir="${p.dir}">
+            ${livePnl>=0?'+':'-'}$${fmt(Math.abs(livePnl))}
+          </div>
+          ${p.pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(p.pnlPct)})</span>`:''}
         </div>
       </div>
       <div class="pos-card-body">
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Entry</div><div class="pos-mini-val">$${fmtPx(p.entry)}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio</div><div class="pos-mini-val" data-px="${sym}" data-dir="${p.dir}">${price?'$'+fmtPx(price):'—'}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Posición</div><div class="pos-mini-val">$${fmt(p.posSize)}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Mark</div><div class="pos-mini-val" data-px="${sym}" data-dir="${p.dir}">${livePrice?'$'+fmtPx(livePrice):'—'}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Tamaño</div><div class="pos-mini-val">$${fmt(p.posSize)}</div></div>
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Margen</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(p.margin)}</div></div>
-        ${p.sl?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Liq/SL</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(p.sl)}</div></div>`:''}
+        ${p.sl?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Liq</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(p.sl)}</div></div>`:''}
       </div>
       <div class="pos-card-footer">
-        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">Sync: ${lastSyncTime?lastSyncTime.toLocaleTimeString('es'):'—'}</span>
-        <div style="margin-left:auto;">
-          <button class="btn sm" onclick="window.syncAllExchanges()">↻ Sync</button>
+        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">PERP · ${p.exchange}</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn sm" onclick="openEditTrade('${p.exchangeId}')">✎ Trader/Notas</button>
         </div>
       </div>
     </div>`;
-  }).join('') : '';
+  }).join('');
 
-  container.innerHTML = (hasPrices?`<div class="live-pnl-total">
-    <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
-    <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalLivePnl>=0?'pnl-pos':'pnl-neg'}">${totalLivePnl>=0?'+':'-'}$${fmt(Math.abs(totalLivePnl))}</div>
-  </div>`:'') + active.map(t => {
+  // Manual positions cards
+  const manualHtml = manualActive.map(t => {
     const sym   = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
-    // Exchange positions already have real PnL from the exchange
-    const price = t._fromExchange ? (t.mark||G.getPrice(t.ticker,t.dir)) : G.getPrice(t.ticker, t.dir);
+    const price = G.getPrice(t.ticker, t.dir);
     const sign  = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
     const contr = (t.posSize||0) / (t.entry||1);
-    // Use real PnL from exchange if available, otherwise calculate
-    const pnl   = t._fromExchange && t.pnl!=null
-      ? Math.round(t.pnl*100)/100
-      : price!=null ? Math.round(contr*(t.entry-price)*sign*100)/100 : null;
-    const margin = t._fromExchange ? (t.margin||t.posSize/(t.leverage||1)) : (t.dir==='spot'?(t.posSize||0):(t.posSize||0)/(t.leverage||1));
-    const pnlPct = t._fromExchange && t.pnlPct!=null
-      ? t.pnlPct
-      : pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
+    const pnl   = price!=null ? Math.round(contr*(t.entry-price)*sign*100)/100 : null;
+    const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
+    const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
     const slPct = price&&t.sl ? (t.sl-price)/price*100 : null;
 
@@ -1996,13 +2009,8 @@ function renderPositions() {
         <div class="pos-card-left">
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span>
-          ${t._fromExchange?`<span style="background:var(--bg4);border:0.5px solid var(--border2);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);">${t.exchange?.toUpperCase()||'CEX'}</span>`:''}
-          ${t.traderName
-            ? `<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`
-            : t._fromExchange
-              ? `<button onclick="quickAssignTrader('${t.exchangeId||t.id}')" style="background:var(--amber-dim);border:0.5px solid var(--amber);padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--amber);cursor:pointer;">+ Asignar trader</button>`
-              : ''
-          }
+          <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">MANUAL</span>
+          ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
         </div>
         <div class="fx" style="gap:6px;align-items:baseline;">
           <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
@@ -2015,7 +2023,7 @@ function renderPositions() {
       <div class="pos-card-body">
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Entry</div><div class="pos-mini-val">$${fmtPx(t.entry)}</div></div>
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio</div><div class="pos-mini-val" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Stop Loss</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>${slPct!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(slPct)}</div>`:''}</div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Stop Loss</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>${slPct!=null?`<div style="font-size:8px;color:var(--t3);">${fmtP(slPct)}</div>`:''}</div>
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Posición</div><div class="pos-mini-val">$${fmt(t.posSize)}</div></div>
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Riesgo</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(t.risk)}</div></div>
       </div>
@@ -2024,10 +2032,9 @@ function renderPositions() {
           const dist=price?(tp.v-price)/price*100:null;
           const tpPnl=price?Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*100)/100:null;
           return `<button class="pos-tp-btn" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})">
-            <div class="pos-tp-label">${tp.l} — tap para cerrar parcial</div>
+            <div class="pos-tp-label">${tp.l}</div>
             <div class="pos-tp-price">$${fmtPx(tp.v)}</div>
-            <div class="pos-tp-dist">${dist!=null?fmtP(dist):''} ${tpPnl!=null?'· '+(tpPnl>=0?'+':'')+fmt(tpPnl):''}
-            </div>
+            <div class="pos-tp-dist">${dist!=null?fmtP(dist):''} ${tpPnl!=null?'· '+(tpPnl>=0?'+':'')+fmt(tpPnl):''}</div>
           </button>`;
         }).join('')}
       </div>`:''}
@@ -2041,17 +2048,11 @@ function renderPositions() {
         </div>
       </div>
     </div>`;
-  }).join('') + exHtml;
+  }).join('');
+
+  container.innerHTML = totalHtml + exHtml + manualHtml;
 }
 
-// Close trade at a specific TP price
-window.closeAtTP = (id, tpKey, tpPrice) => {
-  window._closeId = id;
-  document.getElementById('closePrice').value = tpPrice;
-  document.getElementById('closeDate').value  = new Date().toISOString().split('T')[0];
-  document.getElementById('closeNotes').value = `Cerrado en ${tpKey.toUpperCase()} @ $${tpPrice}`;
-  openModal('closeTradeModal');
-};
 
 // ── History ────────────────────────────────────────────────────────────────
 function renderHistory() {
@@ -2929,29 +2930,7 @@ async function fetchExchangePositions(exchange, keys) {
           });
         });
       }
-      // Spot balances (show as open positions)
-      const ts2  = Date.now();
-      const qs   = `timestamp=${ts2}`;
-      const sigs = await hmacSHA256(keys.secret, qs);
-      const rS   = await (window.proxyFetch||fetch)(`https://api.binance.com/api/v3/account?timestamp=${ts2}&signature=${sigs}`,
-        { headers:{'X-MBX-APIKEY': keys.key} });
-      const dS   = await rS.json();
-      if(dS.balances) {
-        dS.balances.filter(b=>parseFloat(b.free)+parseFloat(b.locked)>0.0001&&b.asset!=='USDT'&&b.asset!=='BUSD').forEach(b=>{
-          const total = parseFloat(b.free)+parseFloat(b.locked);
-          positions.push({
-            exchange:'BINANCE', type:'spot',
-            ticker: b.asset,
-            symbol: b.asset+'USDT',
-            dir: 'spot',
-            entry: 0, mark: 0, pnl: 0,
-            qty: total,
-            posSize: 0,
-            exchangeId: `binance-spot-${b.asset}`,
-            raw: b,
-          });
-        });
-      }
+      // Note: Spot balances excluded - they are not trading positions
     }
 
     if(exchange==='bybit') {
@@ -2961,7 +2940,9 @@ async function fetchExchangePositions(exchange, keys) {
       const sig = await hmacSHA256(keys.secret, msg);
       const r   = await (window.proxyFetch||fetch)(`https://api.bybit.com/v5/position/list?${qF}`,
         { headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'} });
-      const d   = await r.json();
+      const rText = await r.text();
+      let d;
+      try { d = JSON.parse(rText); } catch(e) { throw new Error(`Bybit response not JSON (${r.status}): ${rText.slice(0,100)}`); }
       if(d.retCode===0&&d.result?.list) {
         d.result.list.filter(p=>parseFloat(p.size)>0).forEach(p=>{
           const entry   = parseFloat(p.avgPrice);
