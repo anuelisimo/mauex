@@ -3006,12 +3006,15 @@ window.saveMasterPass = () => {
 // ── Save/load exchange keys (Firestore encrypted) ─────────────────────────
 window.saveExchangeKeys = async exchange => {
   if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
-  const keys = {
+  const keyMap = {
     binance: { key: document.getElementById('bnbKey')?.value.trim(),    secret: document.getElementById('bnbSecret')?.value.trim() },
     bybit:   { key: document.getElementById('bybitKey')?.value.trim(),   secret: document.getElementById('bybitSecret')?.value.trim() },
     okx:     { key: document.getElementById('okxKey')?.value.trim(),     secret: document.getElementById('okxSecret')?.value.trim(), passphrase: document.getElementById('okxPass')?.value.trim() },
-  }[exchange];
+    mexc:    { key: document.getElementById('mexcKey')?.value.trim(),    secret: document.getElementById('mexcSecret')?.value.trim() },
+  };
+  const keys = keyMap[exchange];
 
+  if(!keys){ toast(`Exchange ${exchange} no reconocido.`,'error'); return; }
   if(!keys.key || !keys.secret){ toast('Completá Key y Secret.','error'); return; }
 
   try {
@@ -3030,7 +3033,8 @@ window.clearExchangeKeys = async exchange => {
 };
 
 function updateExchangeStatus(exchange, status) {
-  const el = document.getElementById(exchange==='binance'?'bnbStatus':exchange==='bybit'?'bybitStatus':'okxStatus');
+  const idMap = {binance:'bnbStatus',bybit:'bybitStatus',okx:'okxStatus',mexc:'mexcStatus'};
+  const el = document.getElementById(idMap[exchange]);
   if(!el) return;
   if(status==='saved')    { el.textContent='✅ Configurado'; el.style.color='var(--accent)'; }
   else if(status==='ok')  { el.textContent='✅ Conectado';   el.style.color='var(--accent)'; }
@@ -3103,7 +3107,7 @@ async function pingExchange(exchange, keys) {
           {name:'HMAC',hash:'SHA-256'}, false, ['sign']), new TextEncoder().encode(msg))
       )));
       const r = await (window.proxyFetch||fetch)('https://www.okx.com/api/v5/account/balance',
-        { headers:{'OK-ACCESS-KEY':keys.key,'OK-ACCESS-SIGN':sig,'OK-ACCESS-TIMESTAMP':ts,'OK-ACCESS-PASSPHRASE':keys.passphrase,'x-simulated-trading':'0'} });
+        { headers:{'OK-ACCESS-KEY':keys.key,'OK-ACCESS-SIGN':sig,'OK-ACCESS-TIMESTAMP':ts,'OK-ACCESS-PASSPHRASE':keys.passphrase,} });
       const d = await r.json();
       return d.code === '0';
     }
