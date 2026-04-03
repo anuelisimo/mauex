@@ -875,29 +875,6 @@ textarea{resize:vertical;min-height:70px;}
      FIREBASE MODULE
      ═══════════════════════════════════════════════════════════════════════ -->
 <script type="module">
-/* --- FIX DE NAVEGACIÓN GLOBAL --- */
-window.showPage = (pageId) => {
-  // 1. Ocultar todas las páginas
-  document.querySelectorAll('.page-content').forEach(p => p.style.display = 'none');
-  
-  // 2. Mostrar la página seleccionada
-  const target = document.getElementById(pageId);
-  if(target) target.style.display = 'block';
-
-  // 3. Actualizar botones del menú (Escritorio y Móvil)
-  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => {
-    btn.classList.remove('active');
-    // Verifica si el clic del botón coincide con la página actual
-    if(btn.getAttribute('onclick')?.includes(pageId)) btn.classList.add('active');
-  });
-
-  // 4. Forzar renderizado de datos si las funciones existen
-  if(pageId === 'dashboard' && window.renderDashboard) window.renderDashboard();
-  if(pageId === 'history' && window.renderHistory) window.renderHistory();
-  
-  console.log("Navegando a:", pageId);
-};
-/* --- FIN DEL FIX --- */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword,
          signInWithEmailAndPassword, signOut, onAuthStateChanged }
