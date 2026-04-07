@@ -4389,6 +4389,9 @@ window.groupSelectedOrders = () => {
   exchangeOrders.unshift(grouped);
   window.exchangeOrders = exchangeOrders;
 
+  // Persist grouped orders in localStorage
+  saveGroupedOrders();
+
   // Clear selection
   _selectedOrders.clear();
   const btn = document.getElementById('groupOrdersBtn');
@@ -4396,6 +4399,32 @@ window.groupSelectedOrders = () => {
 
   renderOrders();
   toast(`✅ ${selected.length} órdenes agrupadas como un trade`);
+};
+
+// Persist and restore grouped orders
+function saveGroupedOrders() {
+  const grouped = exchangeOrders.filter(o => o.type === 'GROUPED');
+  localStorage.setItem('mauex_grouped_orders', JSON.stringify(grouped));
+}
+
+function loadGroupedOrders() {
+  try {
+    const saved = localStorage.getItem('mauex_grouped_orders');
+    return saved ? JSON.parse(saved) : [];
+  } catch(e) { return []; }
+}
+
+window.ungroupOrder = (exchangeId) => {
+  const grouped = exchangeOrders.find(o => o.exchangeId === exchangeId);
+  if(!grouped || !grouped.groupedFrom) return;
+  // Remove grouped order
+  exchangeOrders = exchangeOrders.filter(o => o.exchangeId !== exchangeId);
+  window.exchangeOrders = exchangeOrders;
+  // Remove from localStorage
+  saveGroupedOrders();
+  // Re-sync to get original orders back
+  window.syncAllOrders();
+  toast('Orden desagrupada');
 };
 
 function renderOrders() {
@@ -4425,7 +4454,8 @@ function renderOrders() {
 
   container.innerHTML = exchangeOrders.map(o=>{
     const G = window.G;
-    const currentPrice = G?.getPrice(o.ticker, o.dir) || G?.getPrice(o.ticker+'USDT', o.dir) || 0;
+    const sym = o.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || o.ticker;
+    const currentPrice = G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
     const dist = currentPrice&&o.price ? ((o.price-currentPrice)/currentPrice*100) : null;
     const distAbs = dist!=null ? Math.abs(dist) : null;
     const distColor = distAbs==null?'var(--t3)':distAbs<1?'var(--accent)':distAbs<3?'var(--amber)':'var(--t2)';
@@ -4460,7 +4490,8 @@ function renderOrders() {
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
           <span style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span>
           <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">${o.type||'LIMIT'}</span>
-          <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">PENDIENTE</span>
+          <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">${o.type==='GROUPED'?'AGRUPADA':'PENDIENTE'}</span>
+          ${o.type==='GROUPED'?`<button onclick="window.ungroupOrder('${o.exchangeId}')" style="background:var(--bg3);border:0.5px solid var(--border2);padding:1px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);cursor:pointer;">✕ Desagrupar</button>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
         </div>
         <div style="text-align:right;">
@@ -4501,6 +4532,11 @@ function renderOrders() {
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${d}</div>
           </div>`;
         }).join('')}
+      </div>`:''}
+
+      <!-- No SL warning -->
+      ${!sl?`<div style="background:var(--red-dim);border:0.5px solid var(--red);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--red);margin-bottom:10px;">
+        ⚠️ Sin Stop Loss — posición de riesgo ilimitado si se ejecuta
       </div>`:''}
 
       <!-- Price map -->
@@ -4571,7 +4607,12 @@ window.syncAllOrders = async () => {
     if(PROXY_URL) {
       const r = await fetch(`${PROXY_URL}/orders`);
       const d = await r.json();
-      exchangeOrders = d.orders || [];
+      const freshOrders = d.orders || [];
+      // Restore grouped orders (remove any that are now individual)
+      const grouped = loadGroupedOrders();
+      const groupedFromIds = new Set(grouped.flatMap(g => g.groupedFrom || []));
+      const filtered = freshOrders.filter(o => !groupedFromIds.has(o.exchangeId));
+      exchangeOrders = [...grouped, ...filtered];
     } else {
       if(!_masterPass) { if(btn){btn.disabled=false;btn.textContent='↻ Sync órdenes';} return; }
       exchangeOrders = await fetchAllOrders();
