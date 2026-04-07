@@ -2009,15 +2009,20 @@ function buildPriceBar(t, currentPrice) {
   const minP = Math.min(...all)*0.985, maxP = Math.max(...all)*1.015, range = maxP-minP||1;
   const pct = v => Math.min(97, Math.max(3, ((v-minP)/range*100))).toFixed(2);
 
+  const stop = t.sl || t.liquidation || null;
   const tpZones = [
     ...(t.tp1?[{from:t.entry,to:t.tp1,op:.25}]:[]),
     ...(t.tp2?[{from:t.tp1||t.entry,to:t.tp2,op:.45}]:[]),
     ...(t.tp3?[{from:t.tp2||t.tp1||t.entry,to:t.tp3,op:.65}]:[]),
   ];
+  // Red zone: entry to stop (sl or liquidation)
+  const redFrom = stop ? Math.min(t.entry, stop) : null;
+  const redTo   = stop ? Math.max(t.entry, stop) : null;
 
   const markers = [
     {v:t.entry, c:'var(--t1)',   l:'Entry'},
-    {v:t.sl,    c:'var(--red)',  l:'SL'},
+    ...(t.sl?         [{v:t.sl,          c:'var(--red)',   l:'SL'}]:[]),
+    ...(t.liquidation?[{v:t.liquidation, c:'var(--amber)', l:'Liq'}]:[]),
     ...(t.tp1?[{v:t.tp1, c:'var(--accent)', l:'TP1'}]:[]),
     ...(t.tp2?[{v:t.tp2, c:'var(--accent)', l:'TP2'}]:[]),
     ...(t.tp3?[{v:t.tp3, c:'var(--accent)', l:'TP3'}]:[]),
@@ -2029,7 +2034,7 @@ function buildPriceBar(t, currentPrice) {
   ` : '';
 
   return `<div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;margin:24px 0 20px;">
-    <div style="position:absolute;left:${pct(Math.min(t.entry,t.sl))}%;width:${Math.abs(parseFloat(pct(t.sl))-parseFloat(pct(t.entry)))}%;height:6px;background:var(--red);opacity:.5;border-radius:3px;"></div>
+    ${redFrom!=null?`<div style="position:absolute;left:${pct(redFrom)}%;width:${Math.abs(parseFloat(pct(redTo))-parseFloat(pct(redFrom)))}%;height:6px;background:var(--red);opacity:.5;border-radius:3px;"></div>`:''}
     ${tpZones.map(z=>`<div style="position:absolute;left:${pct(Math.min(t.entry,z.to))}%;width:${Math.abs(parseFloat(pct(z.to))-parseFloat(pct(z.from)))}%;height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;"></div>`).join('')}
     ${markers.map(m=>`
       <div style="position:absolute;left:${pct(m.v)}%;transform:translateX(-50%);top:-18px;font-size:8px;color:${m.c};font-family:var(--mono);font-weight:600;white-space:nowrap;">${m.l}</div>
@@ -2192,8 +2197,8 @@ function renderPositions() {
       ? `<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${p.traderName}</span>`
       : `<button onclick="quickAssignTrader('${p.exchangeId}')" style="background:var(--amber-dim);border:0.5px solid var(--amber);padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--amber);cursor:pointer;">+ Trader</button>`;
 
-    // Build a fake trade object for price bar
-    const fakeT = { entry:p.entry, sl:p.sl, tp1:p.tp1, tp2:p.tp2, tp3:p.tp3, dir:p.dir };
+    // Build a fake trade object for price bar (include liquidation)
+    const fakeT = { entry:p.entry, sl:p.sl, tp1:p.tp1, tp2:p.tp2, tp3:p.tp3, dir:p.dir, liquidation:p.liquidation };
 
     // SL/TP distances from current price
     const slDist = livePrice&&p.sl ? fmtP((p.sl-livePrice)/livePrice*100) : null;
@@ -2235,9 +2240,13 @@ function renderPositions() {
           <div class="pos-mini-val">$${fmt(p.posSize)}</div>
         </div>
         ${p.sl?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Stop Loss / Liq.</div>
-          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(p.sl)}</div>
+          <div class="pos-mini-lbl">Stop Loss</div>
+          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(p.sl)}</div>
           ${slDist?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${slDist} desde precio</div>`:''}
+        </div>`:''}
+        ${p.liquidation?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Liquidación</div>
+          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(p.liquidation)}</div>
         </div>`:''}
       </div>
 
@@ -4343,29 +4352,50 @@ window.groupSelectedOrders = () => {
   if(!selected.length) return;
 
   // Use first order as base
-  const base   = selected[0];
-  const tpList = selected.map(o => o.price).sort((a,b) => base.dir==='long' ? b-a : a-b);
+  const base      = selected[0];
   const totalSize = selected.reduce((s,o) => s+(o.size||0), 0);
 
-  // Open calculator with pre-filled data
-  const sym = base.ticker;
-  document.getElementById('cTicker').value = sym+'USDT';
-  document.getElementById('cDir')?.querySelectorAll('button').forEach(b => {
-    if(b.dataset.dir === base.dir) b.click();
-  });
-  document.getElementById('cEntry').value = base.price;
-  if(tpList[0]) document.getElementById('cTP1').value = tpList[0];
-  if(tpList[1]) document.getElementById('cTP2').value = tpList[1];
-  if(tpList[2]) document.getElementById('cTP3').value = tpList[2];
+  // Separate entry orders from TP/SL orders
+  const entryOrders = selected.filter(o => o.type==='LIMIT'||o.type==='Limit'||o.type==='limit');
+  const tpOrders    = selected.filter(o => (o.type||'').toUpperCase().includes('TAKE') || (o.type||'').toUpperCase().includes('TP'));
+  const slOrders    = selected.filter(o => (o.type||'').toUpperCase().includes('STOP') || (o.type||'').toUpperCase().includes('SL'));
+
+  // Build TPs sorted by distance from entry
+  const tpPrices = tpOrders.length
+    ? tpOrders.map(o=>o.price).sort((a,b) => base.dir==='long' ? a-b : b-a)
+    : selected.filter(o=>o!==base).map(o=>o.price).sort((a,b) => base.dir==='long' ? a-b : b-a);
+
+  // Create grouped virtual order
+  const grouped = {
+    exchange:   base.exchange,
+    type:       'GROUPED',
+    ticker:     base.ticker,
+    symbol:     base.symbol,
+    dir:        base.dir,
+    price:      base.price,
+    sl:         slOrders[0]?.price || null,
+    tp1:        tpPrices[0] || null,
+    tp2:        tpPrices[1] || null,
+    tp3:        tpPrices[2] || null,
+    size:       totalSize,
+    origQty:    selected.reduce((s,o)=>s+(o.origQty||0),0),
+    exchangeId: 'grouped-' + Date.now(),
+    groupedFrom: selected.map(o=>o.exchangeId),
+  };
+
+  // Remove individual orders and add grouped one
+  const ids = new Set(selected.map(o=>o.exchangeId));
+  exchangeOrders = exchangeOrders.filter(o => !ids.has(o.exchangeId));
+  exchangeOrders.unshift(grouped);
+  window.exchangeOrders = exchangeOrders;
 
   // Clear selection
   _selectedOrders.clear();
   const btn = document.getElementById('groupOrdersBtn');
   if(btn) btn.style.display = 'none';
 
-  window.showPage('calc');
-  setTimeout(compute, 100);
-  toast(`${selected.length} órdenes agrupadas en Calculadora`);
+  renderOrders();
+  toast(`✅ ${selected.length} órdenes agrupadas como un trade`);
 };
 
 function renderOrders() {
@@ -4395,19 +4425,34 @@ function renderOrders() {
 
   container.innerHTML = exchangeOrders.map(o=>{
     const G = window.G;
-    const currentPrice = G?.getPrice(o.ticker, o.dir) || 0;
+    const currentPrice = G?.getPrice(o.ticker, o.dir) || G?.getPrice(o.ticker+'USDT', o.dir) || 0;
     const dist = currentPrice&&o.price ? ((o.price-currentPrice)/currentPrice*100) : null;
     const distAbs = dist!=null ? Math.abs(dist) : null;
     const distColor = distAbs==null?'var(--t3)':distAbs<1?'var(--accent)':distAbs<3?'var(--amber)':'var(--t2)';
     const exColor = o.exchange==='BINANCE'?'#f0b90b':o.exchange==='BYBIT'?'#f7a600':o.exchange==='MEXC'?'#00b8d9':'#00a0ea';
+    const sign = o.dir==='long' ? 1 : -1;
 
-    // Find matching watchlist setup (same ticker+direction)
-    const linked = watchItems.find(w=>
-      w.ticker?.replace(/USDT|BUSD/,'')===o.ticker && w.dir===o.dir
-    );
+    // Approximate liquidation (entry ± 1/leverage * 0.9)
+    const lev = o.leverage||10;
+    const liqApprox = o.price ? Math.round(o.price * (1 - sign/lev*0.9) * 100)/100 : null;
 
-    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:8px;" id="order-card-${o.exchangeId}">
-      <div class="pos-card-header" style="margin-bottom:10px;">
+    // SL and TPs from order data
+    const sl  = o.sl  || null;
+    const tp1 = o.tp1 || null;
+    const tp2 = o.tp2 || null;
+    const tp3 = o.tp3 || null;
+
+    // Build fake trade for price bar
+    const fakeT = { entry:o.price, sl, tp1, tp2, tp3, dir:o.dir };
+
+    // Distance from current price to order price
+    const distToOrder = currentPrice&&o.price
+      ? fmtP((o.price-currentPrice)/currentPrice*100)
+      : '—';
+
+    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;" id="order-card-${o.exchangeId}">
+      <!-- Header -->
+      <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
           <input type="checkbox" id="chk-${o.exchangeId}" onchange="window.toggleOrderSelect('${o.exchangeId}')"
             style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
@@ -4416,29 +4461,52 @@ function renderOrders() {
           <span style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span>
           <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">${o.type||'LIMIT'}</span>
           <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">PENDIENTE</span>
+          ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
         </div>
         <div style="text-align:right;">
-          <div style="font-family:var(--mono);font-size:14px;font-weight:600;">$${fmtPx(o.price)}</div>
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">precio de orden</div>
+          <div style="font-family:var(--mono);font-size:15px;font-weight:600;">$${fmtPx(o.price)}</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">entry · tamaño $${fmt(o.size||0)}</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+
+      <!-- Metrics -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">
         <div class="pos-mini-metric">
           <div class="pos-mini-lbl">Precio actual</div>
-          <div class="pos-mini-val">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
+          <div class="pos-mini-val" data-px="${o.ticker}" data-dir="${o.dir}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
         </div>
         <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Distancia</div>
+          <div class="pos-mini-lbl">Distancia al entry</div>
           <div class="pos-mini-val" style="color:${distColor};">${dist!=null?fmtP(dist):'—'}</div>
         </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Tamaño</div>
-          <div class="pos-mini-val">$${fmt(o.size||0)}</div>
-        </div>
+        ${sl?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Stop Loss</div>
+          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(sl)}</div>
+          ${currentPrice?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${fmtP((sl-currentPrice)/currentPrice*100)}</div>`:''}
+        </div>`:''}
+        ${liqApprox?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Liq. aprox.</div>
+          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(liqApprox)}</div>
+        </div>`:''}
       </div>
-      ${linked?`<div style="background:var(--accent-dim);border:0.5px solid var(--accent);border-radius:6px;padding:6px 10px;font-size:10px;font-family:var(--mono);color:var(--accent);">
-        📌 Watchlist: ${linked.ticker} ${linked.dir.toUpperCase()}${linked.leverage>1?' x'+linked.leverage:''} · Entry $${fmtPx(linked.entry)} · SL $${fmtPx(linked.sl)}
-      </div>`:`<div style="font-size:10px;color:var(--t3);font-family:var(--mono);">Sin setup vinculado en Watchlist</div>`}
+
+      <!-- TPs -->
+      ${[{l:'TP1',v:tp1},{l:'TP2',v:tp2},{l:'TP3',v:tp3}].filter(x=>x.v).length?`
+      <div style="display:grid;grid-template-columns:repeat(${[tp1,tp2,tp3].filter(Boolean).length},1fr);gap:8px;margin-bottom:12px;">
+        ${[{l:'TP1',v:tp1},{l:'TP2',v:tp2},{l:'TP3',v:tp3}].filter(x=>x.v).map(tp=>{
+          const d = currentPrice&&tp.v ? fmtP((tp.v-currentPrice)/currentPrice*100) : '—';
+          return `<div class="pos-mini-metric">
+            <div class="pos-mini-lbl">${tp.l}</div>
+            <div class="pos-mini-val" style="color:var(--accent);">$${fmtPx(tp.v)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${d}</div>
+          </div>`;
+        }).join('')}
+      </div>`:''}
+
+      <!-- Price map -->
+      ${(o.price&&(sl||tp1))?`<div style="padding:0 4px;margin-bottom:10px;">
+        ${buildPriceBar(fakeT, currentPrice)}
+      </div>`:''}
     </div>`;
   }).join('');
 }
