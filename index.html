@@ -1708,9 +1708,7 @@ window.showPage = page => {
     setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
   }
   if (page === 'positions') {
-    if (_masterPass && window.G?._hasExchangeKeys?.()) {
-      syncAllExchanges();
-    }
+    syncAllExchanges();
   }
 
   // When entering positions, do immediate REST price fetch for any missing prices
@@ -3578,9 +3576,48 @@ async function importExchangeHistory(exchange, keys) {
 }
 
 window.syncAllExchanges = async () => {
-  if(!_masterPass) { toast('Ingresá tu contraseña maestra primero','error'); return; }
   const syncBtn = document.getElementById('syncBtn');
   if(syncBtn){ syncBtn.textContent='⟳ Sincronizando...'; syncBtn.disabled=true; }
+
+  // Use Worker backend if proxy URL is configured
+  if(PROXY_URL) {
+    try {
+      const r    = await fetch(`${PROXY_URL}/summary`);
+      const data = await r.json();
+
+      exchangePositions        = data.positions || [];
+      window.exchangePositions = exchangePositions;
+      window.exchangeOrders    = data.orders    || [];
+      exchangeOrders           = data.orders    || [];
+      lastSyncTime             = new Date();
+
+      renderPositions();
+      renderOrders();
+      updateStatusBar();
+
+      const count = exchangePositions.length;
+      const msg   = `✅ ${count} posición${count!==1?'es':''} · PnL $${(data.totalPnl||0).toFixed(0)}`;
+      toast(msg);
+      const syncBtnEl = document.getElementById('syncBtn');
+      if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled = false; }
+
+      // Show errors if any
+      const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
+      if(errs.length) {
+        errs.forEach(([ex, err]) => console.warn(`${ex}: ${err}`));
+      }
+      return;
+    } catch(e) {
+      console.error('Worker sync failed:', e.message);
+      toast('Error al sincronizar: ' + e.message, 'error');
+      const syncBtnEl = document.getElementById('syncBtn');
+      if(syncBtnEl){ syncBtnEl.textContent='↻ Sync exchanges'; syncBtnEl.disabled=false; }
+      return;
+    }
+  }
+
+  // Fallback: direct exchange calls (requires master password)
+  if(!_masterPass) { toast('Ingresá tu contraseña maestra primero','error'); return; }
   const exchanges = ['binance','bybit','okx','mexc'];
   const all = [];
   const statusLines = [];
@@ -3663,7 +3700,7 @@ function startAutoSync() {
   // PnL updates in real-time via WebSocket (setPrice → updatePriceEl)
   syncTimer = setInterval(async ()=>{
     const posPage = document.getElementById('posPage');
-    if(posPage&&posPage.style.display!=='none'&&_masterPass&&window.G?._hasExchangeKeys?.()) {
+    if(posPage&&posPage.style.display!=='none') {
       await syncAllExchanges();
     }
   }, 30000);
@@ -4387,11 +4424,17 @@ async function fetchAllOrders() {
 }
 
 window.syncAllOrders = async () => {
-  if(!_masterPass) return;
   const btn = document.getElementById('syncOrdersBtn');
   if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
   try {
-    exchangeOrders = await fetchAllOrders();
+    if(PROXY_URL) {
+      const r = await fetch(`${PROXY_URL}/orders`);
+      const d = await r.json();
+      exchangeOrders = d.orders || [];
+    } else {
+      if(!_masterPass) { if(btn){btn.disabled=false;btn.textContent='↻ Sync órdenes';} return; }
+      exchangeOrders = await fetchAllOrders();
+    }
     window.exchangeOrders = exchangeOrders;
     renderOrders();
     updateStatusBar();
