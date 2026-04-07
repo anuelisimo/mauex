@@ -280,7 +280,6 @@ textarea{resize:vertical;min-height:70px;}
       <button class="nav-btn" data-page="orders" onclick="window.showPage('orders')">Órdenes</button>
       <button class="nav-btn" data-page="positions" onclick="window.showPage('positions')">Posiciones</button>
       <button class="nav-btn" data-page="history" onclick="window.showPage('history')">Historial</button>
-      <button class="nav-btn" data-page="traders" onclick="window.showPage('traders')">Traders</button>
       <button class="nav-btn" data-page="analysis" onclick="window.showPage('analysis')">AI Analysis</button>
       <button class="nav-btn" data-page="settings" onclick="window.showPage('settings')">⚙ Settings</button>
     </nav>
@@ -459,9 +458,12 @@ textarea{resize:vertical;min-height:70px;}
       <div class="fxb" style="margin-bottom:20px;">
         <div>
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Órdenes abiertas</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes de ejecución en todos los exchanges</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
         </div>
-        <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn sm" id="groupOrdersBtn" onclick="window.groupSelectedOrders()" style="display:none;">📌 Agrupar como trade</button>
+          <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
+        </div>
       </div>
       <div id="ordersList"></div>
     </div>
@@ -768,6 +770,17 @@ textarea{resize:vertical;min-height:70px;}
           </label>
         </div>
         <div style="margin-top:16px;padding-top:16px;border-top:0.5px solid var(--border);">
+          <!-- Traders management -->
+          <div class="card" style="margin-bottom:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <div class="sec-label" style="margin:0;">Gestión de Traders</div>
+                <div style="font-size:11px;color:var(--t3);margin-top:4px;">Administrá los traders que seguís</div>
+              </div>
+              <button class="btn sm" onclick="window.showPage('traders')">Ver traders →</button>
+            </div>
+          </div>
+
           <div class="sec-label" style="color:var(--red);">Danger zone</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn sm" onclick="exportAllData()">📥 Exportar datos (CSV)</button>
@@ -2984,18 +2997,33 @@ window.loadCharts = async () => {
         levels.forEach(lvl=>{
           try {
             const ls = csChart.addLineSeries({
-              color: lvl.color, lineWidth: lvl.width,
+              color: lvl.color, lineWidth: lvl.width||1,
               lineStyle: 2, // dashed
-              priceLineVisible: false,
-              lastValueVisible: true,
-              title: lvl.title,
+              priceLineVisible: true,
+              priceLineStyle: 2,
+              priceLineColor: lvl.color,
+              lastValueVisible: false,  // hide label on price axis to avoid covering candles
+              title: '',
               crosshairMarkerVisible: false,
             });
-            // Get time range from existing data
+            // Extend line across visible range + extra
             const visible = csChart.timeScale().getVisibleRange();
             if(visible) {
-              ls.setData([{time:visible.from,value:lvl.price},{time:visible.to,value:lvl.price}]);
+              const pad = Math.round((visible.to - visible.from) * 0.1);
+              ls.setData([
+                {time: visible.from - pad, value: lvl.price},
+                {time: visible.to   + pad, value: lvl.price}
+              ]);
             }
+            // Add a price line instead for the label — shows on right but doesn't cover candles
+            ls.createPriceLine({
+              price: lvl.price,
+              color: lvl.color,
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: true,
+              title: lvl.title,
+            });
           } catch(e){}
         });
       } catch(e){ console.warn('Error drawing levels on '+tf, e); }
@@ -4071,7 +4099,12 @@ window.openTradeInAnalysis = (id) => {
     setMarketType('spot');
   }
 
+    // Navigate to analysis and auto-load charts
   window.showPage('analysis');
+  // Small delay to let the page render first
+  setTimeout(() => {
+    if(typeof loadCharts === 'function') loadCharts();
+  }, 300);
 };
 
 // Draw trade levels on a LW chart
@@ -4245,57 +4278,95 @@ window.openImportHistoryModal = () => {
 };
 
 window.runImportHistory = async () => {
-  if(!_masterPass){ toast('Ingresá tu contraseña maestra primero.','error'); return; }
   const fromDate = document.getElementById('importFrom')?.value;
   const toDate   = document.getElementById('importTo')?.value;
   if(!fromDate){ toast('Seleccioná fecha desde.','error'); return; }
 
-  const startTs = new Date(fromDate).getTime();
-  const endTs   = toDate ? new Date(toDate).getTime() : Date.now();
-
   const prog = document.getElementById('importHistProgress');
   prog.style.display='block';
-  prog.innerHTML = '⟳ Importando...';
+  prog.innerHTML = '⟳ Importando desde los exchanges...';
 
-  const exchanges = ['binance','bybit','okx','mexc'];
-  let totalImported = 0;
-  const lines = [];
+  try {
+    // Call Worker to fetch history (Worker has the keys, no CORS issues)
+    const url = `${PROXY_URL}/import-history?from=${fromDate}&to=${toDate||new Date().toISOString().split('T')[0]}`;
+    const r   = await fetch(url);
+    if(!r.ok) throw new Error(`Worker error: ${r.status}`);
+    const data = await r.json();
 
-  for(const ex of exchanges) {
-    const keys = await getDecryptedKeys(ex);
-    if(!keys){ lines.push(`${ex.toUpperCase()}: no configurado`); continue; }
-    try {
-      const history = await fetchExchangeHistory(ex, keys, startTs, endTs);
-      const G = window.G;
-      const existing = new Set((G?.trades()||[]).map(t=>t.exchangeId).filter(Boolean));
-      let count = 0;
-      for(const t of history) {
-        if(existing.has(t.exchangeId)) continue;
-        try {
-          await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'),
-            { userId:window._getCU()?.uid, ...t });
-          count++;
-        } catch(e){}
-      }
-      totalImported += count;
-      lines.push(`✅ ${ex.toUpperCase()}: ${count} trades importados (${history.length} encontrados)`);
-    } catch(e) {
-      lines.push(`❌ ${ex.toUpperCase()}: ${e.message}`);
+    if(data.error) throw new Error(data.error);
+
+    const trades  = data.trades || [];
+    const G       = window.G;
+    const existing = new Set((G?.trades()||[]).map(t=>t.exchangeId).filter(Boolean));
+    let saved = 0;
+
+    for(const t of trades) {
+      if(existing.has(t.exchangeId)) continue;
+      try {
+        await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'),
+          { userId:window._getCU()?.uid, ...t });
+        saved++;
+      } catch(e){}
     }
-    prog.innerHTML = lines.join('<br>') + '<br>⟳ Continuando...';
-  }
 
-  if(totalImported>0) {
-    await window._loadTrades();
-    renderHistory();
-    renderDashboard();
+    if(saved>0) {
+      await window._loadTrades();
+      renderHistory();
+      renderDashboard();
+    }
+
+    const lines = data.summary || [];
+    prog.innerHTML = lines.join('<br>') + `<br><strong>✅ ${saved} trades guardados en historial</strong>`;
+    toast(`Importación completa: ${saved} trades`);
+  } catch(e) {
+    prog.innerHTML = `❌ Error: ${e.message}`;
+    toast('Error al importar: ' + e.message, 'error');
   }
-  prog.innerHTML = lines.join('<br>') + `<br><strong>✅ Total: ${totalImported} trades importados</strong>`;
-  toast(`Importación completa: ${totalImported} trades`);
 };
 
 // ── Orders rendering ─────────────────────────────────────────────────────────
 let exchangeOrders = [];
+
+// ── Order selection and grouping ─────────────────────────────────────────────
+let _selectedOrders = new Set();
+
+window.toggleOrderSelect = (id) => {
+  if(_selectedOrders.has(id)) _selectedOrders.delete(id);
+  else _selectedOrders.add(id);
+  const btn = document.getElementById('groupOrdersBtn');
+  if(btn) btn.style.display = _selectedOrders.size >= 2 ? 'block' : 'none';
+};
+
+window.groupSelectedOrders = () => {
+  if(_selectedOrders.size < 2) { toast('Seleccioná al menos 2 órdenes','error'); return; }
+  const selected = exchangeOrders.filter(o => _selectedOrders.has(o.exchangeId));
+  if(!selected.length) return;
+
+  // Use first order as base
+  const base   = selected[0];
+  const tpList = selected.map(o => o.price).sort((a,b) => base.dir==='long' ? b-a : a-b);
+  const totalSize = selected.reduce((s,o) => s+(o.size||0), 0);
+
+  // Open calculator with pre-filled data
+  const sym = base.ticker;
+  document.getElementById('cTicker').value = sym+'USDT';
+  document.getElementById('cDir')?.querySelectorAll('button').forEach(b => {
+    if(b.dataset.dir === base.dir) b.click();
+  });
+  document.getElementById('cEntry').value = base.price;
+  if(tpList[0]) document.getElementById('cTP1').value = tpList[0];
+  if(tpList[1]) document.getElementById('cTP2').value = tpList[1];
+  if(tpList[2]) document.getElementById('cTP3').value = tpList[2];
+
+  // Clear selection
+  _selectedOrders.clear();
+  const btn = document.getElementById('groupOrdersBtn');
+  if(btn) btn.style.display = 'none';
+
+  window.showPage('calc');
+  setTimeout(compute, 100);
+  toast(`${selected.length} órdenes agrupadas en Calculadora`);
+};
 
 function renderOrders() {
   const container = document.getElementById('ordersList');
@@ -4314,7 +4385,7 @@ function renderOrders() {
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
       <div class="empty-text">No hay órdenes pendientes</div>
-      <div class="empty-sub">Las limit orders aparecerán aquí</div>
+      <div class="empty-sub">Las limit orders aparecerán aquí cuando sincronices</div>
     </div>`;
     return;
   }
@@ -4335,9 +4406,11 @@ function renderOrders() {
       w.ticker?.replace(/USDT|BUSD/,'')===o.ticker && w.dir===o.dir
     );
 
-    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:8px;">
+    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:8px;" id="order-card-${o.exchangeId}">
       <div class="pos-card-header" style="margin-bottom:10px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
+          <input type="checkbox" id="chk-${o.exchangeId}" onchange="window.toggleOrderSelect('${o.exchangeId}')"
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
           <span style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span>
