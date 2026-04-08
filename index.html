@@ -2640,25 +2640,31 @@ window.setMarketType = type => {
 async function fetchOHLCV(symbol, interval, limit=300) {
   // MEXC commodities — use MEXC futures klines
   if(window._aiSource === 'mexc') {
-    const mexcSym = symbol.replace('OIL(WTI)','OIL').replace('OIL(BRENT)','BRENT').replace('(','').replace(')','');
-    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Hour1'};
+    // symbol is already in MEXC format (e.g. GOLD_USDT) set by selectTicker
+    const mexcSym = symbol;
+    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Min60'};
     const mexcIv = ivMap[interval] || 'Day1';
     try {
       const url = `https://contract.mexc.com/api/v1/contract/kline/${mexcSym}?interval=${mexcIv}&limit=${limit}`;
       const r   = await (PROXY_URL ? window.proxyFetch(url) : fetch(url));
-      const d   = await r.json();
+      const text = await r.text();
+      let d; try { d = JSON.parse(text); } catch(e) { throw new Error(`MEXC parse error: ${text.slice(0,100)}`); }
       if(d.success && d.data) {
         const data = d.data;
-        return data.time.map((t,i) => ({
+        // MEXC returns arrays: time, open, close, high, low, vol
+        const times = data.time || [];
+        return times.map((t,i) => ({
           time:   Math.floor(t),
-          open:   parseFloat(data.open[i]),
-          high:   parseFloat(data.high[i]),
-          low:    parseFloat(data.low[i]),
-          close:  parseFloat(data.close[i]),
-          volume: parseFloat(data.vol[i]),
-        })).filter(c=>c.open>0);
+          open:   parseFloat(data.open?.[i] || 0),
+          high:   parseFloat(data.high?.[i] || 0),
+          low:    parseFloat(data.low?.[i]  || 0),
+          close:  parseFloat(data.close?.[i]|| 0),
+          volume: parseFloat(data.vol?.[i]  || 0),
+        })).filter(c=>c.open>0&&c.close>0);
+      } else {
+        throw new Error(`MEXC error: ${JSON.stringify(d).slice(0,100)}`);
       }
-    } catch(e) { console.warn('MEXC kline error:', e); }
+    } catch(e) { console.warn('MEXC kline error:', e.message); throw e; }
   }
 
   // Detect non-crypto (no USDT suffix or in stock list)
@@ -3783,19 +3789,19 @@ const STOCK_LIST = [
   {s:'NG=F',n:'Gas Natural',t:'commodity'},{s:'HG=F',n:'Cobre',t:'commodity'},
 ];
 
-// MEXC perpetual commodities
+// MEXC perpetual commodities (symbol = MEXC contract symbol format with underscore)
 const MEXC_COMMODITIES = [
-  {s:'GOLDUSDT',   n:'Oro',         t:'commodity', src:'mexc'},
-  {s:'SILVERUSDT', n:'Plata',       t:'commodity', src:'mexc'},
-  {s:'XPTUUSDT',   n:'Platino',     t:'commodity', src:'mexc'},
-  {s:'XCUUSDT',    n:'Cobre',       t:'commodity', src:'mexc'},
-  {s:'XPDUUSDT',   n:'Paladio',     t:'commodity', src:'mexc'},
-  {s:'XALUSDT',    n:'Aluminio',    t:'commodity', src:'mexc'},
-  {s:'XNIUSDT',    n:'Níquel',      t:'commodity', src:'mexc'},
-  {s:'XZNUSDT',    n:'Zinc',        t:'commodity', src:'mexc'},
-  {s:'XPBUSDT',    n:'Plomo',       t:'commodity', src:'mexc'},
-  {s:'OIL(WTI)USDT',  n:'Petróleo WTI',  t:'commodity', src:'mexc', sym:'OILUSDT'},
-  {s:'OIL(BRENT)USDT',n:'Petróleo Brent', t:'commodity', src:'mexc', sym:'BRENTUSDT'},
+  {s:'Oro (MEXC)',         n:'Oro',           t:'commodity', src:'mexc', sym:'GOLD_USDT'},
+  {s:'Plata (MEXC)',       n:'Plata',          t:'commodity', src:'mexc', sym:'SILVER_USDT'},
+  {s:'Platino (MEXC)',     n:'Platino',         t:'commodity', src:'mexc', sym:'XPT_USDT'},
+  {s:'Cobre (MEXC)',       n:'Cobre',           t:'commodity', src:'mexc', sym:'XCU_USDT'},
+  {s:'Paladio (MEXC)',     n:'Paladio',         t:'commodity', src:'mexc', sym:'XPD_USDT'},
+  {s:'Aluminio (MEXC)',    n:'Aluminio',        t:'commodity', src:'mexc', sym:'XAL_USDT'},
+  {s:'Níquel (MEXC)',      n:'Níquel',          t:'commodity', src:'mexc', sym:'XNI_USDT'},
+  {s:'Zinc (MEXC)',        n:'Zinc',            t:'commodity', src:'mexc', sym:'XZN_USDT'},
+  {s:'Plomo (MEXC)',       n:'Plomo',           t:'commodity', src:'mexc', sym:'XPB_USDT'},
+  {s:'Petróleo WTI (MEXC)',n:'Petróleo WTI',   t:'commodity', src:'mexc', sym:'OIL_USDT'},
+  {s:'Petróleo Brent(MEXC)',n:'Petróleo Brent', t:'commodity', src:'mexc', sym:'OIL_BRENT_USDT'},
 ];
 
 async function loadBinanceSymbols() {
@@ -3833,7 +3839,7 @@ window.showTickerSuggestions = async (val) => {
   const mexcMatches = MEXC_COMMODITIES
     .filter(s=>s.s.toUpperCase().startsWith(q)||s.n.toUpperCase().includes(q))
     .slice(0,4)
-    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.sym||s.s, source:'mexc', type:s.t}));
+    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
   const all = [...cryptoMatches, ...stockMatches, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
