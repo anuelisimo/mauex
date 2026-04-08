@@ -3789,19 +3789,19 @@ const STOCK_LIST = [
   {s:'NG=F',n:'Gas Natural',t:'commodity'},{s:'HG=F',n:'Cobre',t:'commodity'},
 ];
 
-// MEXC perpetual commodities (symbol = MEXC contract symbol format with underscore)
+// MEXC perpetual commodities
 const MEXC_COMMODITIES = [
-  {s:'Oro (MEXC)',         n:'Oro',           t:'commodity', src:'mexc', sym:'GOLD_USDT'},
-  {s:'Plata (MEXC)',       n:'Plata',          t:'commodity', src:'mexc', sym:'SILVER_USDT'},
-  {s:'Platino (MEXC)',     n:'Platino',         t:'commodity', src:'mexc', sym:'XPT_USDT'},
-  {s:'Cobre (MEXC)',       n:'Cobre',           t:'commodity', src:'mexc', sym:'XCU_USDT'},
-  {s:'Paladio (MEXC)',     n:'Paladio',         t:'commodity', src:'mexc', sym:'XPD_USDT'},
-  {s:'Aluminio (MEXC)',    n:'Aluminio',        t:'commodity', src:'mexc', sym:'XAL_USDT'},
-  {s:'Níquel (MEXC)',      n:'Níquel',          t:'commodity', src:'mexc', sym:'XNI_USDT'},
-  {s:'Zinc (MEXC)',        n:'Zinc',            t:'commodity', src:'mexc', sym:'XZN_USDT'},
-  {s:'Plomo (MEXC)',       n:'Plomo',           t:'commodity', src:'mexc', sym:'XPB_USDT'},
-  {s:'Petróleo WTI (MEXC)',n:'Petróleo WTI',   t:'commodity', src:'mexc', sym:'OIL_USDT'},
-  {s:'Petróleo Brent(MEXC)',n:'Petróleo Brent', t:'commodity', src:'mexc', sym:'OIL_BRENT_USDT'},
+  {s:'GOLD_USDT',       n:'Oro / Gold',         t:'commodity', src:'mexc', sym:'GOLD_USDT'},
+  {s:'SILVER_USDT',     n:'Plata / Silver',      t:'commodity', src:'mexc', sym:'SILVER_USDT'},
+  {s:'XPT_USDT',        n:'Platino / Platinum',  t:'commodity', src:'mexc', sym:'XPT_USDT'},
+  {s:'XCU_USDT',        n:'Cobre / Copper',      t:'commodity', src:'mexc', sym:'XCU_USDT'},
+  {s:'XPD_USDT',        n:'Paladio / Palladium', t:'commodity', src:'mexc', sym:'XPD_USDT'},
+  {s:'XAL_USDT',        n:'Aluminio / Aluminium',t:'commodity', src:'mexc', sym:'XAL_USDT'},
+  {s:'XNI_USDT',        n:'Níquel / Nickel',     t:'commodity', src:'mexc', sym:'XNI_USDT'},
+  {s:'XZN_USDT',        n:'Zinc',                t:'commodity', src:'mexc', sym:'XZN_USDT'},
+  {s:'XPB_USDT',        n:'Plomo / Lead',        t:'commodity', src:'mexc', sym:'XPB_USDT'},
+  {s:'OIL_USDT',        n:'Petróleo WTI / Oil',  t:'commodity', src:'mexc', sym:'OIL_USDT'},
+  {s:'OIL_BRENT_USDT',  n:'Petróleo Brent',      t:'commodity', src:'mexc', sym:'OIL_BRENT_USDT'},
 ];
 
 async function loadBinanceSymbols() {
@@ -3835,11 +3835,11 @@ window.showTickerSuggestions = async (val) => {
     .slice(0,4)
     .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
-  // Match MEXC commodities
+  // Match MEXC commodities — search by symbol or name (ES/EN)
   const mexcMatches = MEXC_COMMODITIES
-    .filter(s=>s.s.toUpperCase().startsWith(q)||s.n.toUpperCase().includes(q))
-    .slice(0,4)
-    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
+    .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||s.sym.toUpperCase().includes(q))
+    .slice(0,5)
+    .map(s=>({label:`${s.sym} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
   const all = [...cryptoMatches, ...stockMatches, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
