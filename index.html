@@ -2638,10 +2638,33 @@ window.setMarketType = type => {
 };
 
 async function fetchOHLCV(symbol, interval, limit=300) {
+  // MEXC commodities — use MEXC futures klines
+  if(window._aiSource === 'mexc') {
+    const mexcSym = symbol.replace('OIL(WTI)','OIL').replace('OIL(BRENT)','BRENT').replace('(','').replace(')','');
+    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Hour1'};
+    const mexcIv = ivMap[interval] || 'Day1';
+    try {
+      const url = `https://contract.mexc.com/api/v1/contract/kline/${mexcSym}?interval=${mexcIv}&limit=${limit}`;
+      const r   = await (PROXY_URL ? window.proxyFetch(url) : fetch(url));
+      const d   = await r.json();
+      if(d.success && d.data) {
+        const data = d.data;
+        return data.time.map((t,i) => ({
+          time:   Math.floor(t),
+          open:   parseFloat(data.open[i]),
+          high:   parseFloat(data.high[i]),
+          low:    parseFloat(data.low[i]),
+          close:  parseFloat(data.close[i]),
+          volume: parseFloat(data.vol[i]),
+        })).filter(c=>c.open>0);
+      }
+    } catch(e) { console.warn('MEXC kline error:', e); }
+  }
+
   // Detect non-crypto (no USDT suffix or in stock list)
-  const isStock = window._aiType === 'stock' || window._aiType === 'etf' ||
-                  window._aiType === 'commodity' || window._aiType === 'index' ||
-                  (!symbol.endsWith('USDT') && !symbol.endsWith('BUSD'));
+  const isStock = window._aiSource === 'yahoo' || window._aiType === 'stock' || window._aiType === 'etf' ||
+                  window._aiType === 'index' ||
+                  (!symbol.endsWith('USDT') && !symbol.endsWith('BUSD') && window._aiSource !== 'mexc');
 
   if(isStock) {
     // Yahoo Finance via proxy (avoids CORS)
@@ -3760,6 +3783,21 @@ const STOCK_LIST = [
   {s:'NG=F',n:'Gas Natural',t:'commodity'},{s:'HG=F',n:'Cobre',t:'commodity'},
 ];
 
+// MEXC perpetual commodities
+const MEXC_COMMODITIES = [
+  {s:'GOLDUSDT',   n:'Oro',         t:'commodity', src:'mexc'},
+  {s:'SILVERUSDT', n:'Plata',       t:'commodity', src:'mexc'},
+  {s:'XPTUUSDT',   n:'Platino',     t:'commodity', src:'mexc'},
+  {s:'XCUUSDT',    n:'Cobre',       t:'commodity', src:'mexc'},
+  {s:'XPDUUSDT',   n:'Paladio',     t:'commodity', src:'mexc'},
+  {s:'XALUSDT',    n:'Aluminio',    t:'commodity', src:'mexc'},
+  {s:'XNIUSDT',    n:'Níquel',      t:'commodity', src:'mexc'},
+  {s:'XZNUSDT',    n:'Zinc',        t:'commodity', src:'mexc'},
+  {s:'XPBUSDT',    n:'Plomo',       t:'commodity', src:'mexc'},
+  {s:'OIL(WTI)USDT',  n:'Petróleo WTI',  t:'commodity', src:'mexc', sym:'OILUSDT'},
+  {s:'OIL(BRENT)USDT',n:'Petróleo Brent', t:'commodity', src:'mexc', sym:'BRENTUSDT'},
+];
+
 async function loadBinanceSymbols() {
   if(_bnbSymbols.length) return;
   try {
@@ -3791,11 +3829,18 @@ window.showTickerSuggestions = async (val) => {
     .slice(0,4)
     .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
-  const all = [...cryptoMatches, ...stockMatches];
+  // Match MEXC commodities
+  const mexcMatches = MEXC_COMMODITIES
+    .filter(s=>s.s.toUpperCase().startsWith(q)||s.n.toUpperCase().includes(q))
+    .slice(0,4)
+    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.sym||s.s, source:'mexc', type:s.t}));
+
+  const all = [...cryptoMatches, ...stockMatches, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
 
   const typeIcon = {crypto:'₿',stock:'📈',etf:'📊',commodity:'🪙',index:'📉'};
   const typeColor = {crypto:'var(--accent)',stock:'var(--blue)',etf:'var(--amber)',commodity:'var(--amber)',index:'var(--t2)'};
+  const srcLabel = {binance:'SPOT/FUT',yahoo:'Yahoo',mexc:'MEXC PERP'};
 
   dd.innerHTML = all.map((r,i)=>`
     <div onclick="selectTicker('${r.ticker}','${r.source}','${r.type}')"
@@ -3806,7 +3851,7 @@ window.showTickerSuggestions = async (val) => {
         <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
         <div style="font-size:10px;color:var(--t3);">${r.label.split('—')[1]?.trim()||''} · <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
       </div>
-      ${r.source==='binance'?'<span style="margin-left:auto;font-size:9px;color:var(--t3);">SPOT/FUT</span>':'<span style="margin-left:auto;font-size:9px;color:var(--t3);">Yahoo</span>'}
+      ${srcLabel[r.source]?`<span style="margin-left:auto;font-size:9px;color:var(--t3);">${srcLabel[r.source]}</span>`:''}
     </div>`).join('');
   dd.style.display='block';
 };
@@ -3814,18 +3859,13 @@ window.showTickerSuggestions = async (val) => {
 window.selectTicker = (ticker, source, type) => {
   document.getElementById('aiSymbol').value = ticker;
   document.getElementById('aiTickerDD').style.display='none';
-  // Auto-set market type based on asset type
-  if(type==='crypto'){
-    // Show toggle, default to futures
-    document.getElementById('toggleSpot').style.display='';
-    document.getElementById('toggleFut').style.display='';
+  if(type==='crypto') {
     setMarketType('futures');
+  } else if(source==='mexc') {
+    setMarketType('futures'); // MEXC commodities are perpetual futures
   } else {
-    // Hide toggle (yahoo finance, always spot)
     setMarketType('spot');
-    // Override fetch to use Yahoo for non-crypto
   }
-  // Store source for fetchOHLCV
   window._aiSource = source;
   window._aiType   = type;
   loadCharts();
