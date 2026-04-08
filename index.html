@@ -515,7 +515,7 @@ textarea{resize:vertical;min-height:70px;}
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:1;min-width:180px;position:relative;">
           <label class="lbl">Par (crypto, acciones, ETFs, commodities)</label>
-          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTC, AAPL, SPY, GC=F..."
+          <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTC, AAPL, OIL, GOLD, SILVER..."
             style="text-transform:uppercase;"
             oninput="showTickerSuggestions(this.value)"
             onblur="setTimeout(()=>{const d=document.getElementById('aiTickerDD');if(d)d.style.display='none';},200)">
@@ -2982,7 +2982,7 @@ function renderMarketStrip(symbol, md, emaValues={}, mktType='spot') {
 }
 
 window.loadCharts = async () => {
-  const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
+  const rawInput = (document.getElementById('aiSymbol')?.value||'BTCUSDT').trim().toUpperCase();
   const btn = document.getElementById('chartsBtn');
   btn.textContent='↺ Cargando...'; btn.disabled=true;
   document.getElementById('copyStatus').style.display='none';
@@ -2991,6 +2991,34 @@ window.loadCharts = async () => {
     const panel=document.getElementById('aiTradePanel');
     if(panel) panel.style.display='none';
   }
+
+  // Auto-detect MEXC commodity symbols
+  const mexcMatch = MEXC_COMMODITIES.find(m =>
+    m.sym.toUpperCase() === rawInput ||
+    m.sym.toUpperCase().replace(/_USDT$/,'') === rawInput ||
+    m.sym.toUpperCase().replace('_','') === rawInput ||
+    m.s.toUpperCase() === rawInput ||
+    m.n.toUpperCase().includes(rawInput) ||
+    rawInput === 'OIL' && m.sym === 'OIL_USDT' ||
+    rawInput === 'GOLD' && m.sym === 'GOLD_USDT' ||
+    rawInput === 'SILVER' && m.sym === 'SILVER_USDT' ||
+    rawInput === 'PLATINUM' && m.sym === 'XPT_USDT' ||
+    rawInput === 'COPPER' && m.sym === 'XCU_USDT' ||
+    rawInput === 'NICKEL' && m.sym === 'XNI_USDT' ||
+    rawInput === 'ZINC' && m.sym === 'XZN_USDT' ||
+    rawInput === 'ALUMINIUM' && m.sym === 'XAL_USDT' ||
+    rawInput === 'BRENT' && m.sym === 'OIL_BRENT_USDT'
+  );
+  if(mexcMatch) {
+    window._aiSource = 'mexc';
+    window._aiType   = 'commodity';
+    document.getElementById('aiSymbol').value = mexcMatch.sym;
+    setMarketType('futures');
+  }
+
+  const symbol = mexcMatch
+    ? mexcMatch.sym
+    : rawInput.replace(/[^A-Z0-9_]/g,'');
 
   try {
     // Load all timeframes + market data in parallel
@@ -3835,9 +3863,17 @@ window.showTickerSuggestions = async (val) => {
     .slice(0,4)
     .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
-  // Match MEXC commodities — search by symbol or name (ES/EN)
+  // Match MEXC commodities — search by symbol, name or short keyword
+  const MEXC_KEYWORDS = {OIL:'OIL_USDT',GOLD:'GOLD_USDT',SILVER:'SILVER_USDT',
+    PLATINUM:'XPT_USDT',COPPER:'XCU_USDT',NICKEL:'XNI_USDT',
+    ZINC:'XZN_USDT',ALUMINIUM:'XAL_USDT',PALLADIUM:'XPD_USDT',
+    LEAD:'XPB_USDT',BRENT:'OIL_BRENT_USDT',WTI:'OIL_USDT',
+    ORO:'GOLD_USDT',PLATA:'SILVER_USDT',PLATINO:'XPT_USDT',
+    COBRE:'XCU_USDT',NIQUEL:'XNI_USDT',PETROLEO:'OIL_USDT'};
+  const kwMatch = MEXC_KEYWORDS[q];
   const mexcMatches = MEXC_COMMODITIES
-    .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||s.sym.toUpperCase().includes(q))
+    .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||
+               s.sym.toUpperCase().includes(q)||(kwMatch&&s.sym===kwMatch))
     .slice(0,5)
     .map(s=>({label:`${s.sym} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
