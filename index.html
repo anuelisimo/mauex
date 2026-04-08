@@ -2993,22 +2993,19 @@ window.loadCharts = async () => {
   }
 
   // Auto-detect MEXC commodity symbols
-  const mexcMatch = MEXC_COMMODITIES.find(m =>
-    m.sym.toUpperCase() === rawInput ||
-    m.sym.toUpperCase().replace(/_USDT$/,'') === rawInput ||
-    m.sym.toUpperCase().replace('_','') === rawInput ||
-    m.s.toUpperCase() === rawInput ||
-    m.n.toUpperCase().includes(rawInput) ||
-    rawInput === 'OIL' && m.sym === 'OIL_USDT' ||
-    rawInput === 'GOLD' && m.sym === 'GOLD_USDT' ||
-    rawInput === 'SILVER' && m.sym === 'SILVER_USDT' ||
-    rawInput === 'PLATINUM' && m.sym === 'XPT_USDT' ||
-    rawInput === 'COPPER' && m.sym === 'XCU_USDT' ||
-    rawInput === 'NICKEL' && m.sym === 'XNI_USDT' ||
-    rawInput === 'ZINC' && m.sym === 'XZN_USDT' ||
-    rawInput === 'ALUMINIUM' && m.sym === 'XAL_USDT' ||
-    rawInput === 'BRENT' && m.sym === 'OIL_BRENT_USDT'
-  );
+  const QUICK_MEXC = {
+    OIL:'USOIL_USDT',WTI:'USOIL_USDT',BRENT:'UKOIL_USDT',UKOIL:'UKOIL_USDT',
+    USOIL:'USOIL_USDT',GOLD:'XAUT_USDT',ORO:'XAUT_USDT',XAUT:'XAUT_USDT',
+    SILVER:'XAG_USDT',PLATA:'XAG_USDT',XAG:'XAG_USDT',
+  };
+  const quickSym = QUICK_MEXC[rawInput];
+  const mexcMatch = quickSym
+    ? MEXC_COMMODITIES.find(m => m.sym === quickSym)
+    : MEXC_COMMODITIES.find(m =>
+        m.sym.toUpperCase() === rawInput ||
+        m.sym.toUpperCase().replace(/_USDT$/,'') === rawInput ||
+        m.n.toUpperCase().includes(rawInput)
+      );
   if(mexcMatch) {
     window._aiSource = 'mexc';
     window._aiType   = 'commodity';
@@ -3817,19 +3814,12 @@ const STOCK_LIST = [
   {s:'NG=F',n:'Gas Natural',t:'commodity'},{s:'HG=F',n:'Cobre',t:'commodity'},
 ];
 
-// MEXC perpetual commodities
+// MEXC perpetual commodities — verified symbols from contract.mexc.com/api/v1/contract/detail
 const MEXC_COMMODITIES = [
-  {s:'GOLD_USDT',       n:'Oro / Gold',         t:'commodity', src:'mexc', sym:'GOLD_USDT'},
-  {s:'SILVER_USDT',     n:'Plata / Silver',      t:'commodity', src:'mexc', sym:'SILVER_USDT'},
-  {s:'XPT_USDT',        n:'Platino / Platinum',  t:'commodity', src:'mexc', sym:'XPT_USDT'},
-  {s:'XCU_USDT',        n:'Cobre / Copper',      t:'commodity', src:'mexc', sym:'XCU_USDT'},
-  {s:'XPD_USDT',        n:'Paladio / Palladium', t:'commodity', src:'mexc', sym:'XPD_USDT'},
-  {s:'XAL_USDT',        n:'Aluminio / Aluminium',t:'commodity', src:'mexc', sym:'XAL_USDT'},
-  {s:'XNI_USDT',        n:'Níquel / Nickel',     t:'commodity', src:'mexc', sym:'XNI_USDT'},
-  {s:'XZN_USDT',        n:'Zinc',                t:'commodity', src:'mexc', sym:'XZN_USDT'},
-  {s:'XPB_USDT',        n:'Plomo / Lead',        t:'commodity', src:'mexc', sym:'XPB_USDT'},
-  {s:'OIL_USDT',        n:'Petróleo WTI / Oil',  t:'commodity', src:'mexc', sym:'OIL_USDT'},
-  {s:'OIL_BRENT_USDT',  n:'Petróleo Brent',      t:'commodity', src:'mexc', sym:'OIL_BRENT_USDT'},
+  {s:'XAUT_USDT',  n:'Oro / Gold (PAXG)',    t:'commodity', src:'mexc', sym:'XAUT_USDT'},
+  {s:'XAG_USDT',   n:'Plata / Silver',       t:'commodity', src:'mexc', sym:'XAG_USDT'},
+  {s:'USOIL_USDT', n:'Petróleo WTI / Oil',   t:'commodity', src:'mexc', sym:'USOIL_USDT'},
+  {s:'UKOIL_USDT', n:'Petróleo Brent',       t:'commodity', src:'mexc', sym:'UKOIL_USDT'},
 ];
 
 async function loadBinanceSymbols() {
@@ -3864,12 +3854,12 @@ window.showTickerSuggestions = async (val) => {
     .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
   // Match MEXC commodities — search by symbol, name or short keyword
-  const MEXC_KEYWORDS = {OIL:'OIL_USDT',GOLD:'GOLD_USDT',SILVER:'SILVER_USDT',
-    PLATINUM:'XPT_USDT',COPPER:'XCU_USDT',NICKEL:'XNI_USDT',
-    ZINC:'XZN_USDT',ALUMINIUM:'XAL_USDT',PALLADIUM:'XPD_USDT',
-    LEAD:'XPB_USDT',BRENT:'OIL_BRENT_USDT',WTI:'OIL_USDT',
-    ORO:'GOLD_USDT',PLATA:'SILVER_USDT',PLATINO:'XPT_USDT',
-    COBRE:'XCU_USDT',NIQUEL:'XNI_USDT',PETROLEO:'OIL_USDT'};
+  const MEXC_KEYWORDS = {
+    OIL:'USOIL_USDT',WTI:'USOIL_USDT',PETROLEO:'USOIL_USDT',PETROLEO_WTI:'USOIL_USDT',
+    BRENT:'UKOIL_USDT',UKOIL:'UKOIL_USDT',
+    GOLD:'XAUT_USDT',ORO:'XAUT_USDT',XAUT:'XAUT_USDT',
+    SILVER:'XAG_USDT',PLATA:'XAG_USDT',XAG:'XAG_USDT',
+  };
   const kwMatch = MEXC_KEYWORDS[q];
   const mexcMatches = MEXC_COMMODITIES
     .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||
