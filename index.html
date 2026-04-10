@@ -1440,6 +1440,29 @@ function updatePriceEl(sym) {
     const p = getPrice(sym, dir);
     if (p != null) el.textContent = '$' + fmtPx(p);
   });
+
+  // Update watchlist live price labels
+  document.querySelectorAll(`[data-watchpx="${sym}"]`).forEach(el => {
+    const dir = el.dataset.watchdir || 'futures';
+    const p = getPrice(sym, dir);
+    if (p != null) el.textContent = 'Actual: $' + fmtPx(p);
+  });
+
+  // Update watchlist price bars
+  document.querySelectorAll(`[data-pricebar-sym="${sym}"]`).forEach(el => {
+    const id  = el.dataset.pricebarId;
+    const dir = el.dataset.pricebarDir || 'futures';
+    const p   = getPrice(sym, dir);
+    if (!p || !id) return;
+    const G = window.G;
+    const t = G?.trades?.()?.find(x => x.id === id);
+    if (!t?.entry) return;
+    const lev = t.leverage||1;
+    const sg  = dir==='long'?1:-1;
+    const liqApprox = t.entry * (1 - sg/lev*0.9);
+    const fakeT = {...t, liquidation: t.liquidation||liqApprox};
+    el.innerHTML = buildPriceBar(fakeT, p);
+  });
   // Update exchange position PnL in real time using WS price
   (window.exchangePositions||[]).filter(p=>p.ticker===sym).forEach(pos=>{
     const liveP = getPrice(sym, pos.dir);
@@ -2155,7 +2178,11 @@ function renderWatchlist() {
         <div class="pos-mini-metric">
           <div class="pos-mini-lbl">Entry</div>
           <div class="pos-mini-val">$${fmtPx(t.entry)}</div>
-          ${currentPrice?`<div style="font-size:9px;color:var(--blue);font-family:var(--mono);">Actual: $${fmtPx(currentPrice)}</div>`:''}
+          <div style="font-size:9px;color:var(--blue);font-family:var(--mono);"
+            data-watchpx="${(t.ticker||'').replace(/USDT|BUSD$/,'').toUpperCase()}"
+            data-watchdir="${t.dir}">
+            ${currentPrice?'Actual: $'+fmtPx(currentPrice):'Cargando precio...'}
+          </div>
         </div>
         <div class="pos-mini-metric">
           <div class="pos-mini-lbl">Stop Loss → <span style="color:var(--red);">-$${fmt(t.risk||0)}</span></div>
