@@ -1878,9 +1878,12 @@ window.compute = () => {
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:5px 0;border-bottom:0.5px solid var(--border);">
       ${['Nivel','Precio','%','PnL parc.','PnL acum.','R:R'].map(h=>`<span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
     </div>
-    ${[...tpRows,{l:'SL',price:sl,pnl:-risk,cum:-risk,rr:null,pct:null,isSL:true},...(!sp&&liq?[{l:'LIQ',price:liq,pnl:null,cum:null,rr:null,pct:null,isLiq:true}]:[])].map(r=>`
+    ${[
+      {l:'Entry',price:entry,pnl:0,cum:0,rr:null,pct:null,isEntry:true},
+      ...tpRows,
+      {l:'SL',price:sl,pnl:-risk,cum:-risk,rr:null,pct:null,isSL:true},...(!sp&&liq?[{l:'LIQ',price:liq,pnl:null,cum:null,rr:null,pct:null,isLiq:true}]:[])].map(r=>`
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
-      <span class="badge ${r.isSL?'bs':r.isLiq?'bw':'bl'}">${r.l}</span>
+      <span class="badge ${r.isSL?'bs':r.isLiq?'bw':r.isEntry?'be':'bl'}">${r.l}</span>
       <div><span style="font-family:var(--mono);font-size:12px;font-weight:600;">$${fmt(r.price)}</span>
         <span style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-left:4px;">${fmtP((r.price-entry)/entry*100)}</span></div>
       <span style="font-family:var(--mono);font-size:10px;color:var(--t3);">${r.pct!=null?Math.round(r.pct*100)+'%':''}</span>
@@ -2002,48 +2005,101 @@ function drawAssetsChart(all) {
 
 // ── Watchlist ──────────────────────────────────────────────────────────────
 function buildPriceBar(t, currentPrice) {
-  // Build full-width price bar with current price indicator
-  const all = [t.entry, t.sl, ...(t.tp1?[t.tp1]:[]), ...(t.tp2?[t.tp2]:[]), ...(t.tp3?[t.tp3]:[])].filter(v=>v>0);
-  if(currentPrice) all.push(currentPrice);
-  if(all.length < 2) return '';
-  const minP = Math.min(...all)*0.985, maxP = Math.max(...all)*1.015, range = maxP-minP||1;
-  const pct = v => Math.min(97, Math.max(3, ((v-minP)/range*100))).toFixed(2);
+  if (!t?.entry) return '';
+  const dir   = t.dir || 'long';
+  const sign  = dir === 'long' ? 1 : -1;
+  const entry = t.entry;
+  const sl    = t.sl   || null;
+  const liq   = t.liquidation || null;
+  const tp1   = t.tp1  || null;
+  const tp2   = t.tp2  || null;
+  const tp3   = t.tp3  || null;
+  const cur   = currentPrice || null;
 
-  const stop = t.sl || t.liquidation || null;
-  const tpZones = [
-    ...(t.tp1?[{from:t.entry,to:t.tp1,op:.25}]:[]),
-    ...(t.tp2?[{from:t.tp1||t.entry,to:t.tp2,op:.45}]:[]),
-    ...(t.tp3?[{from:t.tp2||t.tp1||t.entry,to:t.tp3,op:.65}]:[]),
-  ];
-  // Red zone: entry to stop (sl or liquidation)
-  const redFrom = stop ? Math.min(t.entry, stop) : null;
-  const redTo   = stop ? Math.max(t.entry, stop) : null;
+  // All price points for range calculation
+  const allPrices = [entry, sl, liq, tp1, tp2, tp3, cur].filter(p => p && p > 0);
+  if (allPrices.length < 2) return '';
+  const minP = Math.min(...allPrices) * 0.998;
+  const maxP = Math.max(...allPrices) * 1.002;
+  const range = maxP - minP;
+  if (range <= 0) return '';
 
+  const pct = p => ((p - minP) / range * 100).toFixed(2);
+
+  // Markers
+  const stop = sl || liq || null;
   const markers = [
-    {v:t.entry, c:'var(--t1)',   l:'Entry'},
-    ...(t.sl?         [{v:t.sl,          c:'var(--red)',   l:'SL'}]:[]),
-    ...(t.liquidation?[{v:t.liquidation, c:'var(--amber)', l:'Liq'}]:[]),
-    ...(t.tp1?[{v:t.tp1, c:'var(--accent)', l:'TP1'}]:[]),
-    ...(t.tp2?[{v:t.tp2, c:'var(--accent)', l:'TP2'}]:[]),
-    ...(t.tp3?[{v:t.tp3, c:'var(--accent)', l:'TP3'}]:[]),
+    ...(liq ? [{v:liq, c:'var(--amber)', l:'Liq', w:1}] : []),
+    ...(sl  ? [{v:sl,  c:'var(--red)',   l:'SL',  w:2}] : []),
+    {v:entry, c:'var(--t1)', l:'Entry', w:2},
+    ...(tp1 ? [{v:tp1, c:'#4ade80', l:'TP1', w:1}] : []),
+    ...(tp2 ? [{v:tp2, c:'#22c55e', l:'TP2', w:1}] : []),
+    ...(tp3 ? [{v:tp3, c:'#16a34a', l:'TP3', w:1}] : []),
+    ...(cur ? [{v:cur, c:'#60a5fa', l:'', w:3, isCur:true}] : []),
   ];
 
-  const currentMarker = currentPrice ? `
-    <div style="position:absolute;left:${pct(currentPrice)}%;transform:translateX(-50%);top:-6px;width:2px;height:18px;background:var(--blue);border-radius:1px;z-index:2;"></div>
-    <div style="position:absolute;left:${pct(currentPrice)}%;transform:translateX(-50%);top:-18px;font-size:8px;color:var(--blue);font-family:var(--mono);white-space:nowrap;font-weight:600;">$${fmtPx(currentPrice)}</div>
-  ` : '';
+  // Color zones
+  const redFrom  = stop  ? Math.min(entry, stop) : null;
+  const redTo    = stop  ? Math.max(entry, stop) : null;
 
-  return `<div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;margin:24px 0 20px;">
-    ${redFrom!=null?`<div style="position:absolute;left:${pct(redFrom)}%;width:${Math.abs(parseFloat(pct(redTo))-parseFloat(pct(redFrom)))}%;height:6px;background:var(--red);opacity:.5;border-radius:3px;"></div>`:''}
-    ${tpZones.map(z=>`<div style="position:absolute;left:${pct(Math.min(t.entry,z.to))}%;width:${Math.abs(parseFloat(pct(z.to))-parseFloat(pct(z.from)))}%;height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;"></div>`).join('')}
-    ${markers.map(m=>`
-      <div style="position:absolute;left:${pct(m.v)}%;transform:translateX(-50%);top:-18px;font-size:8px;color:${m.c};font-family:var(--mono);font-weight:600;white-space:nowrap;">${m.l}</div>
-      <div style="position:absolute;left:${pct(m.v)}%;transform:translateX(-50%);top:-6px;width:1.5px;height:18px;background:${m.c};"></div>
-      <div style="position:absolute;left:${pct(m.v)}%;transform:translateX(-50%);top:10px;font-size:8px;color:${m.c};font-family:var(--mono);white-space:nowrap;">$${fmtPx(m.v)}</div>
-    `).join('')}
-    ${currentMarker}
+  // Green gradient zones (entry → TPs)
+  const greenZones = [];
+  if (tp1) greenZones.push({from:entry, to:tp1, op:0.3});
+  if (tp2) greenZones.push({from:tp1||entry, to:tp2, op:0.5});
+  if (tp3) greenZones.push({from:tp2||tp1||entry, to:tp3, op:0.7});
+
+  // For short positions, flip the zones
+  if (dir === 'short') {
+    greenZones.forEach(z => {
+      const tmp = z.from; z.from = z.to; z.to = tmp;
+    });
+    if (redFrom !== null) {
+      // Already correct for short
+    }
+  }
+
+  // Distance info for TPs
+  const tpInfo = [
+    tp1 ? {l:'TP1', v:tp1, rr: sl ? Math.abs((tp1-entry)/(sl-entry)).toFixed(2) : null} : null,
+    tp2 ? {l:'TP2', v:tp2, rr: sl ? Math.abs((tp2-entry)/(sl-entry)).toFixed(2) : null} : null,
+    tp3 ? {l:'TP3', v:tp3, rr: sl ? Math.abs((tp3-entry)/(sl-entry)).toFixed(2) : null} : null,
+  ].filter(Boolean);
+
+  return `
+  <div style="position:relative;margin:28px 4px 24px;">
+    <!-- Bar background -->
+    <div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;">
+
+      <!-- Red zone (entry to SL/Liq) -->
+      ${redFrom !== null ? `<div style="position:absolute;
+        left:${pct(Math.min(redFrom,redTo))}%;
+        width:${Math.abs(parseFloat(pct(redTo))-parseFloat(pct(redFrom)))}%;
+        height:6px;background:var(--red);opacity:.45;border-radius:3px;"></div>` : ''}
+
+      <!-- Green zones (entry to TPs) -->
+      ${greenZones.map(z => `<div style="position:absolute;
+        left:${pct(Math.min(z.from,z.to))}%;
+        width:${Math.abs(parseFloat(pct(z.to))-parseFloat(pct(z.from)))}%;
+        height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;"></div>`).join('')}
+
+      <!-- Markers (lines + labels) -->
+      ${markers.map(m => {
+        const left = parseFloat(pct(m.v));
+        const labelStyle = `position:absolute;font-size:9px;font-family:var(--mono);
+          color:${m.c};white-space:nowrap;transform:translateX(-50%);`;
+        const priceLabel = m.isCur
+          ? `<div style="${labelStyle}top:-18px;font-weight:700;">▼ $${fmtPx(m.v)}</div>`
+          : `<div style="${labelStyle}top:-17px;">${m.l}</div>
+             <div style="${labelStyle}bottom:-17px;">$${fmtPx(m.v)}</div>`;
+        return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;
+          width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">
+          ${priceLabel}
+        </div>`;
+      }).join('')}
+    </div>
   </div>`;
 }
+
 
 function renderWatchlist() {
   const G = window.G; if(!G) return;
@@ -4369,7 +4425,7 @@ window.runImportHistory = async () => {
 
   try {
     // Call Worker to fetch history (Worker has the keys, no CORS issues)
-    const url = `${PROXY_URL}/import-history?from=${fromDate}&to=${toDate||new Date().toISOString().split('T')[0]}`;
+    const url = `${PROXY_URL}/position-history?from=${fromDate}&to=${toDate||new Date().toISOString().split('T')[0]}`;
     const r   = await fetch(url);
     if(!r.ok) throw new Error(`Worker error: ${r.status}`);
     const data = await r.json();
