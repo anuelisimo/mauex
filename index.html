@@ -4652,7 +4652,7 @@ function renderOrders() {
     exchangeId: t.id,
   }));
 
-  const allOrders = [...manualOrders, ...exchangeOrders];
+  const allOrders = [...manualOrders];
 
   if(!allOrders.length) {
     container.innerHTML = `<div class="empty">
