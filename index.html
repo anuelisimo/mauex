@@ -1142,7 +1142,7 @@ async function loadTraderAssignments() {
   } catch(e) { console.warn('loadTraderAssignments:', e); }
 }
 
-function applyTraderAssignments(positions) {
+window.applyTraderAssignments = function applyTraderAssignments(positions) {
   return positions.map(p => {
     const a = traderAssignments[p.exchangeId];
     if(a && !p.traderName) return { ...p, traderId: a.traderId, traderName: a.traderName };
@@ -3863,7 +3863,7 @@ window.syncAllExchanges = async () => {
       const r    = await fetch(`${PROXY_URL}/summary`);
       const data = await r.json();
 
-      exchangePositions        = applyTraderAssignments(data.positions || []);
+      exchangePositions        = (window.applyTraderAssignments||((x)=>x))(data.positions || []);
       window.exchangePositions = exchangePositions;
       window.exchangeOrders    = data.orders    || [];
       exchangeOrders           = data.orders    || [];
