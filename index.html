@@ -54,6 +54,9 @@
 
 /* ── POSITION CARD COMPACT ───────────────────────────────────────────────── */
 .pos-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:14px 16px;margin-bottom:8px;}
+.status-dot-red{width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;flex-shrink:0;}
+.status-dot-amber{width:8px;height:8px;border-radius:50%;background:#f59e0b;box-shadow:0 0 6px #f59e0b;flex-shrink:0;}
+.status-dot-green{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;flex-shrink:0;}
 .pos-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .pos-card-left{display:flex;align-items:center;gap:8px;}
 .pos-card-ticker{font-family:var(--mono);font-size:16px;font-weight:600;}
@@ -410,6 +413,7 @@ textarea{resize:vertical;min-height:70px;}
               <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="Entry" oninput="compute()"></div>
               <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="Stop Loss" oninput="compute()"></div>
               <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
+              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
               <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
@@ -1173,11 +1177,15 @@ function fillTraderDropdowns() {
 }
 
 // ── Trades CRUD ────────────────────────────────────────────────────────────
+let _savingTrade = false;
 window.saveTrade = async status => {
+  if (_savingTrade) return;
+  _savingTrade = true;
   const ticker = document.getElementById('cTicker').value.trim().toUpperCase();
   const entry  = parseFloat(document.getElementById('cEntry').value) || 0;
   const sl     = parseFloat(document.getElementById('cSL').value) || 0;
   const risk   = parseFloat(document.getElementById('cRisk').value) || 0;
+  const sizeInput = parseFloat(document.getElementById('cSize')?.value) || 0;
   const tp1    = parseFloat(document.getElementById('cTP1').value) || 0;
   const tp2    = parseFloat(document.getElementById('cTP2').value) || 0;
   const tp3    = parseFloat(document.getElementById('cTP3').value) || 0;
@@ -1189,10 +1197,11 @@ window.saveTrade = async status => {
   const notes  = document.getElementById('cNotes').value;
 
   if (!ticker || !entry) {
-    toast('Completá ticker y entry como mínimo.','error'); return;
+    toast('Completá ticker y entry como mínimo.','error'); _savingTrade = false; return;
   }
   const slDist  = sl ? Math.abs(sl - entry) / entry : 0;
-  const posSize = sl && risk ? (risk / slDist) : 0;
+  // Use manual size if provided, otherwise calculate from risk+SL
+  const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : 0);
   const lev = calcState.dir === 'spot' ? 1 : (calcState.lev || 1);
 
   try {
@@ -1215,6 +1224,8 @@ window.saveTrade = async status => {
   } catch(e) {
     toast('Error al guardar: ' + e.message, 'error');
     console.error(e);
+  } finally {
+    _savingTrade = false;
   }
 };
 
@@ -1872,8 +1883,10 @@ window.compute = () => {
   const mmr = MMR[calcState.ex]||.005;
   const hasSL   = sl > 0;
   const hasRisk = risk > 0;
+  const sizeManual = parseFloat(document.getElementById('cSize')?.value) || 0;
   const slDist  = hasSL ? Math.abs(sl-entry)/entry : 0;
-  const posSize = hasSL && hasRisk ? risk/slDist : 0;
+  // Use manual size if provided, otherwise calculate from risk+SL
+  const posSize = sizeManual > 0 ? sizeManual : (hasSL && hasRisk ? risk/slDist : 0);
   const margin  = posSize ? (sp?posSize:posSize/lev) : 0;
   const liq     = (!sp && hasSL) ? (sh?entry/(1-1/lev+mmr):entry/(1+1/lev-mmr)) : null;
   const liqSafe = !liq||(sh?liq>sl:liq<sl);
@@ -2178,6 +2191,7 @@ function renderWatchlist() {
       <!-- Header -->
       <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
+          <div class="status-dot-red" title="Watchlist"></div>
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
@@ -2300,15 +2314,43 @@ function renderPositions() {
       : `<button onclick="quickAssignTrader('${p.exchangeId}')" style="background:var(--amber-dim);border:0.5px solid var(--amber);padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--amber);cursor:pointer;">+ Trader</button>`;
 
     // Build a fake trade object for price bar (include liquidation)
-    const fakeT = { entry:p.entry, sl:p.sl, tp1:p.tp1, tp2:p.tp2, tp3:p.tp3, dir:p.dir, liquidation:p.liquidation };
+    const fakeT = { entry:p.entry, sl:p.sl, tp1:tp1v, tp2:tp2v, tp3:tp3v, dir:p.dir, liquidation:p.liquidation };
 
     // SL/TP distances from current price
     const slDist = livePrice&&p.sl ? fmtP((p.sl-livePrice)/livePrice*100) : null;
-    const tps = [{l:'TP1',v:p.tp1},{l:'TP2',v:p.tp2},{l:'TP3',v:p.tp3}].filter(x=>x.v);
+
+    // Try to match with a Firestore trade to get persistent TPs
+    // Match by ticker + dir — use stored TPs if exchange TPs are missing (OTOCO executed)
+    const firestoreTrade = (window.G?.trades()||[]).find(t =>
+      (t.status==='active'||t.status==='pending') &&
+      (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase() === p.ticker &&
+      t.dir === p.dir
+    );
+    const tp1v = p.tp1 || firestoreTrade?.tp1 || 0;
+    const tp2v = p.tp2 || firestoreTrade?.tp2 || 0;
+    const tp3v = p.tp3 || firestoreTrade?.tp3 || 0;
+
+    // Detect executed TPs by comparing initial posSize with current posSize
+    // If posSize reduced significantly, earlier TPs were executed
+    const initSize = firestoreTrade?.posSize || p.posSize;
+    const sizeRatio = initSize > 0 ? p.posSize / initSize : 1;
+    const tp1pct = firestoreTrade?.tp1pct || 33;
+    const tp2pct = firestoreTrade?.tp2pct || 33;
+    // TP1 executed if posSize reduced by at least tp1pct
+    const tp1executed = sizeRatio < (1 - tp1pct/100 * 0.5);
+    const tp2executed = sizeRatio < (1 - (tp1pct + tp2pct)/100 * 0.5);
+
+    const allTPs = [
+      {l:'TP1', v:tp1v, executed: tp1executed},
+      {l:'TP2', v:tp2v, executed: tp2executed},
+      {l:'TP3', v:tp3v, executed: false},
+    ].filter(x=>x.v);
+    const tps = allTPs; // keep for price bar
 
     return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:12px;">
       <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
+          <div class="status-dot-green" title="Posición abierta"></div>
           <span class="pos-card-ticker">${p.ticker}</span>
           <span class="badge ${p.dir==='long'?'bl':p.dir==='short'?'bs':'bsp'}">${(p.dir||'').toUpperCase()}${p.leverage>1?' x'+p.leverage:''}</span>
           <span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:${exColor}22;color:${exColor};">${p.exchange}</span>
@@ -2353,13 +2395,16 @@ function renderPositions() {
       </div>
 
       <!-- TPs if available -->
-      ${tps.length?`<div style="display:grid;grid-template-columns:repeat(${tps.length},1fr);gap:8px;margin-bottom:12px;">
-        ${tps.map(tp=>{
-          const dist = livePrice ? fmtP((tp.v-livePrice)/livePrice*100) : '—';
-          return `<div class="pos-mini-metric">
-            <div class="pos-mini-lbl">${tp.l}</div>
-            <div class="pos-mini-val" style="color:var(--accent);">$${fmtPx(tp.v)}</div>
-            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${dist}</div>
+      ${allTPs.length?`<div style="display:grid;grid-template-columns:repeat(${allTPs.length},1fr);gap:8px;margin-bottom:12px;">
+        ${allTPs.map(tp=>{
+          const dist = livePrice && !tp.executed ? fmtP((tp.v-livePrice)/livePrice*100) : null;
+          return `<div class="pos-mini-metric" style="${tp.executed?'opacity:0.45;':''}">
+            <div class="pos-mini-lbl" style="display:flex;align-items:center;gap:4px;">
+              ${tp.l}
+              ${tp.executed?`<span style="font-size:8px;color:var(--accent);font-family:var(--mono);">✓ ejecutado</span>`:''}
+            </div>
+            <div class="pos-mini-val" style="color:${tp.executed?'var(--t3)':'var(--accent)'};${tp.executed?'text-decoration:line-through;':''}">$${fmtPx(tp.v)}</div>
+            ${dist?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${dist}</div>`:''}
           </div>`;
         }).join('')}
       </div>`:''}
@@ -4702,6 +4747,7 @@ function renderOrders() {
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
           <input type="checkbox" id="chk-${o.exchangeId}" onchange="window.toggleOrderSelect('${o.exchangeId}')"
             style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+          <div class="status-dot-amber" title="Orden pendiente"></div>
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
           <span style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span>
