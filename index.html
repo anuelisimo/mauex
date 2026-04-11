@@ -466,7 +466,6 @@ textarea{resize:vertical;min-height:70px;}
           <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn sm" id="groupOrdersBtn" onclick="window.groupSelectedOrders()" style="display:none;">📌 Agrupar como trade</button>
           <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
         </div>
       </div>
@@ -1134,8 +1133,25 @@ window.saveTheme = async theme => {
 };
 
 // ── Data loading ───────────────────────────────────────────────────────────
+let traderAssignments = {};
+
+async function loadTraderAssignments() {
+  try {
+    const snap = await getDoc(doc(db,'traderAssignments',CU.uid));
+    if(snap.exists()) traderAssignments = snap.data() || {};
+  } catch(e) { console.warn('loadTraderAssignments:', e); }
+}
+
+function applyTraderAssignments(positions) {
+  return positions.map(p => {
+    const a = traderAssignments[p.exchangeId];
+    if(a && !p.traderName) return { ...p, traderId: a.traderId, traderName: a.traderName };
+    return p;
+  });
+}
+
 async function loadAll() {
-  await Promise.all([loadTrades(), loadTraders()]);
+  await Promise.all([loadTrades(), loadTraders(), loadTraderAssignments()]);
 }
 
 async function loadTrades() {
@@ -1649,6 +1665,8 @@ G._getExchangeKey   = ex => window._exchangeKeyStore?.[ex];
 G._saveTraderAssignment = async (exchangeId, traderId, traderName) => {
   // Save to a traderAssignments collection
   await setDoc(doc(db,'traderAssignments',CU.uid), {[exchangeId]:{traderId,traderName}}, {merge:true});
+  // Update local cache
+  traderAssignments[exchangeId] = { traderId, traderName };
 };
 
 // Load exchange keys from Firestore on login
@@ -3846,7 +3864,7 @@ window.syncAllExchanges = async () => {
       const r    = await fetch(`${PROXY_URL}/summary`);
       const data = await r.json();
 
-      exchangePositions        = data.positions || [];
+      exchangePositions        = applyTraderAssignments(data.positions || []);
       window.exchangePositions = exchangePositions;
       window.exchangeOrders    = data.orders    || [];
       exchangeOrders           = data.orders    || [];
@@ -4745,8 +4763,6 @@ function renderOrders() {
       <!-- Header -->
       <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
-          <input type="checkbox" id="chk-${o.exchangeId}" onchange="window.toggleOrderSelect('${o.exchangeId}')"
-            style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
           <div class="status-dot-amber" title="Orden pendiente"></div>
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
