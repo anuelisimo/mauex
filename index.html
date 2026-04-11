@@ -1498,7 +1498,7 @@ function updateTimestamp() {
 
 function startLivePrices() {
   // Include both active trades AND watchlist items for live prices
-  const relevant = trades.filter(t => t.status === 'active' || t.status === 'watchlist');
+  const relevant = trades.filter(t => t.status === 'active' || t.status === 'watchlist' || t.status === 'pending');
   // Also include open exchange positions
   const posTickers = (window.exchangePositions||[]).map(p => p.ticker?.toUpperCase()).filter(Boolean);
   const allTickers = [...new Set([
@@ -3813,9 +3813,9 @@ window.syncAllExchanges = async () => {
       exchangeOrders           = data.orders    || [];
       lastSyncTime             = new Date();
 
-      renderPositions();
-      renderOrders();
-      updateStatusBar();
+      try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
+      try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
+      try { updateStatusBar(); } catch(e) { console.error('updateStatusBar error:', e); }
 
       const count = exchangePositions.length;
       const msg   = `✅ ${count} posición${count!==1?'es':''} · PnL $${(data.totalPnl||0).toFixed(0)}`;
@@ -4647,10 +4647,10 @@ function renderOrders() {
   const manualOrders = (window.G?.trades().filter(t=>t.status==='pending')||[]).map(t=>({
     ...t,
     _manual: true,
-    exchange: (t.exchange||'BINANCE').toUpperCase(),
-    ticker:   t.ticker,
-    entry:    t.entry,
-    totalSize: t.posSize,
+    exchange: ((t.exchange||'BINANCE')+'').toUpperCase(),
+    ticker:   (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker || '?',
+    entry:    t.entry || 0,
+    totalSize: t.posSize || 0,
     sl:       t.sl||null,
     tp1:      t.tp1||null,
     tp2:      t.tp2||null,
@@ -4658,7 +4658,7 @@ function renderOrders() {
     leverage: t.leverage||null,
     status:   'PENDIENTE',
     exchangeId: t.id,
-  }));
+  })).filter(o => o.entry > 0);
 
   const allOrders = [...manualOrders];
 
