@@ -1430,6 +1430,7 @@ function setPrice(sym, type, price) {
 }
 
 function getPrice(ticker, dir) {
+  if (!ticker) return null;
   const sym = ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
   const p = prices[sym];
   if (!p) return null;
