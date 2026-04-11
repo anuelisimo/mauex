@@ -2435,6 +2435,29 @@ function renderPositions() {
 
 
 // ── History ────────────────────────────────────────────────────────────────
+function checkPendingReviews() {
+  const G = window.G;
+  const pending = (G?.trades()||[]).filter(t => t.status === 'pending_review');
+  const badge = document.getElementById('pendingReviewBadge');
+  if (pending.length > 0) {
+    if (!badge) {
+      const nav = document.querySelector('[data-page="history"]');
+      if (nav) {
+        const b = document.createElement('span');
+        b.id = 'pendingReviewBadge';
+        b.style.cssText = 'background:var(--amber);color:#000;border-radius:10px;padding:1px 6px;font-size:9px;margin-left:4px;font-weight:700;';
+        b.textContent = pending.length;
+        nav.appendChild(b);
+      }
+    } else {
+      badge.textContent = pending.length;
+    }
+    toast(`${pending.length} trade${pending.length>1?'s':''} pendiente${pending.length>1?'s':''} de revisión en Historial`, 'warning');
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
 function renderHistory() {
   const G = window.G; if(!G) return;
   const closed = G.trades().filter(t=>t.status==='closed');
