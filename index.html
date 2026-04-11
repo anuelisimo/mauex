@@ -4775,8 +4775,9 @@ function renderOrders() {
 // ── Manual order actions ─────────────────────────────────────────────────────
 window.movePendingToWatchlist = async id => {
   try {
+    const {updateDoc, doc, db} = window._fb;
     await updateDoc(doc(db,'trades',id), { status:'watchlist', updatedAt: new Date().toISOString() });
-    await loadTrades();
+    await window._loadTrades();
     renderOrders();
     renderWatchlist();
     toast('Movido a Watchlist.');
@@ -4785,8 +4786,9 @@ window.movePendingToWatchlist = async id => {
 
 window.moveWatchlistToPending = async id => {
   try {
+    const {updateDoc, doc, db} = window._fb;
     await updateDoc(doc(db,'trades',id), { status:'pending', updatedAt: new Date().toISOString() });
-    await loadTrades();
+    await window._loadTrades();
     renderOrders();
     renderWatchlist();
     toast('Movido a Órdenes abiertas.');
@@ -4796,8 +4798,9 @@ window.moveWatchlistToPending = async id => {
 window.deletePendingOrder = async id => {
   if(!confirm('¿Eliminar esta orden?')) return;
   try {
+    const {deleteDoc, doc, db} = window._fb;
     await deleteDoc(doc(db,'trades',id));
-    await loadTrades();
+    await window._loadTrades();
     renderOrders();
     toast('Orden eliminada.');
   } catch(e) { toast('Error: '+e.message,'error'); }
