@@ -429,8 +429,9 @@ textarea{resize:vertical;min-height:70px;}
             <div class="sec-label">Notas</div>
             <textarea id="cNotes" placeholder="Contexto del setup..."></textarea>
           </div>
-          <div style="margin-top:4px;">
-            <button class="btn acc" style="width:100%;" onclick="saveTrade('watchlist')">+ Agregar al Watchlist</button>
+          <div style="margin-top:4px;display:flex;flex-direction:column;gap:8px;">
+            <button class="btn" style="width:100%;background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes abiertas</button>
+            <button class="btn acc" style="width:100%;" onclick="saveTrade('watchlist')">📋 Agregar al Watchlist</button>
           </div>
         </div>
         <div>
@@ -1206,8 +1207,11 @@ window.saveTrade = async status => {
       updatedAt: new Date().toISOString(),
     });
     await loadTrades();
-    toast(`Guardado en ${status==='watchlist'?'Watchlist':'Posiciones'}!`);
-    showPage(status === 'watchlist' ? 'watchlist' : 'positions');
+    const dest = status==='watchlist' ? 'watchlist' : status==='pending' ? 'orders' : 'positions';
+    const label = status==='watchlist' ? 'Watchlist' : status==='pending' ? 'Órdenes abiertas' : 'Posiciones';
+    toast(`Guardado en ${label}!`);
+    showPage(dest);
+    if(dest==='orders') setTimeout(()=>window.syncAllOrders?.(), 300);
   } catch(e) {
     toast('Error al guardar: ' + e.message, 'error');
     console.error(e);
@@ -2230,6 +2234,7 @@ function renderWatchlist() {
       <div style="display:flex;align-items:center;gap:6px;">
         <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${fmtD(t.createdAt)}</span>
         <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="window.moveWatchlistToPending('${t.id}')">⚡ → Órdenes</button>
           <button class="btn acc sm" onclick="openTradeInAnalysis('${t.id}')">📊 Charts</button>
           <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
           <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
@@ -4630,19 +4635,35 @@ function renderOrders() {
     return;
   }
 
-  if(!exchangeOrders.length) {
+  // Merge exchange orders + manual orders from Firestore (status='pending')
+  const manualOrders = (window.G?.trades().filter(t=>t.status==='pending')||[]).map(t=>({
+    ...t,
+    _manual: true,
+    exchange: (t.exchange||'BINANCE').toUpperCase(),
+    ticker:   t.ticker,
+    entry:    t.entry,
+    totalSize: t.posSize,
+    sl:       t.sl||null,
+    tp1:      t.tp1||null,
+    tp2:      t.tp2||null,
+    tp3:      t.tp3||null,
+    leverage: t.leverage||null,
+    status:   'PENDIENTE',
+    exchangeId: t.id,
+  }));
+
+  const allOrders = [...manualOrders, ...exchangeOrders];
+
+  if(!allOrders.length) {
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
       <div class="empty-text">No hay órdenes pendientes</div>
-      <div class="empty-sub">Las limit orders aparecerán aquí cuando sincronices</div>
+      <div class="empty-sub">Usá la calculadora para enviar órdenes aquí</div>
     </div>`;
     return;
   }
 
-  // Get watchlist setups for linking
-  const watchItems = window.G?.trades().filter(t=>t.status==='watchlist')||[];
-
-  container.innerHTML = exchangeOrders.map(o=>{
+  container.innerHTML = allOrders.map(o=>{
     const G = window.G;
     const sym = o.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || o.ticker;
     const currentPrice = G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
@@ -4736,9 +4757,51 @@ function renderOrders() {
       ${(entryPrice&&(sl||tp1))?`<div style="padding:0 4px;margin-bottom:10px;">
         ${buildPriceBar(fakeT, currentPrice)}
       </div>`:''}
+
+      <!-- Acciones manuales -->
+      ${o._manual ? `
+      <div style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);">
+        <button onclick="window.movePendingToWatchlist('${o.id}')" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;">
+          📋 Mover a Watchlist
+        </button>
+        <button onclick="window.deletePendingOrder('${o.id}')" style="padding:6px 10px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);font-family:var(--mono);font-size:10px;cursor:pointer;">
+          ✕ Eliminar
+        </button>
+      </div>` : ''}
     </div>`;
   }).join('');
 }
+
+// ── Manual order actions ─────────────────────────────────────────────────────
+window.movePendingToWatchlist = async id => {
+  try {
+    await updateDoc(doc(db,'trades',id), { status:'watchlist', updatedAt: new Date().toISOString() });
+    await loadTrades();
+    renderOrders();
+    renderWatchlist();
+    toast('Movido a Watchlist.');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
+
+window.moveWatchlistToPending = async id => {
+  try {
+    await updateDoc(doc(db,'trades',id), { status:'pending', updatedAt: new Date().toISOString() });
+    await loadTrades();
+    renderOrders();
+    renderWatchlist();
+    toast('Movido a Órdenes abiertas.');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
+
+window.deletePendingOrder = async id => {
+  if(!confirm('¿Eliminar esta orden?')) return;
+  try {
+    await deleteDoc(doc(db,'trades',id));
+    await loadTrades();
+    renderOrders();
+    toast('Orden eliminada.');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
 
 // ── Fetch open orders from exchanges ─────────────────────────────────────────
 async function fetchAllOrders() {
