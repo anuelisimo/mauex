@@ -1467,17 +1467,8 @@ function updatePriceEl(sym) {
     const fakeT = {...t, liquidation: t.liquidation||liqApprox};
     el.innerHTML = buildPriceBar(fakeT, p);
   });
-  // Update exchange position PnL in real time using WS price
-  (window.exchangePositions||[]).filter(p=>p.ticker===sym).forEach(pos=>{
-    const liveP = getPrice(sym, pos.dir);
-    if(!liveP||!pos.entry) return;
-    const livePnl = Math.round((pos.posSize/pos.entry)*(pos.entry-liveP)*(pos.dir==='short'?1:-1)*100)/100;
-    const el = document.querySelector(`[data-pnl="${sym}"][data-entry="${pos.entry}"]`);
-    if(el){
-      el.textContent = (livePnl>=0?'+':'-')+'$'+fmt(Math.abs(livePnl));
-      el.className = el.className.replace(/pnl-pos|pnl-neg/g,'').trim()+(livePnl>=0?' pnl-pos':' pnl-neg');
-    }
-  });
+  // NOTE: Exchange position PnL uses backend value (accounts for partials/mark price/funding)
+  // We do NOT recalculate here to avoid overwriting the correct backend PnL
   // Update PnL display elements
   document.querySelectorAll(`[data-pnl="${sym}"]`).forEach(el => {
     const entry   = parseFloat(el.dataset.entry)||0;
@@ -2297,9 +2288,11 @@ function renderPositions() {
     const sym       = p.ticker;
     const livePrice = G.getPrice(p.ticker, p.dir) || p.mark || 0;
     const sign      = p.dir==='short' ? 1 : -1;
-    const livePnl   = livePrice && p.entry
+    // Use PnL from exchange backend directly (accounts for partials, mark price, funding)
+    // Only recalculate if backend PnL is missing
+    const livePnl   = p.pnl != null ? p.pnl : (livePrice && p.entry
       ? Math.round((p.posSize/p.entry)*(p.entry-livePrice)*sign*100)/100
-      : p.pnl || 0;
+      : 0);
     const exColor   = p.exchange==='BINANCE'?'#f0b90b':p.exchange==='BYBIT'?'#f7a600':p.exchange==='MEXC'?'#00b8d9':'#00a0ea';
     const traderBadge = p.traderName
       ? `<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${p.traderName}</span>`
