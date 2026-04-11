@@ -1493,10 +1493,18 @@ function updateTimestamp() {
 }
 
 function startLivePrices() {
-  const active  = trades.filter(t=>t.status==='active');
-  const tickers = [...new Set(active.map(t=>t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase()).filter(Boolean))];
-  const cryptoSyms  = tickers.filter(s=>CRYPTOS.includes(s));
-  const stockTickers= active.filter(t=>!isCrypto(t.ticker)).map(t=>t.ticker);
+  // Include both active trades AND watchlist items for live prices
+  const relevant = trades.filter(t => t.status === 'active' || t.status === 'watchlist');
+  // Also include open exchange positions
+  const posTickers = (window.exchangePositions||[]).map(p => p.ticker?.toUpperCase()).filter(Boolean);
+  const allTickers = [...new Set([
+    ...relevant.map(t => t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase()),
+    ...posTickers,
+  ].filter(Boolean))];
+  const tickers = allTickers;
+  const cryptoSyms   = tickers.filter(s => s && s.length > 0);
+  const active       = relevant.filter(t => t.status === 'active');
+  const stockTickers = active.filter(t => !isCrypto(t.ticker)).map(t => t.ticker);
 
   // Close old WS
   Object.values(wsMap).forEach(ws=>{ try{ws.close();}catch(e){} });
@@ -2133,9 +2141,13 @@ function renderWatchlist() {
     container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay setups en watchlist</div><div class="empty-sub">Agregá un setup desde la Calculadora</div></div>`;
     return;
   }
+  // Restart live prices to include watchlist tickers
+  if (typeof startLivePrices === 'function') setTimeout(startLivePrices, 100);
+
   container.innerHTML = items.map(t => {
     const G = window.G;
-    const currentPrice = G?.getPrice(t.ticker, t.dir);
+    const sym = (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    const currentPrice = G?.getPrice(sym, t.dir) || G?.getPrice(t.ticker, t.dir);
     const lev = t.leverage||1;
     const margin = t.dir==='spot' ? t.posSize : (t.posSize||0)/lev;
     const slDist = t.entry&&t.sl ? Math.abs(t.sl-t.entry)/t.entry*100 : 0;
@@ -2179,9 +2191,9 @@ function renderWatchlist() {
           <div class="pos-mini-lbl">Entry</div>
           <div class="pos-mini-val">$${fmtPx(t.entry)}</div>
           <div style="font-size:9px;color:var(--blue);font-family:var(--mono);"
-            data-watchpx="${(t.ticker||'').replace(/USDT|BUSD$/,'').toUpperCase()}"
+            data-watchpx="${(t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase()}"
             data-watchdir="${t.dir}">
-            ${currentPrice?'Actual: $'+fmtPx(currentPrice):'Cargando precio...'}
+            ${currentPrice?'▶ $'+fmtPx(currentPrice):'— precio en vivo'}
           </div>
         </div>
         <div class="pos-mini-metric">
