@@ -1188,11 +1188,11 @@ window.saveTrade = async status => {
   const traderName = traders.find(t=>t.id===traderId)?.name || '';
   const notes  = document.getElementById('cNotes').value;
 
-  if (!ticker || !entry || !sl || !risk) {
-    toast('Completá ticker, entry, SL y riesgo.','error'); return;
+  if (!ticker || !entry) {
+    toast('Completá ticker y entry como mínimo.','error'); return;
   }
-  const slDist  = Math.abs(sl - entry) / entry;
-  const posSize = (risk / slDist);
+  const slDist  = sl ? Math.abs(sl - entry) / entry : 0;
+  const posSize = sl && risk ? (risk / slDist) : 0;
   const lev = calcState.dir === 'spot' ? 1 : (calcState.lev || 1);
 
   try {
@@ -1867,56 +1867,64 @@ window.compute = () => {
   const tp2pct= (parseFloat(document.getElementById('cTP2pct').value)||33)/100;
   const tp3pct= (parseFloat(document.getElementById('cTP3pct').value)||34)/100;
 
-  ['calcMetrics','calcLevels','calcBar'].forEach(id=>{
-    const el=document.getElementById(id); if(el&&(!entry||!sl||!risk)) el.innerHTML='';
-  });
-  if (!entry||!sl||!risk) return;
+  if (!entry) {
+    ['calcMetrics','calcLevels','calcBar'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.innerHTML='';
+    });
+    return;
+  }
 
   const sp  = calcState.dir==='spot';
   const sh  = calcState.dir==='short';
   const lev = calcState.lev||1;
   const mmr = MMR[calcState.ex]||.005;
-  const slDist  = Math.abs(sl-entry)/entry;
-  const posSize = risk/slDist;
-  const margin  = sp?posSize:posSize/lev;
-  const liq     = sp?null:(sh?entry/(1-1/lev+mmr):entry/(1+1/lev-mmr));
+  const hasSL   = sl > 0;
+  const hasRisk = risk > 0;
+  const slDist  = hasSL ? Math.abs(sl-entry)/entry : 0;
+  const posSize = hasSL && hasRisk ? risk/slDist : 0;
+  const margin  = posSize ? (sp?posSize:posSize/lev) : 0;
+  const liq     = (!sp && hasSL) ? (sh?entry/(1-1/lev+mmr):entry/(1+1/lev-mmr)) : null;
   const liqSafe = !liq||(sh?liq>sl:liq<sl);
 
   // Alerts
   const a1=document.getElementById('calcAlert1'),a2=document.getElementById('calcAlert2');
   const warns=[];
-  if(sh&&sl<=entry) warns.push('SL debe ser MAYOR al Entry para SHORT');
-  if(!sh&&!sp&&sl>=entry) warns.push('SL debe ser MENOR al Entry para LONG');
-  if(!liqSafe) warns.push('🔴 Liquidación más cercana que el SL — reducí el apalancamiento');
+  if(hasSL && sh&&sl<=entry) warns.push('SL debe ser MAYOR al Entry para SHORT');
+  if(hasSL && !sh&&!sp&&sl>=entry) warns.push('SL debe ser MENOR al Entry para LONG');
+  if(hasSL && !liqSafe) warns.push('🔴 Liquidación más cercana que el SL — reducí el apalancamiento');
   const danger=warns.filter(w=>w.includes('🔴')), other=warns.filter(w=>!w.includes('🔴'));
   a1.style.display=danger.length?'block':'none'; a1.textContent=danger.join(' · ');
   a2.style.display=other.length?'block':'none';  a2.textContent=other.join(' · ');
 
-  // Metrics
-  document.getElementById('calcMetrics').innerHTML=[
+  // Metrics — solo si hay SL y riesgo
+  document.getElementById('calcMetrics').innerHTML= hasSL && hasRisk ? [
     {l:'Tamaño posición',v:'$'+fmt(posSize)},
     {l:sp?'Capital':'Margen isolated',v:'$'+fmt(margin)},
     {l:'SL % margen',v:(slDist*(sp?1:lev)*100).toFixed(1)+'%',cls:slDist*lev*100>50?'red':''},
     ...(!sp&&liq?[{l:'Liquidación',v:'$'+fmt(liq),cls:liqSafe?'':' red'}]:[]),
-  ].map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val${m.cls||''}">${m.v}</div></div>`).join('');
+  ].map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val${m.cls||''}">${m.v}</div></div>`).join('') : '';
 
-  // Levels table - cumulative PnL
+  // Levels table
   const sign = sh ? -1 : 1;
-  const pnlAtTP = (tpPrice, pct) => Math.round((tpPrice-entry)/entry * posSize * pct * sign * 100)/100;
+  const pnlAtTP = (tpPrice, pct) => posSize ? Math.round((tpPrice-entry)/entry * posSize * pct * sign * 100)/100 : null;
   let cumPnl = 0;
   const tpRows = [];
-  if(tp1){ const p=pnlAtTP(tp1,tp1pct); cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:cumPnl,rr:Math.abs((tp1-entry)/(sl-entry)),pct:tp1pct}); }
-  if(tp2){ const p=pnlAtTP(tp2,tp2pct); cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:cumPnl,rr:Math.abs((tp2-entry)/(sl-entry)),pct:tp2pct}); }
-  if(tp3){ const p=pnlAtTP(tp3,tp3pct); cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:cumPnl,rr:Math.abs((tp3-entry)/(sl-entry)),pct:tp3pct}); }
+  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp1-entry)/(sl-entry)):null,pct:tp1pct}); }
+  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp2-entry)/(sl-entry)):null,pct:tp2pct}); }
+  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp3-entry)/(sl-entry)):null,pct:tp3pct}); }
 
-  document.getElementById('calcLevels').innerHTML=`
+  const levelRows = [
+    {l:'Entry',price:entry,pnl:null,cum:null,rr:null,pct:null,isEntry:true},
+    ...tpRows,
+    ...(hasSL?[{l:'SL',price:sl,pnl:hasRisk?-risk:null,cum:hasRisk?-risk:null,rr:null,pct:null,isSL:true}]:[]),
+    ...(!sp&&liq?[{l:'LIQ',price:liq,pnl:null,cum:null,rr:null,pct:null,isLiq:true}]:[]),
+  ];
+
+  document.getElementById('calcLevels').innerHTML= levelRows.length > 1 ? `
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:5px 0;border-bottom:0.5px solid var(--border);">
       ${['Nivel','Precio','%','PnL parc.','PnL acum.','R:R'].map(h=>`<span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
     </div>
-    ${[
-      {l:'Entry',price:entry,pnl:0,cum:0,rr:null,pct:null,isEntry:true},
-      ...tpRows,
-      {l:'SL',price:sl,pnl:-risk,cum:-risk,rr:null,pct:null,isSL:true},...(!sp&&liq?[{l:'LIQ',price:liq,pnl:null,cum:null,rr:null,pct:null,isLiq:true}]:[])].map(r=>`
+    ${levelRows.map(r=>`
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
       <span class="badge ${r.isSL?'bs':r.isLiq?'bw':r.isEntry?'be':'bl'}">${r.l}</span>
       <div><span style="font-family:var(--mono);font-size:12px;font-weight:600;">$${fmt(r.price)}</span>
@@ -1925,10 +1933,10 @@ window.compute = () => {
       <span style="font-family:var(--mono);font-size:11px;" class="${r.pnl==null?'':r.pnl>=0?'pnl-pos':'pnl-neg'}">${r.pnl!=null?(r.pnl>=0?'+':'')+fmt(r.pnl):''}</span>
       <span style="font-family:var(--mono);font-size:11px;" class="${r.cum==null?'':r.cum>=0?'pnl-pos':'pnl-neg'}">${r.cum!=null?(r.cum>=0?'+':'')+fmt(r.cum):''}</span>
       <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${r.rr==null?'var(--t3)':r.rr>=2?'var(--accent)':'var(--red)'};">${r.rr!=null?r.rr.toFixed(2)+':1':''}</span>
-    </div>`).join('')}`;
+    </div>`).join('')}` : '';
 
   // Price bar
-  const all=[entry,sl,...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[])].filter(v=>v>0);
+  const all=[entry,...(hasSL?[sl]:[]),...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[])].filter(v=>v>0);
   const minP=Math.min(...all)*.985, maxP=Math.max(...all)*1.015, range=maxP-minP||1;
   const pct=v=>Math.min(98,Math.max(2,((v-minP)/range*100))).toFixed(2);
   const pts=[{v:entry,l:'Entry',c:'var(--t1)'},{v:sl,l:'SL',c:'var(--red)'},
