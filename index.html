@@ -4646,15 +4646,18 @@ function renderOrders() {
     const G = window.G;
     const sym = o.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || o.ticker;
     const currentPrice = G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
-    const dist = currentPrice&&o.price ? ((o.price-currentPrice)/currentPrice*100) : null;
+    // Soporta tanto el nuevo formato (entry/totalSize) como el viejo (price/size)
+    const entryPrice = o.entry || o.price || 0;
+    const totalSize  = o.totalSize || o.size || 0;
+    const dist = currentPrice&&entryPrice ? ((entryPrice-currentPrice)/currentPrice*100) : null;
     const distAbs = dist!=null ? Math.abs(dist) : null;
     const distColor = distAbs==null?'var(--t3)':distAbs<1?'var(--accent)':distAbs<3?'var(--amber)':'var(--t2)';
     const exColor = o.exchange==='BINANCE'?'#f0b90b':o.exchange==='BYBIT'?'#f7a600':o.exchange==='MEXC'?'#00b8d9':'#00a0ea';
     const sign = o.dir==='long' ? 1 : -1;
 
-    // Approximate liquidation (entry ± 1/leverage * 0.9)
+    // Liquidación: usar la del backend si existe, si no calcular aprox
     const lev = o.leverage||10;
-    const liqApprox = o.price ? Math.round(o.price * (1 - sign/lev*0.9) * 100)/100 : null;
+    const liqApprox = o.liquidation || (entryPrice ? Math.round(entryPrice * (1 - sign/lev*0.9) * 100)/100 : null);
 
     // SL and TPs from order data
     const sl  = o.sl  || null;
@@ -4663,11 +4666,11 @@ function renderOrders() {
     const tp3 = o.tp3 || null;
 
     // Build fake trade for price bar
-    const fakeT = { entry:o.price, sl, tp1, tp2, tp3, dir:o.dir };
+    const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir };
 
     // Distance from current price to order price
-    const distToOrder = currentPrice&&o.price
-      ? fmtP((o.price-currentPrice)/currentPrice*100)
+    const distToOrder = currentPrice&&entryPrice
+      ? fmtP((entryPrice-currentPrice)/currentPrice*100)
       : '—';
 
     return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;" id="order-card-${o.exchangeId}">
@@ -4685,8 +4688,8 @@ function renderOrders() {
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
         </div>
         <div style="text-align:right;">
-          <div style="font-family:var(--mono);font-size:15px;font-weight:600;">$${fmtPx(o.price)}</div>
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">entry · tamaño $${fmt(o.size||0)}</div>
+          <div style="font-family:var(--mono);font-size:15px;font-weight:600;">$${fmtPx(entryPrice)}</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">entry${lev&&o.leverage?` · ${lev}x`:''} · tamaño $${fmt(totalSize)}</div>
         </div>
       </div>
 
@@ -4730,7 +4733,7 @@ function renderOrders() {
       </div>`:''}
 
       <!-- Price map -->
-      ${(o.price&&(sl||tp1))?`<div style="padding:0 4px;margin-bottom:10px;">
+      ${(entryPrice&&(sl||tp1))?`<div style="padding:0 4px;margin-bottom:10px;">
         ${buildPriceBar(fakeT, currentPrice)}
       </div>`:''}
     </div>`;
