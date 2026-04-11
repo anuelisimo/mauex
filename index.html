@@ -2313,9 +2313,6 @@ function renderPositions() {
       ? `<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${p.traderName}</span>`
       : `<button onclick="quickAssignTrader('${p.exchangeId}')" style="background:var(--amber-dim);border:0.5px solid var(--amber);padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--amber);cursor:pointer;">+ Trader</button>`;
 
-    // Build a fake trade object for price bar (include liquidation)
-    const fakeT = { entry:p.entry, sl:p.sl, tp1:tp1v, tp2:tp2v, tp3:tp3v, dir:p.dir, liquidation:p.liquidation };
-
     // SL/TP distances from current price
     const slDist = livePrice&&p.sl ? fmtP((p.sl-livePrice)/livePrice*100) : null;
 
@@ -2346,6 +2343,9 @@ function renderPositions() {
       {l:'TP3', v:tp3v, executed: false},
     ].filter(x=>x.v);
     const tps = allTPs; // keep for price bar
+
+    // Build a fake trade object for price bar (include liquidation)
+    const fakeT = { entry:p.entry, sl:p.sl, tp1:tp1v, tp2:tp2v, tp3:tp3v, dir:p.dir, liquidation:p.liquidation };
 
     return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:12px;">
       <div class="pos-card-header" style="margin-bottom:12px;">
