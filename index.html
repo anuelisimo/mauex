@@ -2115,7 +2115,7 @@ function buildPriceBar(t, currentPrice) {
   ].filter(Boolean);
 
   return `
-  <div style="position:relative;margin:28px 4px 24px;overflow:hidden;">
+  <div style="position:relative;margin:28px 4px 24px;">
     <!-- Bar background -->
     <div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;">
 
@@ -2126,10 +2126,12 @@ function buildPriceBar(t, currentPrice) {
         height:6px;background:var(--red);opacity:.45;border-radius:3px;"></div>` : ''}
 
       <!-- Green zones (entry to TPs) -->
-      ${greenZones.map(z => `<div style="position:absolute;
-        left:${pct(Math.min(z.from,z.to))}%;
-        width:${Math.abs(parseFloat(pct(z.to))-parseFloat(pct(z.from)))}%;
-        height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;"></div>`).join('')}
+      ${greenZones.map(z => {
+        const l = parseFloat(pct(Math.min(z.from,z.to)));
+        const r = parseFloat(pct(Math.max(z.from,z.to)));
+        const w = Math.min(r, 98) - l;
+        return `<div style="position:absolute;left:${l}%;width:${Math.max(0,w)}%;height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;"></div>`;
+      }).join('')}
 
       <!-- Markers (lines + labels) -->
       ${markers.map(m => {
