@@ -466,6 +466,7 @@ textarea{resize:vertical;min-height:70px;}
           <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
         </div>
         <div style="display:flex;gap:8px;">
+          <button class="btn sm" id="groupOrdersBtn" onclick="window.groupSelectedOrders()" style="display:none;">📌 Agrupar como trade</button>
           <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
         </div>
       </div>
@@ -1133,25 +1134,8 @@ window.saveTheme = async theme => {
 };
 
 // ── Data loading ───────────────────────────────────────────────────────────
-let traderAssignments = {};
-
-async function loadTraderAssignments() {
-  try {
-    const snap = await getDoc(doc(db,'traderAssignments',CU.uid));
-    if(snap.exists()) traderAssignments = snap.data() || {};
-  } catch(e) { console.warn('loadTraderAssignments:', e); }
-}
-
-window.applyTraderAssignments = function applyTraderAssignments(positions) {
-  return positions.map(p => {
-    const a = traderAssignments[p.exchangeId];
-    if(a && !p.traderName) return { ...p, traderId: a.traderId, traderName: a.traderName };
-    return p;
-  });
-}
-
 async function loadAll() {
-  await Promise.all([loadTrades(), loadTraders(), loadTraderAssignments()]);
+  await Promise.all([loadTrades(), loadTraders()]);
 }
 
 async function loadTrades() {
@@ -1496,8 +1480,9 @@ function updatePriceEl(sym) {
     el.innerHTML = buildPriceBar(fakeT, p);
   });
   // NOTE: Exchange position PnL uses backend value (accounts for partials/mark price/funding)
-  // Only update PnL for MANUAL positions (data-manual="true"), not exchange positions
-  document.querySelectorAll(`[data-pnl="${sym}"][data-manual="true"]`).forEach(el => {
+  // We do NOT recalculate here to avoid overwriting the correct backend PnL
+  // Update PnL display elements
+  document.querySelectorAll(`[data-pnl="${sym}"]`).forEach(el => {
     const entry   = parseFloat(el.dataset.entry)||0;
     const posSize = parseFloat(el.dataset.pos)||0;
     const dir     = el.dataset.dir||'long';
@@ -1664,8 +1649,6 @@ G._getExchangeKey   = ex => window._exchangeKeyStore?.[ex];
 G._saveTraderAssignment = async (exchangeId, traderId, traderName) => {
   // Save to a traderAssignments collection
   await setDoc(doc(db,'traderAssignments',CU.uid), {[exchangeId]:{traderId,traderName}}, {merge:true});
-  // Update local cache
-  traderAssignments[exchangeId] = { traderId, traderName };
 };
 
 // Load exchange keys from Firestore on login
@@ -1694,7 +1677,7 @@ G.prices   = prices;
 // ── Proxy config ──────────────────────────────────────────────────────────
 // Set this to your Cloudflare Worker URL after deploying worker.js
 // Example: 'https://mauex-proxy.tuusuario.workers.dev'
-const PROXY_URL = localStorage.getItem('mauex_proxy') || 'https://mauex-proxy.mauaparo.workers.dev';
+const PROXY_URL = localStorage.getItem('mauex_proxy') || '';
 
 // Wrap fetch to go through proxy for exchange private APIs
 window.proxyFetch = function proxyFetch(url, options={}) {
@@ -2084,37 +2067,28 @@ function buildPriceBar(t, currentPrice) {
   // All price points for range calculation
   const allPrices = [entry, sl, liq, tp1, tp2, tp3, cur].filter(p => p && p > 0);
   if (allPrices.length < 2) return '';
-  let minP = Math.min(...allPrices) * 0.998;
-  let maxP = Math.max(...allPrices) * 1.002;
-  // Ensure minimum range of 2% to avoid collapse when SL==entry (breakeven)
-  if ((maxP - minP) / entry < 0.02) {
-    minP = entry * 0.99;
-    maxP = entry * 1.01;
-  }
+  const minP = Math.min(...allPrices) * 0.998;
+  const maxP = Math.max(...allPrices) * 1.002;
   const range = maxP - minP;
   if (range <= 0) return '';
 
   const pct = p => ((p - minP) / range * 100).toFixed(2);
 
-  // Detect breakeven (SL == entry)
-  const isBreakeven = sl && Math.abs(sl - entry) / entry < 0.001;
-
   // Markers
   const stop = sl || liq || null;
   const markers = [
     ...(liq ? [{v:liq, c:'var(--amber)', l:'Liq', w:1}] : []),
-    ...(sl && !isBreakeven ? [{v:sl, c:'var(--red)', l:'SL', w:2}] : []),
-    {v:entry, c:'var(--t1)', l: isBreakeven ? 'Entry/BE' : 'Entry', w:2},
-    ...(isBreakeven ? [{v:sl, c:'var(--red)', l:'BE', w:2, isBreakeven:true}] : []),
+    ...(sl  ? [{v:sl,  c:'var(--red)',   l:'SL',  w:2}] : []),
+    {v:entry, c:'var(--t1)', l:'Entry', w:2},
     ...(tp1 ? [{v:tp1, c:'#4ade80', l:'TP1', w:1}] : []),
     ...(tp2 ? [{v:tp2, c:'#22c55e', l:'TP2', w:1}] : []),
     ...(tp3 ? [{v:tp3, c:'#16a34a', l:'TP3', w:1}] : []),
     ...(cur ? [{v:cur, c:'#60a5fa', l:'', w:3, isCur:true}] : []),
   ];
 
-  // Color zones — no red zone when breakeven (SL == entry)
-  const redFrom  = stop && !isBreakeven ? Math.min(entry, stop) : null;
-  const redTo    = stop && !isBreakeven ? Math.max(entry, stop) : null;
+  // Color zones
+  const redFrom  = stop  ? Math.min(entry, stop) : null;
+  const redTo    = stop  ? Math.max(entry, stop) : null;
 
   // Green gradient zones (entry → TPs)
   const greenZones = [];
@@ -2472,7 +2446,7 @@ function renderPositions() {
         </div>
         <div class="fx" style="gap:6px;align-items:baseline;">
           <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
-            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
+            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}">
             ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
           </div>
           ${pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</span>`:''}
@@ -3005,17 +2979,10 @@ async function renderTFCharts(tfKey, symbol, interval) {
       }
     });
 
-    // Log scale for weekly and monthly charts
+    // Log scale for weekly and monthly
     if (tfKey === '1W' || tfKey === '1M') {
-      csChart.applyOptions({
-        rightPriceScale: {
-          mode: 1, // 1 = Logarithmic
-          borderColor: 'rgba(255,255,255,0.08)',
-          scaleMargins: { top: 0.05, bottom: 0.05 },
-        }
-      });
+      csChart.applyOptions({ rightPriceScale:{ mode:1, borderColor:'rgba(255,255,255,0.08)', scaleMargins:{top:0.05,bottom:0.05} } });
     }
-
     const csSeries = csChart.addCandlestickSeries({
       upColor:'#00c47a', downColor:'#f03d3d',
       borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
@@ -3023,11 +2990,10 @@ async function renderTFCharts(tfKey, symbol, interval) {
     });
     csSeries.setData(candles);
 
-    // EMA 20 (yellow) / 50 (blue) / 200 (red, hidden on 1M if insufficient data)
+    // EMA 20 (yellow) / 50 (blue) / 200 (red) — show last value
     const emaConfigs = [
       {p:20,  color:'rgba(240,200,60,0.9)',  label:'E20'},
       {p:50,  color:'rgba(61,156,240,0.9)',  label:'E50'},
-      // EMA200 only on timeframes with enough candles (not 1M which has ~48)
       ...(tfKey !== '1M' ? [{p:200, color:'rgba(240,80,80,0.85)', label:'E200'}] : []),
     ];
     const emaValues = {};
@@ -3072,34 +3038,20 @@ async function renderTFCharts(tfKey, symbol, interval) {
     // ── OBV chart (no time axis) ───────────────────────────────────────────
     const obvChart = makeChart(obvEl, 80);
     lwCharts['obv'+tfKey] = obvChart;
+    const _obvFmt = v => {
+      const abs = Math.abs(v), sign = v < 0 ? '-' : '';
+      if (abs >= 1e9) return sign+(abs/1e9).toFixed(1)+'B';
+      if (abs >= 1e6) return sign+(abs/1e6).toFixed(1)+'M';
+      if (abs >= 1e3) return sign+(abs/1e3).toFixed(1)+'K';
+      return sign+abs.toFixed(0);
+    };
     obvChart.applyOptions({
       timeScale:{visible:false},
-      rightPriceScale:{
-        borderColor:'rgba(255,255,255,0.08)',
-        scaleMargins:{top:0.1,bottom:0.1},
-      },
-      localization:{
-        priceFormatter: v => {
-          const abs = Math.abs(v);
-          const sign = v < 0 ? '-' : '';
-          if (abs >= 1e9) return sign + (abs/1e9).toFixed(1) + 'B';
-          if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + 'M';
-          if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K';
-          return sign + abs.toFixed(0);
-        }
-      }
+      localization:{ priceFormatter: _obvFmt },
     });
     const obvSeries = obvChart.addLineSeries({
       color:'rgba(61,156,240,0.85)', lineWidth:1.5,
       priceLineVisible:false, lastValueVisible:false,
-      priceFormat:{ type:'custom', formatter: v => {
-        const abs = Math.abs(v);
-        const sign = v < 0 ? '-' : '';
-        if (abs >= 1e9) return sign + (abs/1e9).toFixed(1) + 'B';
-        if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + 'M';
-        if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K';
-        return sign + abs.toFixed(0);
-      }},
     });
     obvSeries.setData(calcOBV(candles));
     obvChart.timeScale().fitContent();
@@ -3339,13 +3291,11 @@ window.copyChartsToClipboard = async () => {
     const grid = document.getElementById('aiChartGrid');
     const strip = document.getElementById('marketStrip');
 
-    // Build a single canvas from all chart canvases (grid 2x2 + monthly)
-    const monthly = document.getElementById('monthlyCard');
+    // Build a single canvas from all chart canvases
     const gridRect = grid.getBoundingClientRect();
-    const monthlyH = monthly ? Math.round(monthly.getBoundingClientRect().height) + 10 : 0;
     const stripH = strip.offsetHeight||0;
     const totalW = Math.round(gridRect.width);
-    const totalH = Math.round(gridRect.height) + stripH + 20 + monthlyH;
+    const totalH = Math.round(gridRect.height) + stripH + 20;
 
     const canvas = document.createElement('canvas');
     const dpr = window.devicePixelRatio||1;
@@ -3369,7 +3319,7 @@ window.copyChartsToClipboard = async () => {
 
     const offsetY = stripH+10;
 
-    // Collect all LW chart canvases from 2x2 grid
+    // Collect all LW chart canvases and draw them
     const chartCanvases = grid.querySelectorAll('canvas');
     chartCanvases.forEach(cv => {
       const r = cv.getBoundingClientRect();
@@ -3378,19 +3328,6 @@ window.copyChartsToClipboard = async () => {
       const y = r.top - gr.top + offsetY;
       try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
     });
-
-    // Also draw monthly chart canvases below the grid
-    if (monthly) {
-      const monthlyCanvases = monthly.querySelectorAll('canvas');
-      const monthlyTop = Math.round(gridRect.height) + offsetY + 10;
-      monthlyCanvases.forEach(cv => {
-        const r  = cv.getBoundingClientRect();
-        const mr = monthly.getBoundingClientRect();
-        const x  = r.left - mr.left;
-        const y  = r.top - mr.top + monthlyTop;
-        try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
-      });
-    }
 
     // Add symbol + timestamp watermark
     ctx.fillStyle='rgba(255,255,255,0.2)';
@@ -3926,7 +3863,7 @@ window.syncAllExchanges = async () => {
       const r    = await fetch(`${PROXY_URL}/summary`);
       const data = await r.json();
 
-      exchangePositions        = (window.applyTraderAssignments||((x)=>x))(data.positions || []);
+      exchangePositions        = data.positions || [];
       window.exchangePositions = exchangePositions;
       window.exchangeOrders    = data.orders    || [];
       exchangeOrders           = data.orders    || [];
@@ -4825,6 +4762,8 @@ function renderOrders() {
       <!-- Header -->
       <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
+          <input type="checkbox" id="chk-${o.exchangeId}" onchange="window.toggleOrderSelect('${o.exchangeId}')"
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
           <div class="status-dot-amber" title="Orden pendiente"></div>
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
