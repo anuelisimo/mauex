@@ -2069,22 +2069,19 @@ function buildPriceBar(t, currentPrice) {
   if (allPrices.length < 2) return '';
   let minP = Math.min(...allPrices) * 0.998;
   let maxP = Math.max(...allPrices) * 1.002;
-  if ((maxP - minP) / entry < 0.02) { minP = entry * 0.99; maxP = entry * 1.01; }
+  const isBreakeven = sl && Math.abs(sl - entry) / entry < 0.001;
+  if (isBreakeven || (maxP - minP) / entry < 0.02) { minP = entry * 0.99; maxP = entry * 1.01; }
   const range = maxP - minP;
   if (range <= 0) return '';
 
   const pct = p => ((p - minP) / range * 100).toFixed(2);
-
-  // Detect breakeven (SL == entry within 0.1%)
-  const isBreakeven = sl && Math.abs(sl - entry) / entry < 0.001;
 
   // Markers
   const stop = sl || liq || null;
   const markers = [
     ...(liq ? [{v:liq, c:'var(--amber)', l:'Liq', w:1}] : []),
     ...(sl && !isBreakeven ? [{v:sl, c:'var(--red)', l:'SL', w:2}] : []),
-    {v:entry, c:'var(--t1)', l: isBreakeven ? 'Entry/BE' : 'Entry', w:2},
-    ...(isBreakeven ? [{v:sl, c:'var(--red)', l:'BE', w:2}] : []),
+    {v:entry, c: isBreakeven ? 'var(--red)' : 'var(--t1)', l: isBreakeven ? 'Entry = SL' : 'Entry', w:2},
     ...(tp1 ? [{v:tp1, c:'#4ade80', l:'TP1', w:1}] : []),
     ...(tp2 ? [{v:tp2, c:'#22c55e', l:'TP2', w:1}] : []),
     ...(tp3 ? [{v:tp3, c:'#16a34a', l:'TP3', w:1}] : []),
@@ -3299,8 +3296,10 @@ window.copyChartsToClipboard = async () => {
     // Build a single canvas from all chart canvases
     const gridRect = grid.getBoundingClientRect();
     const stripH = strip.offsetHeight||0;
+    const monthly = document.getElementById('monthlyCard');
+    const monthlyH = monthly ? Math.round(monthly.getBoundingClientRect().height) + 10 : 0;
     const totalW = Math.round(gridRect.width);
-    const totalH = Math.round(gridRect.height) + stripH + 20;
+    const totalH = Math.round(gridRect.height) + stripH + 20 + monthlyH;
 
     const canvas = document.createElement('canvas');
     const dpr = window.devicePixelRatio||1;
@@ -3324,7 +3323,7 @@ window.copyChartsToClipboard = async () => {
 
     const offsetY = stripH+10;
 
-    // Collect all LW chart canvases and draw them
+    // Collect all LW chart canvases from 2x2 grid
     const chartCanvases = grid.querySelectorAll('canvas');
     chartCanvases.forEach(cv => {
       const r = cv.getBoundingClientRect();
@@ -3333,6 +3332,20 @@ window.copyChartsToClipboard = async () => {
       const y = r.top - gr.top + offsetY;
       try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
     });
+
+    // Also draw monthly chart (1M) below the grid
+    const monthly = document.getElementById('monthlyCard');
+    if (monthly) {
+      const monthlyCanvases = monthly.querySelectorAll('canvas');
+      const monthlyTop = Math.round(gridRect.height) + offsetY + 10;
+      monthlyCanvases.forEach(cv => {
+        const r  = cv.getBoundingClientRect();
+        const mr = monthly.getBoundingClientRect();
+        const x  = r.left - mr.left;
+        const y  = r.top  - mr.top + monthlyTop;
+        try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
+      });
+    }
 
     // Add symbol + timestamp watermark
     ctx.fillStyle='rgba(255,255,255,0.2)';
