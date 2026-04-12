@@ -1776,6 +1776,7 @@ window.showPage = page => {
     setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
   }
   if (page === 'positions') {
+    console.log('[mobile debug] entering positions, masterPass:', !!_masterPass, 'PROXY_URL:', PROXY_URL, 'exchangePositions:', (window.exchangePositions||[]).length);
     syncAllExchanges();
   }
 
