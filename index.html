@@ -3023,11 +3023,12 @@ async function renderTFCharts(tfKey, symbol, interval) {
     });
     csSeries.setData(candles);
 
-    // EMA 20 (yellow) / 50 (blue) / 200 (red) — show last value
+    // EMA 20 (yellow) / 50 (blue) / 200 (red, hidden on 1M if insufficient data)
     const emaConfigs = [
-      {p:20, color:'rgba(240,200,60,0.9)',  label:'E20'},
-      {p:50, color:'rgba(61,156,240,0.9)',  label:'E50'},
-      {p:200,color:'rgba(240,80,80,0.85)',  label:'E200'},
+      {p:20,  color:'rgba(240,200,60,0.9)',  label:'E20'},
+      {p:50,  color:'rgba(61,156,240,0.9)',  label:'E50'},
+      // EMA200 only on timeframes with enough candles (not 1M which has ~48)
+      ...(tfKey !== '1M' ? [{p:200, color:'rgba(240,80,80,0.85)', label:'E200'}] : []),
     ];
     const emaValues = {};
     for(const {p,color,label} of emaConfigs){
@@ -3071,8 +3072,35 @@ async function renderTFCharts(tfKey, symbol, interval) {
     // ── OBV chart (no time axis) ───────────────────────────────────────────
     const obvChart = makeChart(obvEl, 80);
     lwCharts['obv'+tfKey] = obvChart;
-    obvChart.applyOptions({timeScale:{visible:false}});
-    const obvSeries = obvChart.addLineSeries({color:'rgba(61,156,240,0.85)',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false});
+    obvChart.applyOptions({
+      timeScale:{visible:false},
+      rightPriceScale:{
+        borderColor:'rgba(255,255,255,0.08)',
+        scaleMargins:{top:0.1,bottom:0.1},
+      },
+      localization:{
+        priceFormatter: v => {
+          const abs = Math.abs(v);
+          const sign = v < 0 ? '-' : '';
+          if (abs >= 1e9) return sign + (abs/1e9).toFixed(1) + 'B';
+          if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + 'M';
+          if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K';
+          return sign + abs.toFixed(0);
+        }
+      }
+    });
+    const obvSeries = obvChart.addLineSeries({
+      color:'rgba(61,156,240,0.85)', lineWidth:1.5,
+      priceLineVisible:false, lastValueVisible:false,
+      priceFormat:{ type:'custom', formatter: v => {
+        const abs = Math.abs(v);
+        const sign = v < 0 ? '-' : '';
+        if (abs >= 1e9) return sign + (abs/1e9).toFixed(1) + 'B';
+        if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + 'M';
+        if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K';
+        return sign + abs.toFixed(0);
+      }},
+    });
     obvSeries.setData(calcOBV(candles));
     obvChart.timeScale().fitContent();
 
