@@ -2084,28 +2084,37 @@ function buildPriceBar(t, currentPrice) {
   // All price points for range calculation
   const allPrices = [entry, sl, liq, tp1, tp2, tp3, cur].filter(p => p && p > 0);
   if (allPrices.length < 2) return '';
-  const minP = Math.min(...allPrices) * 0.998;
-  const maxP = Math.max(...allPrices) * 1.002;
+  let minP = Math.min(...allPrices) * 0.998;
+  let maxP = Math.max(...allPrices) * 1.002;
+  // Ensure minimum range of 2% to avoid collapse when SL==entry (breakeven)
+  if ((maxP - minP) / entry < 0.02) {
+    minP = entry * 0.99;
+    maxP = entry * 1.01;
+  }
   const range = maxP - minP;
   if (range <= 0) return '';
 
   const pct = p => ((p - minP) / range * 100).toFixed(2);
 
+  // Detect breakeven (SL == entry)
+  const isBreakeven = sl && Math.abs(sl - entry) / entry < 0.001;
+
   // Markers
   const stop = sl || liq || null;
   const markers = [
     ...(liq ? [{v:liq, c:'var(--amber)', l:'Liq', w:1}] : []),
-    ...(sl  ? [{v:sl,  c:'var(--red)',   l:'SL',  w:2}] : []),
-    {v:entry, c:'var(--t1)', l:'Entry', w:2},
+    ...(sl && !isBreakeven ? [{v:sl, c:'var(--red)', l:'SL', w:2}] : []),
+    {v:entry, c:'var(--t1)', l: isBreakeven ? 'Entry/BE' : 'Entry', w:2},
+    ...(isBreakeven ? [{v:sl, c:'var(--red)', l:'BE', w:2, isBreakeven:true}] : []),
     ...(tp1 ? [{v:tp1, c:'#4ade80', l:'TP1', w:1}] : []),
     ...(tp2 ? [{v:tp2, c:'#22c55e', l:'TP2', w:1}] : []),
     ...(tp3 ? [{v:tp3, c:'#16a34a', l:'TP3', w:1}] : []),
     ...(cur ? [{v:cur, c:'#60a5fa', l:'', w:3, isCur:true}] : []),
   ];
 
-  // Color zones
-  const redFrom  = stop  ? Math.min(entry, stop) : null;
-  const redTo    = stop  ? Math.max(entry, stop) : null;
+  // Color zones — no red zone when breakeven (SL == entry)
+  const redFrom  = stop && !isBreakeven ? Math.min(entry, stop) : null;
+  const redTo    = stop && !isBreakeven ? Math.max(entry, stop) : null;
 
   // Green gradient zones (entry → TPs)
   const greenZones = [];
