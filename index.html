@@ -2069,7 +2069,8 @@ function buildPriceBar(t, currentPrice) {
   let minP = Math.min(...allPrices) * 0.998;
   let maxP = Math.max(...allPrices) * 1.002;
   const isBreakeven = sl && Math.abs(sl - entry) / entry < 0.001;
-  if (isBreakeven || (maxP - minP) / entry < 0.02) { minP = entry * 0.99; maxP = entry * 1.01; }
+  // In breakeven, don't artificially limit range — keep all prices visible
+  if (!isBreakeven && (maxP - minP) / entry < 0.02) { minP = entry * 0.99; maxP = entry * 1.01; }
   const range = maxP - minP;
   if (range <= 0) return '';
 
