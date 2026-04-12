@@ -1480,9 +1480,8 @@ function updatePriceEl(sym) {
     el.innerHTML = buildPriceBar(fakeT, p);
   });
   // NOTE: Exchange position PnL uses backend value (accounts for partials/mark price/funding)
-  // We do NOT recalculate here to avoid overwriting the correct backend PnL
-  // Update PnL display elements
-  document.querySelectorAll(`[data-pnl="${sym}"]`).forEach(el => {
+  // Only update PnL for MANUAL positions (data-manual="true"), not exchange positions
+  document.querySelectorAll(`[data-pnl="${sym}"][data-manual="true"]`).forEach(el => {
     const entry   = parseFloat(el.dataset.entry)||0;
     const posSize = parseFloat(el.dataset.pos)||0;
     const dir     = el.dataset.dir||'long';
@@ -2116,7 +2115,7 @@ function buildPriceBar(t, currentPrice) {
   ].filter(Boolean);
 
   return `
-  <div style="position:relative;margin:28px 4px 24px;">
+  <div style="position:relative;margin:28px 4px 24px;overflow:hidden;">
     <!-- Bar background -->
     <div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;">
 
@@ -2448,7 +2447,7 @@ function renderPositions() {
         </div>
         <div class="fx" style="gap:6px;align-items:baseline;">
           <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
-            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}">
+            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
             ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
           </div>
           ${pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</span>`:''}
