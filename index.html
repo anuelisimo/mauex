@@ -3334,7 +3334,6 @@ window.copyChartsToClipboard = async () => {
     });
 
     // Also draw monthly chart (1M) below the grid
-    const monthly = document.getElementById('monthlyCard');
     if (monthly) {
       const monthlyCanvases = monthly.querySelectorAll('canvas');
       const monthlyTop = Math.round(gridRect.height) + offsetY + 10;
