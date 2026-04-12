@@ -3300,11 +3300,13 @@ window.copyChartsToClipboard = async () => {
     const grid = document.getElementById('aiChartGrid');
     const strip = document.getElementById('marketStrip');
 
-    // Build a single canvas from all chart canvases
+    // Build a single canvas from all chart canvases (grid 2x2 + monthly)
+    const monthly = document.getElementById('monthlyCard');
     const gridRect = grid.getBoundingClientRect();
+    const monthlyH = monthly ? Math.round(monthly.getBoundingClientRect().height) + 10 : 0;
     const stripH = strip.offsetHeight||0;
     const totalW = Math.round(gridRect.width);
-    const totalH = Math.round(gridRect.height) + stripH + 20;
+    const totalH = Math.round(gridRect.height) + stripH + 20 + monthlyH;
 
     const canvas = document.createElement('canvas');
     const dpr = window.devicePixelRatio||1;
@@ -3328,7 +3330,7 @@ window.copyChartsToClipboard = async () => {
 
     const offsetY = stripH+10;
 
-    // Collect all LW chart canvases and draw them
+    // Collect all LW chart canvases from 2x2 grid
     const chartCanvases = grid.querySelectorAll('canvas');
     chartCanvases.forEach(cv => {
       const r = cv.getBoundingClientRect();
@@ -3337,6 +3339,19 @@ window.copyChartsToClipboard = async () => {
       const y = r.top - gr.top + offsetY;
       try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
     });
+
+    // Also draw monthly chart canvases below the grid
+    if (monthly) {
+      const monthlyCanvases = monthly.querySelectorAll('canvas');
+      const monthlyTop = Math.round(gridRect.height) + offsetY + 10;
+      monthlyCanvases.forEach(cv => {
+        const r  = cv.getBoundingClientRect();
+        const mr = monthly.getBoundingClientRect();
+        const x  = r.left - mr.left;
+        const y  = r.top - mr.top + monthlyTop;
+        try { ctx.drawImage(cv, x, y, r.width, r.height); } catch(e){}
+      });
+    }
 
     // Add symbol + timestamp watermark
     ctx.fillStyle='rgba(255,255,255,0.2)';
