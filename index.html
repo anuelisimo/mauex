@@ -434,8 +434,9 @@ textarea{resize:vertical;min-height:70px;}
             <textarea id="cNotes" placeholder="Contexto del setup..."></textarea>
           </div>
           <div style="margin-top:4px;display:flex;flex-direction:column;gap:8px;">
-            <button class="btn" style="width:100%;background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes abiertas</button>
+            <button class="btn" style="width:100%;background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes</button>
             <button class="btn acc" style="width:100%;" onclick="saveTrade('watchlist')">📋 Agregar al Watchlist</button>
+            <button class="btn" style="width:100%;background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;" onclick="saveTrade('active')">🟢 Abrir Posición directa</button>
           </div>
         </div>
         <div>
@@ -491,7 +492,10 @@ textarea{resize:vertical;min-height:70px;}
     <div id="histPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Historial</div>
-        <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="histStats"></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="histStats"></div>
+          <button class="btn acc sm" onclick="openModal('directTradeModal')">+ Agregar trade</button>
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
         <input type="text" id="filtTicker" placeholder="Ticker..." style="width:120px;" oninput="renderHistory()">
@@ -929,13 +933,58 @@ textarea{resize:vertical;min-height:70px;}
 
 <div class="modal-overlay" id="closeTradeModal">
   <div class="modal" style="width:380px;">
-    <div class="modal-hdr"><div class="modal-title">Cerrar trade</div><button class="modal-close" onclick="closeModal('closeTradeModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Cerrar posición</div><button class="modal-close" onclick="closeModal('closeTradeModal')">✕</button></div>
     <div class="modal-body">
       <div style="margin-bottom:12px;"><label class="lbl">Precio de salida</label><input type="number" id="closePrice" placeholder="68000"></div>
       <div style="margin-bottom:12px;"><label class="lbl">Fecha</label><input type="text" id="closeDate"></div>
       <div><label class="lbl">Notas</label><textarea id="closeNotes" placeholder="¿Por qué cerraste?"></textarea></div>
     </div>
-    <div class="modal-footer"><button class="btn" onclick="closeModal('closeTradeModal')">Cancelar</button><button class="btn acc" onclick="confirmClose()">Cerrar</button></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('closeTradeModal')">Cancelar</button><button class="btn acc" onclick="confirmClose()">Cerrar total</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="directTradeModal">
+  <div class="modal" style="width:420px;max-height:90vh;overflow-y:auto;">
+    <div class="modal-hdr"><div class="modal-title">Agregar trade al historial</div><button class="modal-close" onclick="closeModal('directTradeModal')">✕</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Ticker</label><input type="text" id="dtTicker" placeholder="BTC"></div>
+        <div><label class="lbl">Dirección</label>
+          <select id="dtDir"><option value="long">Long</option><option value="short">Short</option><option value="spot">Spot</option></select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Exchange</label><input type="text" id="dtExchange" placeholder="BINANCE"></div>
+        <div><label class="lbl">Leverage</label><input type="number" id="dtLev" placeholder="1" value="1"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Precio entrada</label><input type="number" id="dtEntry" placeholder="68000"></div>
+        <div><label class="lbl">Precio salida</label><input type="number" id="dtExit" placeholder="72000"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Tamaño USD</label><input type="number" id="dtSize" placeholder="1000"></div>
+        <div><label class="lbl">PnL $</label><input type="number" id="dtPnl" placeholder="Auto"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Fecha entrada</label><input type="date" id="dtOpenDate"></div>
+        <div><label class="lbl">Fecha cierre</label><input type="date" id="dtCloseDate"></div>
+      </div>
+      <div style="margin-bottom:12px;"><label class="lbl">Notas</label><textarea id="dtNotes" placeholder="Contexto del trade..."></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('directTradeModal')">Cancelar</button><button class="btn acc" onclick="saveDirectTrade()">Guardar en historial</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="partialCloseModal">
+  <div class="modal" style="width:380px;">
+    <div class="modal-hdr"><div class="modal-title">Cierre parcial</div><button class="modal-close" onclick="closeModal('partialCloseModal')">✕</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px;"><label class="lbl">Precio de salida parcial</label><input type="number" id="partialPrice" placeholder="68000"></div>
+      <div style="margin-bottom:12px;"><label class="lbl">% del tamaño a cerrar</label><input type="number" id="partialPct" placeholder="50" min="1" max="99" value="50"></div>
+      <div style="margin-bottom:12px;"><label class="lbl">Fecha</label><input type="text" id="partialDate"></div>
+      <div><label class="lbl">Notas</label><textarea id="partialNotes" placeholder="TP1, cierre parcial..."></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('partialCloseModal')">Cancelar</button><button class="btn acc" onclick="confirmPartialClose()">Confirmar cierre parcial</button></div>
   </div>
 </div>
 
@@ -1115,6 +1164,14 @@ onAuthStateChanged(auth, async user => {
     // Show master password modal if keys are configured
     setTimeout(checkMasterPassNeeded, 800);
     startAutoSync();
+    // Register userId with Railway backend so fills polling can save to Firestore
+    const _railwayUrl = 'https://mauex-backend-production.up.railway.app';
+    fetch(`${_railwayUrl}/set-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.uid })
+    }).then(() => console.log('✅ userId registered with Railway'))
+      .catch(e => console.warn('set-user failed:', e.message));
   } else {
     document.getElementById('authScreen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
@@ -1235,6 +1292,114 @@ window.moveToActive = async id => {
     await loadTrades();
     renderWatchlist();
     toast('Trade movido a Posiciones.');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
+
+window.saveDirectTrade = async () => {
+  const ticker = document.getElementById('dtTicker').value.trim().toUpperCase();
+  const dir    = document.getElementById('dtDir').value;
+  const exchange = document.getElementById('dtExchange').value.trim().toUpperCase() || 'MANUAL';
+  const lev    = parseInt(document.getElementById('dtLev').value) || 1;
+  const entry  = parseFloat(document.getElementById('dtEntry').value) || 0;
+  const exit   = parseFloat(document.getElementById('dtExit').value) || 0;
+  const size   = parseFloat(document.getElementById('dtSize').value) || 0;
+  const manualPnl = document.getElementById('dtPnl').value;
+  const openDate  = document.getElementById('dtOpenDate').value;
+  const closeDate = document.getElementById('dtCloseDate').value || new Date().toISOString().split('T')[0];
+  const notes  = document.getElementById('dtNotes').value;
+
+  if (!ticker) { toast('Ingresá el ticker.','error'); return; }
+  if (!closeDate) { toast('Ingresá la fecha de cierre.','error'); return; }
+
+  // Calculate PnL if not provided manually
+  let pnl = manualPnl ? parseFloat(manualPnl) : null;
+  if (pnl == null && entry && exit && size) {
+    const sign = (dir==='short') ? 1 : -1;
+    pnl = Math.round((size/entry)*(entry-exit)*sign*100)/100;
+  }
+  const margin = dir==='spot' ? size : size/lev;
+  const pnlPct = pnl!=null && margin ? Math.round(pnl/margin*10000)/100 : 0;
+  const days   = openDate ? Math.round((new Date(closeDate)-new Date(openDate))/86400000) : 0;
+
+  try {
+    await addDoc(collection(db,'trades'), {
+      userId: CU.uid, ticker, dir, exchange, leverage: lev,
+      entry, closePrice: exit, posSize: size,
+      pnl: pnl || 0, pnlPct,
+      daysOpen: days,
+      status: 'closed',
+      createdAt: openDate ? openDate+'T00:00:00.000Z' : new Date().toISOString(),
+      closeDate, notes,
+      updatedAt: new Date().toISOString(),
+      source: 'manual_direct',
+    });
+    await loadTrades();
+    closeModal('directTradeModal');
+    renderHistory();
+    toast('Trade agregado al historial.');
+    ['dtTicker','dtExchange','dtEntry','dtExit','dtSize','dtPnl','dtNotes'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('dtLev').value = '1';
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
+
+window.openPartialClose = id => {
+  window._closeId = id;
+  document.getElementById('partialDate').value  = new Date().toISOString().split('T')[0];
+  document.getElementById('partialPrice').value = '';
+  document.getElementById('partialPct').value   = '50';
+  document.getElementById('partialNotes').value = '';
+  openModal('partialCloseModal');
+};
+
+window.confirmPartialClose = async () => {
+  const id         = window._closeId;
+  const closePrice = parseFloat(document.getElementById('partialPrice').value) || 0;
+  const closePct   = parseFloat(document.getElementById('partialPct').value) || 50;
+  const closeDate  = document.getElementById('partialDate').value;
+  const closeNotes = document.getElementById('partialNotes').value;
+  if (!closePrice) { toast('Ingresá el precio de salida.','error'); return; }
+  if (closePct <= 0 || closePct >= 100) { toast('El % debe ser entre 1 y 99.','error'); return; }
+
+  const t = trades.find(x => x.id === id);
+  if (!t) return;
+
+  const fraction   = closePct / 100;
+  const closedSize = Math.round(t.posSize * fraction * 100) / 100;
+  const remainSize = Math.round(t.posSize * (1 - fraction) * 100) / 100;
+  const sign       = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
+  const pnl        = Math.round((closedSize/t.entry) * (t.entry-closePrice) * sign * 100) / 100;
+  const margin     = t.dir==='spot' ? closedSize : closedSize/(t.leverage||1);
+  const days       = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
+
+  try {
+    const {addDoc, collection, updateDoc, doc, db} = window._fb;
+    // Save partial close to history
+    await addDoc(collection(db,'trades'), {
+      userId: CU.uid,
+      ticker: t.ticker, dir: t.dir, exchange: t.exchange,
+      leverage: t.leverage, traderId: t.traderId, traderName: t.traderName,
+      entry: t.entry, sl: t.sl, tp1: t.tp1, tp2: t.tp2, tp3: t.tp3,
+      posSize: closedSize, risk: Math.round(t.risk * fraction * 100) / 100,
+      status: 'closed',
+      closePrice, closeDate, closeNotes: closeNotes || `Cierre parcial ${closePct}%`,
+      pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
+      daysOpen: days,
+      createdAt: t.createdAt, updatedAt: new Date().toISOString(),
+      partialClose: true, originalId: id,
+    });
+    // Update original position with reduced size
+    await updateDoc(doc(db,'trades',id), {
+      posSize: remainSize,
+      risk: Math.round(t.risk * (1-fraction) * 100) / 100,
+      updatedAt: new Date().toISOString(),
+      notes: (t.notes ? t.notes + ' · ' : '') + `Cierre parcial ${closePct}% a $${closePrice}`,
+    });
+    await loadTrades();
+    closeModal('partialCloseModal');
+    toast(`Cierre parcial. PnL: ${pnl>=0?'+':''}$${Math.abs(pnl).toFixed(0)}`, pnl>=0?'success':'error');
+    renderPositions();
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
@@ -2253,6 +2418,7 @@ function renderWatchlist() {
         <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${fmtD(t.createdAt)}</span>
         <div style="margin-left:auto;display:flex;gap:6px;">
           <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="window.moveWatchlistToPending('${t.id}')">⚡ → Órdenes</button>
+          <button class="btn sm" style="background:var(--accent-dim);color:var(--accent);border-color:var(--accent);" onclick="window.moveToActive('${t.id}')">🟢 → Posición</button>
           <button class="btn acc sm" onclick="openTradeInAnalysis('${t.id}')">📊 Charts</button>
           <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
           <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
@@ -2268,23 +2434,21 @@ function renderPositions() {
   const container = document.getElementById('posList');
   if (!container) return;
 
-  const exPos    = (window.exchangePositions || []);
   const manualActive = G.trades().filter(t=>t.status==='active');
 
   // Empty state
-  if (!exPos.length && !manualActive.length) {
+  if (!manualActive.length) {
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
       <div class="empty-text">No hay posiciones abiertas</div>
-      <div class="empty-sub">${_masterPass ? 'No se detectaron posiciones en los exchanges' : 'Conectá tus exchanges en ⚙ Settings'}</div>
-      ${!_masterPass ? `<button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>` : ''}
+      <div class="empty-sub">Usá la calculadora para abrir una posición</div>
+      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('calc')">📊 Calculadora</button>
     </div>`;
     return;
   }
 
-  // PnL total from exchange positions
+  // PnL total from manual positions
   let totalPnl = 0;
-  exPos.forEach(p => { totalPnl += p.pnl || 0; });
   manualActive.forEach(t => {
     const price = G.getPrice(t.ticker, t.dir);
     if (!price) return;
@@ -2292,143 +2456,15 @@ function renderPositions() {
     totalPnl += Math.round((t.posSize/t.entry)*(t.entry-price)*sign*100)/100;
   });
 
-  const totalHtml = (exPos.length||manualActive.length) ? `
+  const totalHtml = manualActive.length ? `
     <div class="live-pnl-total">
       <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
       <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
-      <div style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">
-        Sync: ${lastSyncTime?lastSyncTime.toLocaleTimeString('es'):'—'}
-        <button class="btn sm" style="margin-left:8px;" onclick="window.syncAllExchanges()">↻</button>
-      </div>
     </div>` : '';
 
-  // Exchange positions cards
-  const exHtml = exPos.map(p => {
-    const sym       = p.ticker;
-    const livePrice = G.getPrice(p.ticker, p.dir) || p.mark || 0;
-    const sign      = p.dir==='short' ? 1 : -1;
-    // Use PnL from exchange backend directly (accounts for partials, mark price, funding)
-    // Only recalculate if backend PnL is missing
-    const livePnl   = p.pnl != null ? p.pnl : (livePrice && p.entry
-      ? Math.round((p.posSize/p.entry)*(p.entry-livePrice)*sign*100)/100
-      : 0);
-    const exColor   = p.exchange==='BINANCE'?'#f0b90b':p.exchange==='BYBIT'?'#f7a600':p.exchange==='MEXC'?'#00b8d9':'#00a0ea';
-    const traderBadge = p.traderName
-      ? `<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${p.traderName}</span>`
-      : `<button onclick="quickAssignTrader('${p.exchangeId}')" style="background:var(--amber-dim);border:0.5px solid var(--amber);padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--amber);cursor:pointer;">+ Trader</button>`;
+  const exHtml = '';
 
-    // SL/TP distances from current price
-    const slDist = livePrice&&p.sl ? fmtP((p.sl-livePrice)/livePrice*100) : null;
-
-    // Try to match with a Firestore trade to get persistent TPs
-    // Match by ticker + dir — use stored TPs if exchange TPs are missing (OTOCO executed)
-    const firestoreTrade = (window.G?.trades()||[]).find(t =>
-      (t.status==='active'||t.status==='pending') &&
-      (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase() === p.ticker &&
-      t.dir === p.dir
-    );
-    const tp1v = p.tp1 || firestoreTrade?.tp1 || 0;
-    const tp2v = p.tp2 || firestoreTrade?.tp2 || 0;
-    const tp3v = p.tp3 || firestoreTrade?.tp3 || 0;
-
-    // Detect executed TPs by comparing initial posSize with current posSize
-    // If posSize reduced significantly, earlier TPs were executed
-    const initSize = firestoreTrade?.posSize || p.posSize;
-    const sizeRatio = initSize > 0 ? p.posSize / initSize : 1;
-    const tp1pct = firestoreTrade?.tp1pct || 33;
-    const tp2pct = firestoreTrade?.tp2pct || 33;
-    // TP1 executed if posSize reduced by at least tp1pct
-    const tp1executed = sizeRatio < (1 - tp1pct/100 * 0.5);
-    const tp2executed = sizeRatio < (1 - (tp1pct + tp2pct)/100 * 0.5);
-
-    const allTPs = [
-      {l:'TP1', v:tp1v, executed: tp1executed},
-      {l:'TP2', v:tp2v, executed: tp2executed},
-      {l:'TP3', v:tp3v, executed: false},
-    ].filter(x=>x.v);
-    const tps = allTPs; // keep for price bar
-
-    // Build a fake trade object for price bar (include liquidation)
-    const fakeT = { entry:p.entry, sl:p.sl, tp1:tp1v, tp2:tp2v, tp3:tp3v, dir:p.dir, liquidation:p.liquidation };
-
-    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:12px;">
-      <div class="pos-card-header" style="margin-bottom:12px;">
-        <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
-          <div class="status-dot-green" title="Posición abierta"></div>
-          <span class="pos-card-ticker">${p.ticker}</span>
-          <span class="badge ${p.dir==='long'?'bl':p.dir==='short'?'bs':'bsp'}">${(p.dir||'').toUpperCase()}${p.leverage>1?' x'+p.leverage:''}</span>
-          <span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:${exColor}22;color:${exColor};">${p.exchange}</span>
-          ${traderBadge}
-        </div>
-        <div class="fx" style="gap:6px;align-items:baseline;">
-          <div class="pos-card-pnl ${livePnl>=0?'pnl-pos':'pnl-neg'}"
-            data-pnl="${sym}" data-entry="${p.entry}" data-pos="${p.posSize}" data-dir="${p.dir}">
-            ${livePnl>=0?'+':'-'}$${fmt(Math.abs(livePnl))}
-          </div>
-          ${p.pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(p.pnlPct)})</span>`:''}
-        </div>
-      </div>
-
-      <!-- Key metrics -->
-      <div class="pos-card-body" style="margin-bottom:12px;">
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Entry</div>
-          <div class="pos-mini-val">$${fmtPx(p.entry)}</div>
-        </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Precio actual</div>
-          <div class="pos-mini-val" data-px="${sym}" data-dir="${p.dir}">${livePrice?'$'+fmtPx(livePrice):'—'}</div>
-        </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Margen</div>
-          <div class="pos-mini-val" style="color:var(--amber);">$${fmt(p.margin)}</div>
-        </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Posición</div>
-          <div class="pos-mini-val">$${fmt(p.posSize)}</div>
-        </div>
-        ${p.sl?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Stop Loss</div>
-          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(p.sl)}</div>
-          ${slDist?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${slDist} desde precio</div>`:''}
-        </div>`:''}
-        ${p.liquidation?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Liquidación</div>
-          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(p.liquidation)}</div>
-        </div>`:''}
-      </div>
-
-      <!-- TPs if available -->
-      ${allTPs.length?`<div style="display:grid;grid-template-columns:repeat(${allTPs.length},1fr);gap:8px;margin-bottom:12px;">
-        ${allTPs.map(tp=>{
-          const dist = livePrice && !tp.executed ? fmtP((tp.v-livePrice)/livePrice*100) : null;
-          return `<div class="pos-mini-metric" style="${tp.executed?'opacity:0.45;':''}">
-            <div class="pos-mini-lbl" style="display:flex;align-items:center;gap:4px;">
-              ${tp.l}
-              ${tp.executed?`<span style="font-size:8px;color:var(--accent);font-family:var(--mono);">✓ ejecutado</span>`:''}
-            </div>
-            <div class="pos-mini-val" style="color:${tp.executed?'var(--t3)':'var(--accent)'};${tp.executed?'text-decoration:line-through;':''}">$${fmtPx(tp.v)}</div>
-            ${dist?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${dist}</div>`:''}
-          </div>`;
-        }).join('')}
-      </div>`:''}
-
-      <!-- Price bar -->
-      ${(p.entry&&p.sl)?`<div style="padding:0 4px;margin-bottom:12px;">
-        ${buildPriceBar(fakeT, livePrice)}
-      </div>`:''}
-
-      <div class="pos-card-footer">
-        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">PERP · ${p.exchange} · Sync: ${lastSyncTime?lastSyncTime.toLocaleTimeString('es'):'—'}</span>
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn sm" onclick="window.syncAllExchanges()">↻</button>
-          <button class="btn sm" onclick="openEditTrade('${p.exchangeId}')">✎ Trader/Notas</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  // Manual positions cards
+    // Manual positions cards
   const manualHtml = manualActive.map(t => {
     const sym   = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
     const price = G.getPrice(t.ticker, t.dir);
@@ -2480,7 +2516,8 @@ function renderPositions() {
         <div style="margin-left:auto;display:flex;gap:6px;">
           <button class="btn dan sm" onclick="deleteTrade('${t.id}')">Eliminar</button>
           <button class="btn sm" onclick="openEditTrade('${t.id}')">✎ Editar</button>
-          <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar</button>
+          <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="openPartialClose('${t.id}')">Cerrar parcial</button>
+          <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar total</button>
         </div>
       </div>
     </div>`;
@@ -4846,10 +4883,13 @@ function renderOrders() {
       ${o._manual ? `
       <div style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);">
         <button onclick="window.movePendingToWatchlist('${o.id}')" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;">
-          📋 Mover a Watchlist
+          📋 Watchlist
+        </button>
+        <button onclick="window.moveToActive('${o.id}')" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-dim);color:var(--accent);font-family:var(--mono);font-size:10px;cursor:pointer;">
+          🟢 Se ejecutó
         </button>
         <button onclick="window.deletePendingOrder('${o.id}')" style="padding:6px 10px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);font-family:var(--mono);font-size:10px;cursor:pointer;">
-          ✕ Eliminar
+          ✕
         </button>
       </div>` : ''}
     </div>`;
