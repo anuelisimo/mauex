@@ -467,7 +467,6 @@ textarea{resize:vertical;min-height:70px;}
           <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn sm" id="groupOrdersBtn" onclick="window.groupSelectedOrders()" style="display:none;">📌 Agrupar como trade</button>
           <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
         </div>
       </div>
@@ -494,7 +493,7 @@ textarea{resize:vertical;min-height:70px;}
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Historial</div>
         <div style="display:flex;gap:8px;align-items:center;">
           <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="histStats"></div>
-          <button class="btn acc sm" onclick="openModal('directTradeModal')">+ Agregar trade</button>
+          <button class="btn acc sm" onclick="window.openDirectTradeModal()">+ Agregar trade</button>
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
@@ -504,7 +503,7 @@ textarea{resize:vertical;min-height:70px;}
         <select id="filtResult" style="width:100px;" onchange="renderHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
       </div>
       <div class="card" style="padding:0;overflow:hidden;">
-        <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry</th><th>Exit</th><th>PnL</th><th>PnL%</th><th>Días</th><th>Resultado</th><th>Fecha</th><th>Notas</th><th></th></tr></thead>
+        <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry px</th><th>Exit px</th><th>PnL</th><th>PnL%</th><th>F.Entrada</th><th>F.Cierre</th><th>Resultado</th><th>Notas</th><th></th></tr></thead>
         <tbody id="histTbody"></tbody></table>
       </div>
     </div>
@@ -911,7 +910,10 @@ textarea{resize:vertical;min-height:70px;}
         <div><label class="lbl">Stop Loss</label><input type="number" id="eSL"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
-        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk"></div>
+        <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL"></div>
+        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional"></div>
+      </div>
+      <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Trader</label><select id="eTrader"></select></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
@@ -954,9 +956,18 @@ textarea{resize:vertical;min-height:70px;}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div><label class="lbl">Exchange</label><input type="text" id="dtExchange" placeholder="BINANCE"></div>
+        <div><label class="lbl">Exchange</label>
+          <select id="dtExchange">
+            <option value="BINANCE">Binance</option>
+            <option value="BYBIT">Bybit</option>
+            <option value="OKX">OKX</option>
+            <option value="MEXC">MEXC</option>
+            <option value="MANUAL">Manual</option>
+          </select>
+        </div>
         <div><label class="lbl">Leverage</label><input type="number" id="dtLev" placeholder="1" value="1"></div>
       </div>
+      <div style="margin-bottom:12px;"><label class="lbl">Trader</label><select id="dtTrader"><option value="">— ninguno —</option></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Precio entrada</label><input type="number" id="dtEntry" placeholder="68000"></div>
         <div><label class="lbl">Precio salida</label><input type="number" id="dtExit" placeholder="72000"></div>
@@ -1295,10 +1306,23 @@ window.moveToActive = async id => {
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
+window.openDirectTradeModal = () => {
+  const G = window.G;
+  const sel = document.getElementById('dtTrader');
+  if (sel && G) {
+    sel.innerHTML = '<option value="">— ninguno —</option>' +
+      G.traders().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  document.getElementById('dtCloseDate').value = new Date().toISOString().split('T')[0];
+  openModal('directTradeModal');
+};
+
 window.saveDirectTrade = async () => {
   const ticker = document.getElementById('dtTicker').value.trim().toUpperCase();
   const dir    = document.getElementById('dtDir').value;
-  const exchange = document.getElementById('dtExchange').value.trim().toUpperCase() || 'MANUAL';
+  const exchange = document.getElementById('dtExchange').value || 'MANUAL';
+  const traderId   = document.getElementById('dtTrader').value;
+  const traderName = (window.G?.traders()||[]).find(t=>t.id===traderId)?.name||'';
   const lev    = parseInt(document.getElementById('dtLev').value) || 1;
   const entry  = parseFloat(document.getElementById('dtEntry').value) || 0;
   const exit   = parseFloat(document.getElementById('dtExit').value) || 0;
@@ -1323,7 +1347,7 @@ window.saveDirectTrade = async () => {
 
   try {
     await addDoc(collection(db,'trades'), {
-      userId: CU.uid, ticker, dir, exchange, leverage: lev,
+      userId: CU.uid, ticker, dir, exchange, leverage: lev, traderId, traderName,
       entry, closePrice: exit, posSize: size,
       pnl: pnl || 0, pnlPct,
       daysOpen: days,
@@ -2475,13 +2499,18 @@ function renderPositions() {
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
     const slPct = price&&t.sl ? (t.sl-price)/price*100 : null;
+    // Liquidation estimate: entry ± (margin/posSize * 100)%
+    const liqPct = t.leverage > 1 ? 1/(t.leverage||1) * 0.9 : null;
+    const liq    = liqPct && t.entry ? (t.dir==='short' ? t.entry*(1+liqPct) : t.entry*(1-liqPct)) : null;
+    const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq };
 
     return `<div class="pos-card">
       <div class="pos-card-header">
         <div class="pos-card-left">
+          <div class="status-dot-green" title="Posición abierta"></div>
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span>
-          <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">MANUAL</span>
+          ${t.exchange?`<span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);">${t.exchange}</span>`:''}
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
         </div>
         <div class="fx" style="gap:6px;align-items:baseline;">
@@ -2494,10 +2523,11 @@ function renderPositions() {
       </div>
       <div class="pos-card-body">
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Entry</div><div class="pos-mini-val">$${fmtPx(t.entry)}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio</div><div class="pos-mini-val" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Stop Loss</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>${slPct!=null?`<div style="font-size:8px;color:var(--t3);">${fmtP(slPct)}</div>`:''}</div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio actual</div><div class="pos-mini-val" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div></div>
+        <div class="pos-mini-metric"><div class="pos-mini-lbl">Margen</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(margin)}</div></div>
         <div class="pos-mini-metric"><div class="pos-mini-lbl">Posición</div><div class="pos-mini-val">$${fmt(t.posSize)}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Riesgo</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(t.risk)}</div></div>
+        ${t.sl?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Stop Loss</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>${slPct!=null?`<div style="font-size:8px;color:var(--t3);">${fmtP(slPct)}</div>`:''}</div>`:''}
+        ${liq?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Liquidación</div><div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(liq)}</div></div>`:''}
       </div>
       ${tps.length?`<div class="pos-tps">
         ${tps.map(tp=>{
@@ -2510,6 +2540,7 @@ function renderPositions() {
           </button>`;
         }).join('')}
       </div>`:''}
+      ${(t.entry&&(t.sl||t.tp1))?`<div style="padding:0 4px;margin-bottom:12px;">${buildPriceBar(fakeT, price||0)}</div>`:''}
       ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:8px;">${t.notes}</div>`:''}
       <div class="pos-card-footer">
         <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${fmtD(t.createdAt)}</span>
@@ -2586,9 +2617,9 @@ function renderHistory() {
     <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'—'}</td>
     <td class="${(t.pnl||0)>=0?'pnl-pos':'pnl-neg'}">${t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'—'}</td>
     <td class="${(t.pnlPct||0)>=0?'pnl-pos':'pnl-neg'}">${t.pnlPct!=null?fmtP(t.pnlPct):'—'}</td>
-    <td style="color:var(--t2);">${t.daysOpen||'—'}</td>
+    <td style="color:var(--t3);font-size:10px;">${t.createdAt?fmtD(t.createdAt):'—'}</td>
+    <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate||t.updatedAt)}</td>
     <td><span class="badge ${(t.pnl||0)>=0?'bl':'bs'}">${(t.pnl||0)>=0?'WIN':'LOSS'}</span></td>
-    <td style="color:var(--t3);">${fmtD(t.closeDate||t.createdAt)}</td>
     <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'—'}</td>
     <td onclick="event.stopPropagation()">
       <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
@@ -2694,6 +2725,7 @@ window.openEditTrade = id => {
     document.getElementById('eEntry').value    = t?.entry||'';
     document.getElementById('eSL').value       = t?.sl||'';
     document.getElementById('eRisk').value     = t?.risk||'';
+    document.getElementById('eSize').value     = t?.posSize||'';
     document.getElementById('eTP1').value      = t?.tp1||'';
     document.getElementById('eTP1pct').value   = t?.tp1pct||33;
     document.getElementById('eTP2').value      = t?.tp2||'';
@@ -2747,10 +2779,13 @@ window.saveEditTrade = async () => {
   const tp2pct   = parseFloat(document.getElementById('eTP2pct').value)||33;
   const tp3      = parseFloat(document.getElementById('eTP3').value)||0;
   const tp3pct   = parseFloat(document.getElementById('eTP3pct').value)||34;
-  if(!ticker||!entry||!sl||!risk){ toast('Completá ticker, entry, SL y riesgo.','error'); return; }
+  if(!ticker||!entry){ toast('Completá ticker y entry como mínimo.','error'); return; }
 
-  const slDist = Math.abs(sl-entry)/entry;
-  const posSize = risk/slDist;
+  // Calculate posSize: use manual size, or derive from risk+SL, or 0
+  const sizeEl = document.getElementById('eSize');
+  const manualSize = parseFloat(sizeEl?.value)||0;
+  const slDist = sl && entry ? Math.abs(sl-entry)/entry : 0;
+  const posSize = manualSize > 0 ? manualSize : (risk && slDist ? risk/slDist : 0);
 
   try {
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
@@ -4818,8 +4853,6 @@ function renderOrders() {
       <!-- Header -->
       <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
-          <input type="checkbox" id="chk-${o.exchangeId}" onchange="window.toggleOrderSelect('${o.exchangeId}')"
-            style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
           <div class="status-dot-amber" title="Orden pendiente"></div>
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
