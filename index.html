@@ -1035,7 +1035,7 @@ textarea{resize:vertical;min-height:70px;}
       </div>
       <div style="margin-bottom:12px;"><label class="lbl">Notas</label><textarea id="dtNotes" placeholder="Contexto del trade..."></textarea></div>
     </div>
-    <div class="modal-footer"><button class="btn" onclick="closeModal('directTradeModal')">Cancelar</button><button class="btn acc" onclick="saveDirectTrade()">Guardar en historial</button></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('directTradeModal')">Cancelar</button><button class="btn acc" id="dtSaveBtn" onclick="window._saveDirectTrade()">Guardar en historial</button></div>
   </div>
 </div>
 
@@ -1427,6 +1427,10 @@ window.saveDirectPosition = async () => {
 };
 
 window.openDirectTradeModal = () => {
+  // Reset to "add" mode
+  document.querySelector('#directTradeModal .modal-title').textContent = 'Agregar trade al historial';
+  document.getElementById('dtSaveBtn').textContent = 'Guardar en historial';
+  window._directTradeEditId = null;
   const G = window.G;
   const sel = document.getElementById('dtTrader');
   if (sel && G) {
@@ -1437,7 +1441,10 @@ window.openDirectTradeModal = () => {
   openModal('directTradeModal');
 };
 
-window.saveDirectTrade = async () => {
+window._directTradeEditId = null;
+window._saveDirectTrade = () => window.saveDirectTrade(window._directTradeEditId);
+
+window.saveDirectTrade = async (editId) => {
   const ticker = document.getElementById('dtTicker').value.trim().toUpperCase();
   const dir    = document.getElementById('dtDir').value;
   const exchange = document.getElementById('dtExchange').value || 'MANUAL';
@@ -1466,25 +1473,36 @@ window.saveDirectTrade = async () => {
   const days   = openDate ? Math.round((new Date(closeDate)-new Date(openDate))/86400000) : 0;
 
   try {
-    await addDoc(collection(db,'trades'), {
-      userId: CU.uid, ticker, dir, exchange, leverage: lev, traderId, traderName,
+    const tradeData = {
+      ticker, dir, exchange, leverage: lev, traderId, traderName,
       entry, closePrice: exit, posSize: size,
-      pnl: pnl || 0, pnlPct,
-      daysOpen: days,
+      pnl: pnl || 0, pnlPct, daysOpen: days,
       status: 'closed',
       createdAt: openDate ? openDate+'T00:00:00.000Z' : new Date().toISOString(),
       closeDate, notes,
       updatedAt: new Date().toISOString(),
       source: 'manual_direct',
-    });
+    };
+    if (editId) {
+      const {updateDoc, doc} = window._fb;
+      await updateDoc(doc(db,'trades',editId), tradeData);
+    } else {
+      await addDoc(collection(db,'trades'), { ...tradeData, userId: CU.uid });
+    }
     await loadTrades();
     closeModal('directTradeModal');
+    // Reset title and button
+    document.querySelector('#directTradeModal .modal-title').textContent = 'Agregar trade al historial';
+    document.getElementById('dtSaveBtn').textContent = 'Guardar en historial';
+    window._directTradeEditId = null;
     renderHistory();
-    toast('Trade agregado al historial.');
-    ['dtTicker','dtExchange','dtEntry','dtExit','dtSize','dtPnl','dtNotes'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
-    document.getElementById('dtLev').value = '1';
+    toast(editId ? 'Trade actualizado.' : 'Trade agregado al historial.');
+    if (!editId) {
+      ['dtTicker','dtExchange','dtEntry','dtExit','dtSize','dtPnl','dtNotes'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('dtLev').value = '1';
+    }
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
@@ -2761,8 +2779,9 @@ function renderHistory() {
     <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate||t.updatedAt)}</td>
     <td><span class="badge ${(t.pnl||0)>=0?'bl':'bs'}">${(t.pnl||0)>=0?'WIN':'LOSS'}</span></td>
     <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'—'}</td>
-    <td onclick="event.stopPropagation()">
+    <td onclick="event.stopPropagation()" style="white-space:nowrap;">
       <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
+      <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
     </td>
   </tr>
   ${allNotes?`<tr id="note-${t.id}" style="display:none;"><td colspan="13" style="background:var(--bg3);padding:10px 12px;font-size:11px;color:var(--t2);border-left:2px solid var(--border2);">${allNotes}</td></tr>`:''}`;
@@ -2822,6 +2841,36 @@ window.setEditDir = d => {
 window.openEditTrade = id => {
   // Find in manual trades or exchange positions
   let t = (window.G?.trades()||[]).find(x=>x.id===id);
+
+  // If it's a closed trade (history), open the directTradeModal pre-filled
+  if (t?.status === 'closed' || t?.status === 'pending_review') {
+    window._editDirectId = id;
+    // Fill traders dropdown
+    const G = window.G;
+    const sel = document.getElementById('dtTrader');
+    if (sel && G) {
+      sel.innerHTML = '<option value="">— ninguno —</option>' +
+        G.traders().map(tr=>`<option value="${tr.id}"${tr.id===t.traderId?' selected':''}>${tr.name}</option>`).join('');
+    }
+    // Pre-fill fields
+    document.getElementById('dtTicker').value    = t.ticker||'';
+    document.getElementById('dtDir').value       = t.dir||'long';
+    document.getElementById('dtExchange').value  = t.exchange||'MANUAL';
+    document.getElementById('dtLev').value       = t.leverage||1;
+    document.getElementById('dtEntry').value     = t.entry||'';
+    document.getElementById('dtExit').value      = t.closePrice||'';
+    document.getElementById('dtSize').value      = t.posSize||'';
+    document.getElementById('dtPnl').value       = t.pnl||'';
+    document.getElementById('dtOpenDate').value  = t.createdAt ? t.createdAt.split('T')[0] : '';
+    document.getElementById('dtCloseDate').value = t.closeDate||'';
+    document.getElementById('dtNotes').value     = [t.notes, t.closeNotes].filter(Boolean).join(' · ')||'';
+    // Change title and button to "edit" mode
+    document.querySelector('#directTradeModal .modal-title').textContent = '✎ Editar trade';
+    document.getElementById('dtSaveBtn').textContent = 'Guardar cambios';
+    window._directTradeEditId = id;
+    openModal('directTradeModal');
+    return;
+  }
   const fromExchange = t?.exchangeSource || exchangePositions.some(p=>p.exchangeId===id||p.id===id);
 
   if(!t && !fromExchange){ toast('Trade no encontrado','error'); return; }
