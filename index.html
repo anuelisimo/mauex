@@ -4861,6 +4861,7 @@ function renderOrders() {
           <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">${o.type==='GROUPED'?'AGRUPADA':'PENDIENTE'}</span>
           ${o.type==='GROUPED'?`<button onclick="window.ungroupOrder('${o.exchangeId}')" style="background:var(--bg3);border:0.5px solid var(--border2);padding:1px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);cursor:pointer;">✕ Desagrupar</button>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
+          ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${o.traderName}</span>`:''}
         </div>
         <div style="text-align:right;">
           <div style="font-family:var(--mono);font-size:15px;font-weight:600;">$${fmtPx(entryPrice)}</div>
@@ -4920,6 +4921,9 @@ function renderOrders() {
         </button>
         <button onclick="window.moveToActive('${o.id}')" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-dim);color:var(--accent);font-family:var(--mono);font-size:10px;cursor:pointer;">
           🟢 Se ejecutó
+        </button>
+        <button onclick="openEditTrade('${o.id}')" style="padding:6px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;">
+          ✎ Editar
         </button>
         <button onclick="window.deletePendingOrder('${o.id}')" style="padding:6px 10px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);font-family:var(--mono);font-size:10px;cursor:pointer;">
           ✕
