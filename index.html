@@ -915,6 +915,7 @@ textarea{resize:vertical;min-height:70px;}
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Trader</label><select id="eTrader"></select></div>
+        <div><label class="lbl">Fecha entrada</label><input type="date" id="eDate"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
         <input type="number" id="eTP1" placeholder="TP1 precio">
@@ -2851,6 +2852,7 @@ window.openEditTrade = id => {
     document.getElementById('eSL').value       = t?.sl||'';
     document.getElementById('eRisk').value     = t?.risk||'';
     document.getElementById('eSize').value     = t?.posSize||'';
+    document.getElementById('eDate').value     = t?.createdAt ? t.createdAt.split('T')[0] : '';
     document.getElementById('eTP1').value      = t?.tp1||'';
     document.getElementById('eTP1pct').value   = t?.tp1pct||33;
     document.getElementById('eTP2').value      = t?.tp2||'';
@@ -2904,6 +2906,7 @@ window.saveEditTrade = async () => {
   const tp2pct   = parseFloat(document.getElementById('eTP2pct').value)||33;
   const tp3      = parseFloat(document.getElementById('eTP3').value)||0;
   const tp3pct   = parseFloat(document.getElementById('eTP3pct').value)||34;
+  const eDate = document.getElementById('eDate').value;
   if(!ticker||!entry){ toast('Completá ticker y entry como mínimo.','error'); return; }
 
   // Calculate posSize: use manual size, or derive from risk+SL, or 0
@@ -2916,6 +2919,7 @@ window.saveEditTrade = async () => {
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
       ticker, exchange, leverage:lev, dir:editDir,
       entry, sl, risk, posSize,
+      ...(eDate ? { createdAt: eDate+'T00:00:00.000Z' } : {}),
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName,
       updatedAt: new Date().toISOString(),
