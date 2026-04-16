@@ -480,7 +480,7 @@ textarea{resize:vertical;min-height:70px;}
         <div class="fx" style="gap:8px;flex-wrap:wrap;">
           <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
           <button class="btn sm" onclick="refreshPricesManual()">↻ Precios</button>
-          <button class="btn acc sm" id="syncBtn" onclick="window.syncAllExchanges()">↻ Sync exchanges</button>
+          <button class="btn acc sm" onclick="window.openDirectPositionModal()">+ Posición</button>
           <button class="btn sm" onclick="window.showPage('settings')">⚙ Config</button>
         </div>
       </div>
@@ -945,6 +945,55 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
+<div class="modal-overlay" id="directPositionModal">
+  <div class="modal" style="width:420px;max-height:90vh;overflow-y:auto;">
+    <div class="modal-hdr"><div class="modal-title">Agregar posición abierta</div><button class="modal-close" onclick="closeModal('directPositionModal')">✕</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Ticker</label><input type="text" id="dpTicker" oninput="this.value=this.value.toUpperCase()" placeholder="BTC"></div>
+        <div><label class="lbl">Dirección</label>
+          <div class="dir-toggle" style="margin-top:4px;">
+            <button class="dir-btn al" data-dp="long" onclick="setDPDir('long')">LONG ↑</button>
+            <button class="dir-btn" data-dp="short" onclick="setDPDir('short')">SHORT ↓</button>
+            <button class="dir-btn" data-dp="spot" onclick="setDPDir('spot')">SPOT</button>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Exchange</label>
+          <select id="dpExchange">
+            <option value="BINANCE">Binance</option>
+            <option value="BYBIT">Bybit</option>
+            <option value="OKX">OKX</option>
+            <option value="MEXC">MEXC</option>
+            <option value="MANUAL">Manual</option>
+          </select>
+        </div>
+        <div><label class="lbl">Leverage</label><input type="number" id="dpLev" placeholder="1" value="1" min="1" max="125"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Precio entrada</label><input type="number" id="dpEntry" placeholder="68000"></div>
+        <div><label class="lbl">Stop Loss</label><input type="number" id="dpSL" placeholder="Opcional"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Tamaño USD</label><input type="number" id="dpSize" placeholder="1000"></div>
+        <div><label class="lbl">Riesgo USD</label><input type="number" id="dpRisk" placeholder="Opcional"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div><label class="lbl">TP1</label><input type="number" id="dpTP1" placeholder="TP1"></div>
+        <div><label class="lbl">TP2</label><input type="number" id="dpTP2" placeholder="TP2"></div>
+        <div><label class="lbl">TP3</label><input type="number" id="dpTP3" placeholder="TP3"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div><label class="lbl">Trader</label><select id="dpTrader"><option value="">— ninguno —</option></select></div>
+        <div><label class="lbl">Fecha entrada</label><input type="date" id="dpDate"></div>
+      </div>
+      <div><label class="lbl">Notas</label><textarea id="dpNotes" placeholder="Contexto del setup..."></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('directPositionModal')">Cancelar</button><button class="btn acc" onclick="saveDirectPosition()">Abrir posición</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="directTradeModal">
   <div class="modal" style="width:420px;max-height:90vh;overflow-y:auto;">
     <div class="modal-hdr"><div class="modal-title">Agregar trade al historial</div><button class="modal-close" onclick="closeModal('directTradeModal')">✕</button></div>
@@ -1303,6 +1352,67 @@ window.moveToActive = async id => {
     await loadTrades();
     renderWatchlist();
     toast('Trade movido a Posiciones.');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
+
+let _dpDir = 'long';
+window.setDPDir = dir => {
+  _dpDir = dir;
+  document.querySelectorAll('[data-dp]').forEach(b => {
+    b.className = 'dir-btn' + (b.dataset.dp === dir ? ' al' : '');
+  });
+};
+
+window.openDirectPositionModal = () => {
+  _dpDir = 'long';
+  document.querySelectorAll('[data-dp]').forEach(b => {
+    b.className = 'dir-btn' + (b.dataset.dp === 'long' ? ' al' : '');
+  });
+  ['dpTicker','dpSL','dpSize','dpRisk','dpTP1','dpTP2','dpTP3','dpNotes'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('dpLev').value = '1';
+  document.getElementById('dpDate').value = new Date().toISOString().split('T')[0];
+  const sel = document.getElementById('dpTrader');
+  if (sel && window.G) {
+    sel.innerHTML = '<option value="">— ninguno —</option>' +
+      window.G.traders().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  openModal('directPositionModal');
+};
+
+window.saveDirectPosition = async () => {
+  const ticker = document.getElementById('dpTicker').value.trim().toUpperCase();
+  const entry  = parseFloat(document.getElementById('dpEntry').value) || 0;
+  if (!ticker || !entry) { toast('Ingresá ticker y precio de entrada.','error'); return; }
+  const exchange   = document.getElementById('dpExchange').value || 'MANUAL';
+  const lev        = parseInt(document.getElementById('dpLev').value) || 1;
+  const sl         = parseFloat(document.getElementById('dpSL').value) || 0;
+  const size       = parseFloat(document.getElementById('dpSize').value) || 0;
+  const risk       = parseFloat(document.getElementById('dpRisk').value) || 0;
+  const tp1        = parseFloat(document.getElementById('dpTP1').value) || 0;
+  const tp2        = parseFloat(document.getElementById('dpTP2').value) || 0;
+  const tp3        = parseFloat(document.getElementById('dpTP3').value) || 0;
+  const traderId   = document.getElementById('dpTrader').value;
+  const traderName = (window.G?.traders()||[]).find(t=>t.id===traderId)?.name||'';
+  const date       = document.getElementById('dpDate').value;
+  const notes      = document.getElementById('dpNotes').value;
+  const slDist     = sl && entry ? Math.abs(sl-entry)/entry : 0;
+  const posSize    = size > 0 ? size : (risk && slDist ? risk/slDist : 0);
+  const calcRisk   = risk > 0 ? risk : (posSize && slDist ? Math.round(posSize*slDist*100)/100 : 0);
+  try {
+    await addDoc(collection(db,'trades'), {
+      userId: CU.uid, ticker, dir: _dpDir, exchange, leverage: lev,
+      entry, sl, tp1, tp2, tp3, posSize, risk: calcRisk,
+      traderId, traderName, notes,
+      status: 'active',
+      createdAt: date ? date+'T00:00:00.000Z' : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    await loadTrades();
+    closeModal('directPositionModal');
+    renderPositions();
+    toast('Posición abierta.');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
@@ -2380,7 +2490,7 @@ function renderWatchlist() {
       {l:'TP3',v:t.tp3,pct:t.tp3pct||34},
     ].filter(x=>x.v);
 
-    return `<div class="pos-card" style="margin-bottom:12px;">
+    return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);">
       <!-- Header -->
       <div class="pos-card-header" style="margin-bottom:12px;">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
@@ -2439,11 +2549,13 @@ function renderWatchlist() {
 
       <!-- Footer -->
       <div style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${fmtD(t.createdAt)}</span>
+        <select onchange="window.moveCardToStatus('${t.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
+          <option value="watchlist" selected>👁 Watchlist</option>
+          <option value="pending">⏳ Órdenes</option>
+          <option value="active">🟢 Posición</option>
+        </select>
+        <button class="btn acc sm" onclick="openTradeInAnalysis('${t.id}')">📊</button>
         <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="window.moveWatchlistToPending('${t.id}')">⚡ → Órdenes</button>
-          <button class="btn sm" style="background:var(--accent-dim);color:var(--accent);border-color:var(--accent);" onclick="window.moveToActive('${t.id}')">🟢 → Posición</button>
-          <button class="btn acc sm" onclick="openTradeInAnalysis('${t.id}')">📊 Charts</button>
           <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
           <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
         </div>
@@ -2504,7 +2616,7 @@ function renderPositions() {
     const liq    = liqPct && t.entry ? (t.dir==='short' ? t.entry*(1+liqPct) : t.entry*(1-liqPct)) : null;
     const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq };
 
-    return `<div class="pos-card">
+    return `<div class="pos-card" style="border-left:3px solid var(--accent);">
       <div class="pos-card-header">
         <div class="pos-card-left">
           <div class="status-dot-green" title="Posición abierta"></div>
@@ -2543,12 +2655,16 @@ function renderPositions() {
       ${(t.entry&&(t.sl||t.tp1))?`<div style="padding:0 4px;margin-bottom:12px;">${buildPriceBar(fakeT, price||0)}</div>`:''}
       ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:8px;">${t.notes}</div>`:''}
       <div class="pos-card-footer">
-        <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${fmtD(t.createdAt)}</span>
+        <select onchange="window.moveCardToStatus('${t.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
+          <option value="watchlist">👁 Watchlist</option>
+          <option value="pending">⏳ Órdenes</option>
+          <option value="active" selected>🟢 Posición</option>
+        </select>
+        <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="openPartialClose('${t.id}')">Parcial</button>
+        <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar</button>
         <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn dan sm" onclick="deleteTrade('${t.id}')">Eliminar</button>
-          <button class="btn sm" onclick="openEditTrade('${t.id}')">✎ Editar</button>
-          <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="openPartialClose('${t.id}')">Cerrar parcial</button>
-          <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar total</button>
+          <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
+          <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
         </div>
       </div>
     </div>`;
@@ -4861,7 +4977,6 @@ function renderOrders() {
           <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">${o.type==='GROUPED'?'AGRUPADA':'PENDIENTE'}</span>
           ${o.type==='GROUPED'?`<button onclick="window.ungroupOrder('${o.exchangeId}')" style="background:var(--bg3);border:0.5px solid var(--border2);padding:1px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);cursor:pointer;">✕ Desagrupar</button>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
-          ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${o.traderName}</span>`:''}
         </div>
         <div style="text-align:right;">
           <div style="font-family:var(--mono);font-size:15px;font-weight:600;">$${fmtPx(entryPrice)}</div>
@@ -4915,25 +5030,33 @@ function renderOrders() {
 
       <!-- Acciones manuales -->
       ${o._manual ? `
-      <div style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);">
-        <button onclick="window.movePendingToWatchlist('${o.id}')" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;">
-          📋 Watchlist
-        </button>
-        <button onclick="window.moveToActive('${o.id}')" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-dim);color:var(--accent);font-family:var(--mono);font-size:10px;cursor:pointer;">
-          🟢 Se ejecutó
-        </button>
-        <button onclick="openEditTrade('${o.id}')" style="padding:6px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;cursor:pointer;">
-          ✎ Editar
-        </button>
-        <button onclick="window.deletePendingOrder('${o.id}')" style="padding:6px 10px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);font-family:var(--mono);font-size:10px;cursor:pointer;">
-          ✕
-        </button>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);">
+        <select onchange="window.moveCardToStatus('${o.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
+          <option value="watchlist">👁 Watchlist</option>
+          <option value="pending" selected>⏳ Órdenes</option>
+          <option value="active">🟢 Posición</option>
+        </select>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button onclick="openEditTrade('${o.id}')" style="padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-size:11px;cursor:pointer;">✎</button>
+          <button onclick="window.deletePendingOrder('${o.id}')" style="padding:5px 8px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);font-size:11px;cursor:pointer;">✕</button>
+        </div>
       </div>` : ''}
     </div>`;
   }).join('');
 }
 
 // ── Manual order actions ─────────────────────────────────────────────────────
+
+window.moveCardToStatus = async (id, newStatus) => {
+  const {updateDoc, doc, db} = window._fb;
+  try {
+    await updateDoc(doc(db,'trades',id), { status: newStatus, updatedAt: new Date().toISOString() });
+    await window._loadTrades();
+    renderWatchlist(); renderOrders(); renderPositions();
+    const labels = {watchlist:'Watchlist', pending:'Órdenes', active:'Posiciones'};
+    toast('Movido a ' + (labels[newStatus]||newStatus));
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
 window.movePendingToWatchlist = async id => {
   try {
     const {updateDoc, doc, db} = window._fb;
