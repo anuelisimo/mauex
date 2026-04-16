@@ -1768,6 +1768,153 @@ function setPrice(sym, type, price) {
   prices[sym][type] = price;
   updatePriceEl(sym);
   updateTimestamp();
+  checkPriceAlerts(sym, price);
+}
+
+// ── Price Alert System ────────────────────────────────────────────────────
+const _alertState = {}; // { key: { count, silencedUntil, firedOnce } }
+
+function _alertKey(id, type) { return `${id}_${type}`; }
+
+function _shouldAlert(key, critical) {
+  const now = Date.now();
+  const s = _alertState[key] || { count:0, silencedUntil:0, firedOnce:false };
+  if (s.silencedUntil && now < s.silencedUntil) return false;
+  if (!critical && s.firedOnce) return false;
+  return true;
+}
+
+function _recordAlert(key, critical) {
+  const s = _alertState[key] || { count:0, silencedUntil:0, firedOnce:false };
+  s.count++;
+  s.firedOnce = true;
+  if (critical && s.count >= 3) {
+    s.silencedUntil = Date.now() + 5 * 60 * 1000; // silence 5min
+    s.count = 0;
+  }
+  _alertState[key] = s;
+}
+
+function _resetAlert(key) {
+  delete _alertState[key];
+}
+
+function _notify(title, body, critical) {
+  // Browser notification
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/favicon.ico', silent: !critical });
+  }
+  // Toast
+  toast(`${title}: ${body}`, critical ? 'error' : 'warning');
+}
+
+function checkPriceAlerts(sym, price) {
+  if (!window.G || !window._loadTrades) return;
+  const activeTrades = (window.G.trades()||[]);
+
+  activeTrades.forEach(t => {
+    if (!t.ticker) return;
+    const tSym = t.ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    if (tSym !== sym) return;
+    const entry = t.entry || 0;
+    const sl    = t.sl || 0;
+    const tp1   = t.tp1 || 0;
+    const tp2   = t.tp2 || 0;
+    const tp3   = t.tp3 || 0;
+    const dir   = t.dir || 'long';
+    const isLong = dir === 'long' || dir === 'spot';
+
+    // ── WATCHLIST: precio se acerca al entry (dentro del 2%) — CRÍTICA ──
+    if (t.status === 'watchlist' && entry) {
+      const dist = Math.abs(price - entry) / entry;
+      const key = _alertKey(t.id, 'near_entry');
+      if (dist <= 0.02) {
+        if (_shouldAlert(key, true)) {
+          _recordAlert(key, true);
+          _notify(`👁 ${t.ticker} Watchlist`, `Precio $${price.toFixed(4)} cerca del entry $${entry} (${(dist*100).toFixed(1)}%)`, true);
+        }
+      } else {
+        _resetAlert(key);
+      }
+    }
+
+    // ── ÓRDENES: precio tocó el entry — UNA VEZ ──
+    if (t.status === 'pending' && entry) {
+      const key = _alertKey(t.id, 'entry_hit');
+      const hit = isLong ? price <= entry * 1.005 && price >= entry * 0.995
+                         : price >= entry * 0.995 && price <= entry * 1.005;
+      if (hit && _shouldAlert(key, false)) {
+        _recordAlert(key, false);
+        _notify(`⚡ ${t.ticker} Orden ejecutada`, `Precio $${price.toFixed(4)} tocó el entry $${entry}`, false);
+      }
+    }
+
+    // ── POSICIONES ──
+    if (t.status === 'active' && entry) {
+
+      // Precio en pérdida (bajo entry en long, sobre entry en short) — CRÍTICA
+      const inLoss = isLong ? price < entry : price > entry;
+      const lossKey = _alertKey(t.id, 'in_loss');
+      if (inLoss) {
+        if (_shouldAlert(lossKey, true)) {
+          _recordAlert(lossKey, true);
+          const pct = ((price - entry) / entry * 100).toFixed(2);
+          _notify(`⚠️ ${t.ticker} en pérdida`, `Precio $${price.toFixed(4)} | Entry $${entry} (${pct}%)`, true);
+        }
+      } else {
+        _resetAlert(lossKey);
+      }
+
+      // SL tocado — CRÍTICA
+      if (sl) {
+        const slHit = isLong ? price <= sl : price >= sl;
+        const slKey = _alertKey(t.id, 'sl_hit');
+        if (slHit) {
+          if (_shouldAlert(slKey, true)) {
+            _recordAlert(slKey, true);
+            _notify(`🛑 ${t.ticker} SL tocado`, `Precio $${price.toFixed(4)} tocó SL $${sl}`, true);
+          }
+        } else {
+          _resetAlert(slKey);
+        }
+      }
+
+      // TP1 tocado — UNA VEZ
+      if (tp1) {
+        const tp1Hit = isLong ? price >= tp1 : price <= tp1;
+        const tp1Key = _alertKey(t.id, 'tp1_hit');
+        if (tp1Hit && _shouldAlert(tp1Key, false)) {
+          _recordAlert(tp1Key, false);
+          _notify(`🎯 ${t.ticker} TP1 alcanzado`, `Precio $${price.toFixed(4)} tocó TP1 $${tp1}`, false);
+        }
+      }
+
+      // TP2 tocado — UNA VEZ
+      if (tp2) {
+        const tp2Hit = isLong ? price >= tp2 : price <= tp2;
+        const tp2Key = _alertKey(t.id, 'tp2_hit');
+        if (tp2Hit && _shouldAlert(tp2Key, false)) {
+          _recordAlert(tp2Key, false);
+          _notify(`🎯 ${t.ticker} TP2 alcanzado`, `Precio $${price.toFixed(4)} tocó TP2 $${tp2}`, false);
+        }
+      }
+
+      // TP3 tocado — UNA VEZ
+      if (tp3) {
+        const tp3Hit = isLong ? price >= tp3 : price <= tp3;
+        const tp3Key = _alertKey(t.id, 'tp3_hit');
+        if (tp3Hit && _shouldAlert(tp3Key, false)) {
+          _recordAlert(tp3Key, false);
+          _notify(`🎯 ${t.ticker} TP3 alcanzado`, `Precio $${price.toFixed(4)} tocó TP3 $${tp3}`, false);
+        }
+      }
+    }
+  });
+}
+
+// Request notification permission on load
+if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+  Notification.requestPermission();
 }
 
 function getPrice(ticker, dir) {
@@ -2243,11 +2390,9 @@ window.compute = () => {
   const pnlAtTP = (tpPrice, pct) => posSize ? Math.round((tpPrice-entry)/entry * posSize * pct * sign * 100)/100 : null;
   let cumPnl = 0;
   const tpRows = [];
-  // R:R real = ganancia parcial en ese TP / riesgo total (no solo distancia de precios)
-  const calcRR = (pnlParcial) => (hasSL && hasRisk && risk) ? Math.abs(pnlParcial/risk) : null;
-  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:p!=null?calcRR(p):null,pct:tp1pct}); }
-  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:p!=null?calcRR(p):null,pct:tp2pct}); }
-  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:p!=null?calcRR(p):null,pct:tp3pct}); }
+  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp1-entry)/(sl-entry)):null,pct:tp1pct}); }
+  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp2-entry)/(sl-entry)):null,pct:tp2pct}); }
+  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp3-entry)/(sl-entry)):null,pct:tp3pct}); }
 
   const levelRows = [
     {l:'Entry',price:entry,pnl:null,cum:null,rr:null,pct:null,isEntry:true},
@@ -2258,8 +2403,7 @@ window.compute = () => {
 
   document.getElementById('calcLevels').innerHTML= levelRows.length > 1 ? `
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:5px 0;border-bottom:0.5px solid var(--border);">
-      ${['Nivel','Precio','%','PnL parc.','PnL acum.'].map(h=>`<span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
-      <span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;display:flex;align-items:center;gap:3px;">R:R <span title="R:R real = ganancia parcial en ese TP dividido el riesgo total si toca el SL. Ejemplo: si arriesgás $100 y el TP1 te da $70 (33% de la posición), el R:R real es 0.70:1 — no 2.11:1. Un R:R mayor a 1 en cada parcial es lo ideal." style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;border:1px solid var(--t3);color:var(--t3);font-size:8px;cursor:help;">i</span></span>
+      ${['Nivel','Precio','%','PnL parc.','PnL acum.','R:R'].map(h=>`<span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
     </div>
     ${levelRows.map(r=>`
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
@@ -2740,7 +2884,7 @@ function checkPendingReviews() {
     } else {
       badge.textContent = pending.length;
     }
-    toast(`${pending.length} trade${pending.length>1?'s':''} pendiente${pending.length>1?'s':''} de revisión en Historial`, 'warning');
+    // pending review badge shown silently — no toast
   } else if (badge) {
     badge.remove();
   }
@@ -4404,7 +4548,6 @@ window.syncAllExchanges = async () => {
 
       const count = exchangePositions.length;
       const msg   = `✅ ${count} posición${count!==1?'es':''} · PnL $${(data.totalPnl||0).toFixed(0)}`;
-      toast(msg);
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled = false; }
 
