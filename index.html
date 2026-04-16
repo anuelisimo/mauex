@@ -2243,9 +2243,11 @@ window.compute = () => {
   const pnlAtTP = (tpPrice, pct) => posSize ? Math.round((tpPrice-entry)/entry * posSize * pct * sign * 100)/100 : null;
   let cumPnl = 0;
   const tpRows = [];
-  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp1-entry)/(sl-entry)):null,pct:tp1pct}); }
-  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp2-entry)/(sl-entry)):null,pct:tp2pct}); }
-  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp3-entry)/(sl-entry)):null,pct:tp3pct}); }
+  // R:R real = ganancia parcial en ese TP / riesgo total (no solo distancia de precios)
+  const calcRR = (pnlParcial) => (hasSL && hasRisk && risk) ? Math.abs(pnlParcial/risk) : null;
+  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:p!=null?calcRR(p):null,pct:tp1pct}); }
+  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:p!=null?calcRR(p):null,pct:tp2pct}); }
+  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:p!=null?calcRR(p):null,pct:tp3pct}); }
 
   const levelRows = [
     {l:'Entry',price:entry,pnl:null,cum:null,rr:null,pct:null,isEntry:true},
@@ -2256,7 +2258,8 @@ window.compute = () => {
 
   document.getElementById('calcLevels').innerHTML= levelRows.length > 1 ? `
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:5px 0;border-bottom:0.5px solid var(--border);">
-      ${['Nivel','Precio','%','PnL parc.','PnL acum.','R:R'].map(h=>`<span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
+      ${['Nivel','Precio','%','PnL parc.','PnL acum.'].map(h=>`<span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">${h}</span>`).join('')}
+      <span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;display:flex;align-items:center;gap:3px;">R:R <span title="R:R real = ganancia parcial en ese TP dividido el riesgo total si toca el SL. Ejemplo: si arriesgás $100 y el TP1 te da $70 (33% de la posición), el R:R real es 0.70:1 — no 2.11:1. Un R:R mayor a 1 en cada parcial es lo ideal." style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;border:1px solid var(--t3);color:var(--t3);font-size:8px;cursor:help;">i</span></span>
     </div>
     ${levelRows.map(r=>`
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
