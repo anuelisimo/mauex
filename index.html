@@ -979,10 +979,13 @@ textarea{resize:vertical;min-height:70px;}
         <div><label class="lbl">Tamaño USD</label><input type="number" id="dpSize" placeholder="1000"></div>
         <div><label class="lbl">Riesgo USD</label><input type="number" id="dpRisk" placeholder="Opcional"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
-        <div><label class="lbl">TP1</label><input type="number" id="dpTP1" placeholder="TP1"></div>
-        <div><label class="lbl">TP2</label><input type="number" id="dpTP2" placeholder="TP2"></div>
-        <div><label class="lbl">TP3</label><input type="number" id="dpTP3" placeholder="TP3"></div>
+      <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
+        <input type="number" id="dpTP1" placeholder="TP1 precio">
+        <input type="number" id="dpTP1pct" placeholder="%" value="33" style="text-align:center;">
+        <input type="number" id="dpTP2" placeholder="TP2 precio">
+        <input type="number" id="dpTP2pct" placeholder="%" value="33" style="text-align:center;">
+        <input type="number" id="dpTP3" placeholder="TP3 precio">
+        <input type="number" id="dpTP3pct" placeholder="%" value="34" style="text-align:center;">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Trader</label><select id="dpTrader"><option value="">— ninguno —</option></select></div>
@@ -1372,6 +1375,9 @@ window.openDirectPositionModal = () => {
     const el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('dpLev').value = '1';
+  document.getElementById('dpTP1pct').value = '33';
+  document.getElementById('dpTP2pct').value = '33';
+  document.getElementById('dpTP3pct').value = '34';
   document.getElementById('dpDate').value = new Date().toISOString().split('T')[0];
   const sel = document.getElementById('dpTrader');
   if (sel && window.G) {
@@ -1391,8 +1397,11 @@ window.saveDirectPosition = async () => {
   const size       = parseFloat(document.getElementById('dpSize').value) || 0;
   const risk       = parseFloat(document.getElementById('dpRisk').value) || 0;
   const tp1        = parseFloat(document.getElementById('dpTP1').value) || 0;
+  const tp1pct     = parseFloat(document.getElementById('dpTP1pct').value) || 33;
   const tp2        = parseFloat(document.getElementById('dpTP2').value) || 0;
+  const tp2pct     = parseFloat(document.getElementById('dpTP2pct').value) || 33;
   const tp3        = parseFloat(document.getElementById('dpTP3').value) || 0;
+  const tp3pct     = parseFloat(document.getElementById('dpTP3pct').value) || 34;
   const traderId   = document.getElementById('dpTrader').value;
   const traderName = (window.G?.traders()||[]).find(t=>t.id===traderId)?.name||'';
   const date       = document.getElementById('dpDate').value;
@@ -1403,7 +1412,7 @@ window.saveDirectPosition = async () => {
   try {
     await addDoc(collection(db,'trades'), {
       userId: CU.uid, ticker, dir: _dpDir, exchange, leverage: lev,
-      entry, sl, tp1, tp2, tp3, posSize, risk: calcRisk,
+      entry, sl, tp1, tp1pct, tp2, tp2pct, tp3, tp3pct, posSize, risk: calcRisk,
       traderId, traderName, notes,
       status: 'active',
       createdAt: date ? date+'T00:00:00.000Z' : new Date().toISOString(),
