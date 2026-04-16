@@ -2580,32 +2580,41 @@ function renderPositions() {
   const container = document.getElementById('posList');
   if (!container) return;
 
-  const manualActive = G.trades().filter(t=>t.status==='active');
+  const showZombies = window._showZombies || false;
+  const allActive   = G.trades().filter(t=>t.status==='active'||t.status==='zombie');
+  const manualActive = showZombies
+    ? allActive
+    : allActive.filter(t=>t.status==='active');
+  const zombieCount = allActive.filter(t=>t.status==='zombie').length;
 
   // Empty state
-  if (!manualActive.length) {
+  if (!allActive.filter(t=>t.status==='active').length && !showZombies) {
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
       <div class="empty-text">No hay posiciones abiertas</div>
       <div class="empty-sub">Usá la calculadora para abrir una posición</div>
       <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('calc')">📊 Calculadora</button>
+      ${zombieCount?`<button class="btn sm" style="margin-top:8px;" onclick="window._showZombies=true;renderPositions();">🧟 Ver ${zombieCount} zombies</button>`:''}
     </div>`;
     return;
   }
 
   // PnL total from manual positions
   let totalPnl = 0;
-  manualActive.forEach(t => {
+  manualActive.filter(t=>t.status==='active').forEach(t => {
     const price = G.getPrice(t.ticker, t.dir);
     if (!price) return;
-    const sign = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
-    totalPnl += Math.round((t.posSize/t.entry)*(t.entry-price)*sign*100)/100;
+    const sign = (t.dir==='short') ? -1 : 1;
+    totalPnl += Math.round((t.posSize/t.entry)*(price-t.entry)*sign*100)/100;
   });
 
   const totalHtml = manualActive.length ? `
     <div class="live-pnl-total">
       <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
       <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        ${zombieCount?`<button class="btn sm" style="font-size:10px;" onclick="window._showZombies=!window._showZombies;renderPositions();">🧟 ${showZombies?'Ocultar':'Ver'} ${zombieCount} zombie${zombieCount>1?'s':''}</button>`:''}
+      </div>
     </div>` : '';
 
   const exHtml = '';
@@ -2616,7 +2625,7 @@ function renderPositions() {
     const price = G.getPrice(t.ticker, t.dir);
     const sign  = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
     const contr = (t.posSize||0) / (t.entry||1);
-    const pnl   = price!=null ? Math.round(contr*(t.entry-price)*sign*100)/100 : null;
+    const pnl   = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
     const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
@@ -2626,7 +2635,7 @@ function renderPositions() {
     const liq    = liqPct && t.entry ? (t.dir==='short' ? t.entry*(1+liqPct) : t.entry*(1-liqPct)) : null;
     const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq };
 
-    return `<div class="pos-card" style="border-left:3px solid var(--accent);">
+    return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}">
       <div class="pos-card-header">
         <div class="pos-card-left">
           <div class="status-dot-green" title="Posición abierta"></div>
@@ -2670,8 +2679,13 @@ function renderPositions() {
           <option value="pending">⏳ Órdenes</option>
           <option value="active" selected>🟢 Posición</option>
         </select>
-        <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="openPartialClose('${t.id}')">Parcial</button>
-        <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar</button>
+        ${t.status!=='zombie'?`
+          <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="openPartialClose('${t.id}')">Parcial</button>
+          <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar</button>
+          <button class="btn sm" style="font-size:11px;" onclick="window.toggleZombie('${t.id}',true)" title="Archivar como zombie">🧟</button>
+        `:`
+          <button class="btn sm" style="font-size:10px;" onclick="window.toggleZombie('${t.id}',false)">↩ Restaurar</button>
+        `}
         <div style="margin-left:auto;display:flex;gap:6px;">
           <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
           <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
@@ -5059,6 +5073,19 @@ function renderOrders() {
 }
 
 // ── Manual order actions ─────────────────────────────────────────────────────
+
+window.toggleZombie = async (id, makeZombie) => {
+  const {updateDoc, doc, db} = window._fb;
+  try {
+    await updateDoc(doc(db,'trades',id), {
+      status: makeZombie ? 'zombie' : 'active',
+      updatedAt: new Date().toISOString()
+    });
+    await window._loadTrades();
+    renderPositions();
+    toast(makeZombie ? '🧟 Archivado como zombie' : '↩ Restaurado a posiciones');
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
 
 window.moveCardToStatus = async (id, newStatus) => {
   const {updateDoc, doc, db} = window._fb;
