@@ -2829,10 +2829,32 @@ function renderHistory() {
   // Sortable headers
   const si = col => _histSort.col===col?(_histSort.dir===1?'↑':'↓'):'';
   const thead = tbody.closest('table')?.querySelector('thead tr');
-  if(thead) thead.innerHTML=[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry px'],['exit','Exit px'],['pnl','PnL'],['pnlpct','PnL%'],['fentrada','F.Entrada'],['fcierre','F.Cierre'],['','Resultado'],['','Notas'],['','']].map(([col,lbl])=>col?'<th style="cursor:pointer;user-select:none;" onclick="sortHistory(''+col+'')">'+lbl+' '+si(col)+'</th>':'<th>'+lbl+'</th>').join('');
+  if(thead) thead.innerHTML=[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry px'],['exit','Exit px'],['pnl','PnL'],['pnlpct','PnL%'],['fentrada','F.Entrada'],['fcierre','F.Cierre'],['','Resultado'],['','Notas'],['','']].map(([col,lbl])=>col?`<th style="cursor:pointer;user-select:none;" onclick="sortHistory('${col}')">${lbl} ${si(col)}</th>`:`<th>${lbl}</th>`).join('');
   tbody.innerHTML = filtered.map(t=>{
     const allNotes=[t.notes,t.closeNotes].filter(Boolean).join(' · ');
-    return '<tr style="cursor:pointer;" onclick="toggleHistNote('note-'+t.id+'')"><td><strong>'+(t.ticker||'—')+'</strong></td><td><span class="badge '+(t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp')+'">'+(t.dir||'').toUpperCase()+'</span></td><td style="color:var(--t2);">'+(t.exchange?.toUpperCase()||'—')+'</td><td style="color:var(--t2);">'+(t.traderName||'—')+'</td><td style="font-family:var(--mono);">$'+fmtPx(t.entry)+'</td><td style="font-family:var(--mono);">'+(t.closePrice?'$'+fmtPx(t.closePrice):'—')+'</td><td class="'+(((t.pnl||0)>=0)?'pnl-pos':'pnl-neg')+'">'+(t.pnl!=null?((t.pnl>=0?'+':'')+fmt(t.pnl)):'—')+'</td><td class="'+(((t.pnlPct||0)>=0)?'pnl-pos':'pnl-neg')+'">'+(t.pnlPct!=null?fmtP(t.pnlPct):'—')+'</td><td style="color:var(--t3);font-size:10px;">'+(t.createdAt?fmtD(t.createdAt):'—')+'</td><td style="color:var(--t3);font-size:10px;">'+fmtD(t.closeDate||t.updatedAt)+'</td><td><span class="badge '+((t.pnl||0)>=0?'bl':'bs')+'">'+((t.pnl||0)>=0?'WIN':'LOSS')+'</span></td><td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">'+(allNotes||'—')+'</td><td onclick="event.stopPropagation()" style="white-space:nowrap;"><button class="btn sm" onclick="openEditTrade(''+t.id+'')">✎</button><button class="btn dan sm" onclick="deleteTrade(''+t.id+'')">✕</button></td></tr>'+(allNotes?'<tr id="note-'+t.id+'" style="display:none;"><td colspan="13" style="background:var(--bg3);padding:10px 12px;font-size:11px;color:var(--t2);border-left:2px solid var(--border2);">'+allNotes+'</td></tr>':'');
+    const pnlCls=(t.pnl||0)>=0?'pnl-pos':'pnl-neg';
+    const pnlPctCls=(t.pnlPct||0)>=0?'pnl-pos':'pnl-neg';
+    const dirBadge=t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp';
+    const resBadge=(t.pnl||0)>=0?'bl':'bs';
+    const resLabel=(t.pnl||0)>=0?'WIN':'LOSS';
+    return `<tr style="cursor:pointer;" onclick="toggleHistNote('note-${t.id}')">
+      <td><strong>${t.ticker||'—'}</strong></td>
+      <td><span class="badge ${dirBadge}">${(t.dir||'').toUpperCase()}</span></td>
+      <td style="color:var(--t2);">${t.exchange?.toUpperCase()||'—'}</td>
+      <td style="color:var(--t2);">${t.traderName||'—'}</td>
+      <td style="font-family:var(--mono);">$${fmtPx(t.entry)}</td>
+      <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'—'}</td>
+      <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'—'}</td>
+      <td class="${pnlPctCls}">${t.pnlPct!=null?fmtP(t.pnlPct):'—'}</td>
+      <td style="color:var(--t3);font-size:10px;">${t.createdAt?fmtD(t.createdAt):'—'}</td>
+      <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate||t.updatedAt)}</td>
+      <td><span class="badge ${resBadge}">${resLabel}</span></td>
+      <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'—'}</td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap;">
+        <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
+        <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
+      </td>
+    </tr>${allNotes?`<tr id="note-${t.id}" style="display:none;"><td colspan="13" style="background:var(--bg3);padding:10px 12px;font-size:11px;color:var(--t2);border-left:2px solid var(--border2);">${allNotes}</td></tr>`:''}`;
   }).join('');
 }
 // ── Traders page ───────────────────────────────────────────────────────────
