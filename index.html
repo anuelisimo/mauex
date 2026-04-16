@@ -2756,6 +2756,9 @@ function renderHistCharts(trades) {
   if (!el) return;
   if (!trades.length) { el.innerHTML=''; return; }
 
+  // Helper: info tooltip on chart titles
+  const info = (text) => `<span title="${text}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid var(--t3);color:var(--t3);font-size:9px;font-family:sans-serif;cursor:help;margin-left:5px;vertical-align:middle;">i</span>`;
+
   const sorted = [...trades].sort((a,b)=>new Date(a.closeDate||a.createdAt)-new Date(b.closeDate||b.createdAt));
   let cum = 0;
   const equityPoints = sorted.map(t=>{ cum+=t.pnl||0; return { v: cum, date: t.closeDate||t.createdAt?.split('T')[0]||'', pnl: t.pnl||0 }; });
@@ -2779,16 +2782,22 @@ function renderHistCharts(trades) {
   const avgLoss = losses.length ? Math.round(losses.reduce((s,t)=>s+(t.pnl||0),0)/losses.length) : 0;
   const expectancy = Math.round(((winRate/100)*avgWin+((1-winRate/100)*avgLoss))*100)/100;
 
-  // Trader PnL
+  // Trader stats
   const byTrader = {};
-  trades.forEach(t=>{ const n=t.traderName||'Sin trader'; if(!byTrader[n]) byTrader[n]={pnl:0,count:0}; byTrader[n].pnl+=t.pnl||0; byTrader[n].count++; });
+  trades.forEach(t=>{
+    const n=t.traderName||'Sin trader';
+    if(!byTrader[n]) byTrader[n]={pnl:0,count:0,wins:0,losses:0,sumWin:0,sumLoss:0,maxLoss:0,streak:0,curStreak:0};
+    byTrader[n].pnl+=t.pnl||0;
+    byTrader[n].count++;
+    if((t.pnl||0)>0){ byTrader[n].wins++; byTrader[n].sumWin+=t.pnl; byTrader[n].curStreak=Math.max(0,byTrader[n].curStreak)+1; }
+    else { byTrader[n].losses++; byTrader[n].sumLoss+=t.pnl||0; byTrader[n].maxLoss=Math.min(byTrader[n].maxLoss,t.pnl||0); byTrader[n].curStreak=Math.min(0,byTrader[n].curStreak)-1; }
+  });
   const trKeys = Object.keys(byTrader).sort((a,b)=>byTrader[b].pnl-byTrader[a].pnl);
-  const maxTr = Math.max(...trKeys.map(k=>Math.abs(byTrader[k].pnl)),1);
+  const maxTrPnl = Math.max(...trKeys.map(k=>Math.abs(byTrader[k].pnl)),1);
 
   // Drawdown
   let peak=0, maxDd=0;
   eqVals.forEach(v=>{ if(v>peak) peak=v; const dd=peak-v; if(dd>maxDd) maxDd=dd; });
-
   const totPnl = trades.reduce((s,t)=>s+(t.pnl||0),0);
 
   // Distribution buckets
@@ -2800,43 +2809,57 @@ function renderHistCharts(trades) {
   pnlVals.forEach(v=>{ const i=Math.min(Math.floor((v-pMin)/bucketSize), bucketCount-1); buckets[i]++; });
   const maxBucket = Math.max(...buckets,1);
 
-  // Monthly bars HTML — centro en medio, positivos suben, negativos bajan
+  // Monthly bars
   const barAreaH = 60;
-  const zeroY = maxM > 0 ? (mVals.some(v=>v<0) ? barAreaH/2 : barAreaH) : barAreaH/2;
   const bars = mVals.map((v,i)=>{
-    const h = Math.max(3, Math.abs(v)/maxM*(barAreaH/2));
-    const c = v>=0?'var(--accent)':'var(--red)';
-    const lbl = mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
-    const topStyle = v>=0 ? `margin-top:auto;` : `margin-bottom:auto;`;
+    const h=Math.max(3,Math.abs(v)/maxM*(barAreaH/2));
+    const c=v>=0?'var(--accent)':'var(--red)';
+    const lbl=mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
     return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0;">
       <div style="height:${barAreaH/2}px;display:flex;align-items:flex-end;width:100%;">
-        ${v>=0 ? `<div title="${(v>=0?'+':'')+fmt(v)}" style="width:100%;height:${h}px;background:${c};border-radius:2px 2px 0 0;opacity:0.85;"></div>` : `<div style="width:100%;height:0;"></div>`}
+        ${v>=0?`<div title="${v>=0?'+':''}$${fmt(v)}" style="width:100%;height:${h}px;background:${c};border-radius:2px 2px 0 0;opacity:0.85;"></div>`:`<div style="width:100%;height:0;"></div>`}
       </div>
       <div style="height:1px;width:100%;background:rgba(255,255,255,0.08);"></div>
       <div style="height:${barAreaH/2}px;display:flex;align-items:flex-start;width:100%;">
-        ${v<0 ? `<div title="${fmt(v)}" style="width:100%;height:${h}px;background:${c};border-radius:0 0 2px 2px;opacity:0.85;"></div>` : `<div style="width:100%;height:0;"></div>`}
+        ${v<0?`<div title="${fmt(v)}" style="width:100%;height:${h}px;background:${c};border-radius:0 0 2px 2px;opacity:0.85;"></div>`:`<div style="width:100%;height:0;"></div>`}
       </div>
       <div style="font-size:8px;color:var(--t3);white-space:nowrap;margin-top:2px;">${mKeys.length<=8?lbl:''}</div>
     </div>`;
   }).join('');
 
-  const trBars = trKeys.slice(0,5).map(name=>{
-    const {pnl}=byTrader[name];
-    const bw=Math.max(4,Math.abs(pnl)/maxTr*100);
-    return `<div style="display:flex;align-items:center;gap:6px;">
-      <div style="font-size:10px;color:var(--t2);font-family:var(--mono);width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
-      <div style="flex:1;height:12px;background:var(--bg3);border-radius:2px;overflow:hidden;">
-        <div style="height:100%;width:${bw}%;background:${pnl>=0?'var(--accent)':'var(--red)'};border-radius:2px;"></div>
+  // Trader performance table
+  const trTable = trKeys.map(name=>{
+    const d=byTrader[name];
+    const wr=d.count?Math.round(d.wins/d.count*100):0;
+    const avgW=d.wins?Math.round(d.sumWin/d.wins):0;
+    const avgL=d.losses?Math.round(d.sumLoss/d.losses):0;
+    const bw=Math.max(4,Math.abs(d.pnl)/maxTrPnl*80);
+    const wrColor=wr>=50?'var(--accent)':'var(--red)';
+    return `<div style="display:grid;grid-template-columns:80px 32px 36px 44px 44px 1fr;gap:4px;align-items:center;padding:4px 0;border-bottom:0.5px solid var(--border);">
+      <div style="font-size:10px;color:var(--t2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${name}">${name}</div>
+      <div style="font-size:9px;color:var(--t3);text-align:center;">${d.count}</div>
+      <div style="font-size:10px;font-weight:600;font-family:var(--mono);color:${wrColor};text-align:center;">${wr}%</div>
+      <div style="font-size:9px;font-family:var(--mono);color:var(--accent);text-align:right;">+$${fmt(avgW)}</div>
+      <div style="font-size:9px;font-family:var(--mono);color:var(--red);text-align:right;">$${fmt(avgL)}</div>
+      <div style="height:10px;background:var(--bg3);border-radius:2px;overflow:hidden;">
+        <div style="height:100%;width:${bw}%;background:${d.pnl>=0?'var(--accent)':'var(--red)'};border-radius:2px;"></div>
       </div>
-      <div style="font-size:10px;font-family:var(--mono);min-width:50px;text-align:right;color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(Math.abs(pnl))}</div>
     </div>`;
   }).join('');
 
+  const trHeader = `<div style="display:grid;grid-template-columns:80px 32px 36px 44px 44px 1fr;gap:4px;padding-bottom:4px;border-bottom:0.5px solid var(--border2);">
+    <div style="font-size:8px;color:var(--t3);">TRADER</div>
+    <div style="font-size:8px;color:var(--t3);text-align:center;">#</div>
+    <div style="font-size:8px;color:var(--t3);text-align:center;">WR</div>
+    <div style="font-size:8px;color:var(--t3);text-align:right;">AVG W</div>
+    <div style="font-size:8px;color:var(--t3);text-align:right;">AVG L</div>
+    <div style="font-size:8px;color:var(--t3);">PnL</div>
+  </div>`;
+
   const distBars = buckets.map((count,i)=>{
-    const from = Math.round(pMin+i*bucketSize);
-    const to = Math.round(pMin+(i+1)*bucketSize);
-    const w = Math.max(4, count/maxBucket*100);
-    const c = from>=0?'var(--accent)':'var(--red)';
+    const from=Math.round(pMin+i*bucketSize);
+    const w=Math.max(4,count/maxBucket*100);
+    const c=from>=0?'var(--accent)':'var(--red)';
     return `<div style="display:flex;align-items:center;gap:6px;">
       <div style="font-size:9px;color:var(--t3);font-family:var(--mono);width:70px;text-align:right;">${from>=0?'+':''}${fmt(from)}</div>
       <div style="flex:1;height:14px;background:var(--bg3);border-radius:2px;overflow:hidden;">
@@ -2849,7 +2872,7 @@ function renderHistCharts(trades) {
   el.innerHTML = `
   <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">EQUITY CURVE</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">EQUITY CURVE ${info('PnL acumulado en el tiempo. La línea verde muestra ganancias sobre el capital inicial, la roja pérdidas. El área sombreada indica la zona de ganancia/pérdida. Hover para ver el estado en cada fecha.')}</div>
       <div style="position:relative;">
         <canvas id="eqCanvas" height="90" style="width:100%;height:90px;display:block;cursor:crosshair;"></canvas>
         <div id="eqTooltip" style="display:none;position:absolute;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:10px;font-family:var(--mono);pointer-events:none;z-index:10;white-space:nowrap;"></div>
@@ -2860,6 +2883,7 @@ function renderHistCharts(trades) {
       </div>
     </div>
     <div class="card" style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;">
+      <div style="grid-column:1/-1;font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;">ESTADÍSTICAS ${info('Métricas clave de performance. Win Rate: % de trades ganadores. Expectancy: ganancia promedio esperada por trade (positivo = sistema rentable). Avg Win/Loss: promedio de ganancias y pérdidas.')}</div>
       <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${winRate>=50?'var(--accent)':'var(--red)'};">${winRate}%</div></div>
       <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">EXPECTANCY</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${expectancy>=0?'var(--accent)':'var(--red)'};">${expectancy>=0?'+':''}$${fmt(Math.abs(expectancy))}</div></div>
       <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG WIN</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--accent);">+$${fmt(avgWin)}</div></div>
@@ -2868,20 +2892,21 @@ function renderHistCharts(trades) {
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PnL MENSUAL</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PnL MENSUAL ${info('Resultado neto por mes. Las barras verdes que suben indican meses ganadores, las rojas que bajan indican meses perdedores. El eje central es el punto cero.')}</div>
       <div style="display:flex;align-items:stretch;gap:4px;height:${barAreaH*2+4}px;">${bars}</div>
     </div>
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PnL POR TRADER</div>
-      <div style="display:flex;flex-direction:column;gap:6px;">${trBars}</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PERFORMANCE POR TRADER ${info('Tabla de rendimiento por trader/analista. # = cantidad de trades. WR = win rate. Avg W/L = ganancia y pérdida promedio por trade. La barra muestra el PnL total proporcional.')}</div>
+      ${trHeader}
+      <div style="margin-top:4px;">${trTable}</div>
     </div>
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">DISTRIBUCIÓN</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">DISTRIBUCIÓN DE PnL ${info('Histograma de resultados. Cada barra muestra cuántos trades cayeron en ese rango de PnL. Verde = rangos positivos, rojo = negativos. Ideal: muchas barras verdes pequeñas y pocas barras rojas.')}</div>
       <div style="display:flex;flex-direction:column;gap:5px;">${distBars}</div>
     </div>
   </div>`;
 
-  // Draw equity curve on canvas with proper gain/loss coloring
+  // Draw equity curve on canvas
   requestAnimationFrame(() => {
     const canvas = document.getElementById('eqCanvas');
     if (!canvas) return;
@@ -2892,101 +2917,55 @@ function renderHistCharts(trades) {
     const ctx = canvas.getContext('2d');
     const pad = 4;
     const cW = W - pad*2, cH = H - pad*2;
-    const toX = i => pad + i/(equityPoints.length-1)*cW;
+    const toX = i => pad + i/(Math.max(equityPoints.length-1,1))*cW;
     const toY = v => pad + cH - (v - minEq)/eqRange * cH;
     const zeroY2 = toY(0);
 
-    // Zero line
-    if (minEq < 0 && maxEq > 0) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.setLineDash([4,4]);
-      ctx.beginPath(); ctx.moveTo(0, zeroY2); ctx.lineTo(W, zeroY2); ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    if (equityPoints.length < 2) return;
-
-    // Fill areas: green above zero, red below zero
-    const gainGrad = ctx.createLinearGradient(0,0,0,H);
-    gainGrad.addColorStop(0, 'rgba(0,196,122,0.35)');
-    gainGrad.addColorStop(1, 'rgba(0,196,122,0)');
-    const lossGrad = ctx.createLinearGradient(0,0,0,H);
-    lossGrad.addColorStop(0, 'rgba(240,61,61,0)');
-    lossGrad.addColorStop(1, 'rgba(240,61,61,0.35)');
-
-    // Draw fill
-    ctx.beginPath();
-    ctx.moveTo(toX(0), zeroY2);
-    equityPoints.forEach((p,i) => ctx.lineTo(toX(i), toY(p.v)));
-    ctx.lineTo(toX(equityPoints.length-1), zeroY2);
-    ctx.closePath();
-    // Clip above zero for green
-    ctx.save();
-    ctx.rect(0, 0, W, zeroY2);
-    ctx.clip();
-    ctx.fillStyle = gainGrad;
-    ctx.fill();
-    ctx.restore();
-    // Clip below zero for red
-    ctx.save();
-    ctx.rect(0, zeroY2, W, H);
-    ctx.clip();
-    ctx.fillStyle = lossGrad;
-    ctx.fill();
-    ctx.restore();
-
-    // Draw line with color change at zero
-    for (let i=1; i<equityPoints.length; i++) {
-      const x1=toX(i-1), y1=toY(equityPoints[i-1].v);
-      const x2=toX(i), y2=toY(equityPoints[i].v);
-      ctx.strokeStyle = equityPoints[i].v >= 0 ? '#00c47a' : '#f03d3d';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-    }
-
-    // Time labels
-    ctx.fillStyle = 'rgba(100,120,140,0.7)';
-    ctx.font = '9px monospace';
-    const labelCount = Math.min(5, equityPoints.length);
-    for (let i=0; i<labelCount; i++) {
-      const idx = Math.floor(i/(labelCount-1)*(equityPoints.length-1));
-      const x = toX(idx);
-      const date = equityPoints[idx].date?.slice(0,7)||'';
-      ctx.fillText(date, Math.min(x, W-40), H-1);
-    }
-
-    // Hover tooltip
-    const tooltip = document.getElementById('eqTooltip');
-    canvas.onmousemove = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const idx = Math.round((mx - pad) / cW * (equityPoints.length-1));
-      const clamped = Math.max(0, Math.min(equityPoints.length-1, idx));
-      const pt = equityPoints[clamped];
-      const x = toX(clamped);
-      const y = toY(pt.v);
-      // Redraw + crosshair
-      requestAnimationFrame(() => {
-        canvas.width = W; // clear
-        // redraw (simplified - just show vertical line)
-        ctx.clearRect(0,0,W,H);
-        if (minEq<0&&maxEq>0){ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(0,zeroY2);ctx.lineTo(W,zeroY2);ctx.stroke();ctx.setLineDash([]);}
-        ctx.beginPath();ctx.moveTo(toX(0),zeroY2);equityPoints.forEach((p,i)=>ctx.lineTo(toX(i),toY(p.v)));ctx.lineTo(toX(equityPoints.length-1),zeroY2);ctx.closePath();
-        ctx.save();ctx.rect(0,0,W,zeroY2);ctx.clip();ctx.fillStyle=gainGrad;ctx.fill();ctx.restore();
-        ctx.save();ctx.rect(0,zeroY2,W,H);ctx.clip();ctx.fillStyle=lossGrad;ctx.fill();ctx.restore();
-        for(let i=1;i<equityPoints.length;i++){const x1=toX(i-1),y1=toY(equityPoints[i-1].v),x2=toX(i),y2=toY(equityPoints[i].v);ctx.strokeStyle=equityPoints[i].v>=0?'#00c47a':'#f03d3d';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
-        // Crosshair
-        ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=0.5;ctx.setLineDash([2,2]);
+    const drawChart = (highlightIdx=-1) => {
+      ctx.clearRect(0,0,W,H);
+      if (minEq<0&&maxEq>0) {
+        ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.setLineDash([4,4]);
+        ctx.beginPath();ctx.moveTo(0,zeroY2);ctx.lineTo(W,zeroY2);ctx.stroke();ctx.setLineDash([]);
+      }
+      if (equityPoints.length < 2) return;
+      const gainGrad=ctx.createLinearGradient(0,0,0,H);
+      gainGrad.addColorStop(0,'rgba(0,196,122,0.3)');gainGrad.addColorStop(1,'rgba(0,196,122,0)');
+      const lossGrad=ctx.createLinearGradient(0,0,0,H);
+      lossGrad.addColorStop(0,'rgba(240,61,61,0)');lossGrad.addColorStop(1,'rgba(240,61,61,0.3)');
+      ctx.beginPath();ctx.moveTo(toX(0),zeroY2);
+      equityPoints.forEach((p,i)=>ctx.lineTo(toX(i),toY(p.v)));
+      ctx.lineTo(toX(equityPoints.length-1),zeroY2);ctx.closePath();
+      ctx.save();ctx.rect(0,0,W,zeroY2);ctx.clip();ctx.fillStyle=gainGrad;ctx.fill();ctx.restore();
+      ctx.save();ctx.rect(0,zeroY2,W,H);ctx.clip();ctx.fillStyle=lossGrad;ctx.fill();ctx.restore();
+      for(let i=1;i<equityPoints.length;i++){
+        ctx.strokeStyle=equityPoints[i].v>=0?'#00c47a':'#f03d3d';
+        ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(toX(i-1),toY(equityPoints[i-1].v));ctx.lineTo(toX(i),toY(equityPoints[i].v));ctx.stroke();
+      }
+      ctx.fillStyle='rgba(100,120,140,0.6)';ctx.font='9px monospace';
+      const lc=Math.min(4,equityPoints.length);
+      for(let i=0;i<lc;i++){const idx=Math.floor(i/(lc-1||1)*(equityPoints.length-1));const x=toX(idx);const date=equityPoints[idx].date?.slice(0,7)||'';ctx.fillText(date,Math.min(x,W-44),H-1);}
+      if(highlightIdx>=0){
+        const x=toX(highlightIdx),y=toY(equityPoints[highlightIdx].v);
+        ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=0.5;ctx.setLineDash([2,2]);
         ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();ctx.setLineDash([]);
-        // Dot
-        ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle=pt.v>=0?'#00c47a':'#f03d3d';ctx.fill();
-      });
-      tooltip.style.display='block';
-      tooltip.style.left = (x+10>W-100?x-100:x+10)+'px';
-      tooltip.style.top = Math.max(0,y-30)+'px';
-      tooltip.innerHTML = `<span style="color:var(--t3);">${pt.date}</span><br><span style="color:${pt.v>=0?'var(--accent)':'var(--red)'};">${pt.v>=0?'+':''}$${fmt(Math.abs(pt.v))}</span> <span style="font-size:9px;color:var(--t3);">(${pt.pnl>=0?'+':''}$${fmt(pt.pnl)})</span>`;
+        ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle=equityPoints[highlightIdx].v>=0?'#00c47a':'#f03d3d';ctx.fill();
+      }
     };
-    canvas.onmouseleave = () => { tooltip.style.display='none'; };
+    drawChart();
+    const tooltip=document.getElementById('eqTooltip');
+    canvas.onmousemove=e=>{
+      const rect=canvas.getBoundingClientRect();
+      const mx=e.clientX-rect.left;
+      const idx=Math.max(0,Math.min(equityPoints.length-1,Math.round((mx-pad)/cW*(equityPoints.length-1))));
+      const pt=equityPoints[idx];
+      drawChart(idx);
+      const x=toX(idx),y=toY(pt.v);
+      tooltip.style.display='block';
+      tooltip.style.left=(x+12>W-110?x-110:x+12)+'px';
+      tooltip.style.top=Math.max(0,y-28)+'px';
+      tooltip.innerHTML=`<span style="color:var(--t3);">${pt.date}</span><br><span style="color:${pt.v>=0?'var(--accent)':'var(--red)'};">${pt.v>=0?'+':''}$${fmt(Math.abs(pt.v))}</span> <span style="font-size:9px;color:var(--t3);">(${pt.pnl>=0?'+':''}$${fmt(pt.pnl)})</span>`;
+    };
+    canvas.onmouseleave=()=>{tooltip.style.display='none';drawChart();};
   });
 }
 
