@@ -720,7 +720,7 @@ textarea{resize:vertical;min-height:70px;}
         <div class="sec-label">Estado de sincronización</div>
         <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn acc sm" onclick="if(!_masterPass){toast('Ingresá tu contraseña maestra primero','error');}else{syncAllExchanges();}">↻ Sincronizar posiciones</button>
+
           <button class="btn sm" onclick="window.showPage('positions')">Ver posiciones</button>
         </div>
         <div style="font-size:10px;color:var(--t3);margin-top:8px;font-family:var(--mono);">
@@ -1518,6 +1518,15 @@ window.openPartialClose = id => {
   openModal('partialCloseModal');
 };
 
+window.closeAtTP = (id, tpKey, tpPrice) => {
+  // Pre-fill close modal with TP price
+  window._closeId = id;
+  document.getElementById('closeDate').value  = new Date().toISOString().split('T')[0];
+  document.getElementById('closePrice').value = tpPrice;
+  document.getElementById('closeNotes').value = tpKey.toUpperCase() + ' alcanzado';
+  openModal('closeTradeModal');
+};
+
 window.confirmPartialClose = async () => {
   const id         = window._closeId;
   const closePrice = parseFloat(document.getElementById('partialPrice').value) || 0;
@@ -1533,8 +1542,8 @@ window.confirmPartialClose = async () => {
   const fraction   = closePct / 100;
   const closedSize = Math.round(t.posSize * fraction * 100) / 100;
   const remainSize = Math.round(t.posSize * (1 - fraction) * 100) / 100;
-  const sign       = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
-  const pnl        = Math.round((closedSize/t.entry) * (t.entry-closePrice) * sign * 100) / 100;
+  const sign       = (t.dir==='short') ? -1 : 1;
+  const pnl        = Math.round((closedSize/t.entry) * (closePrice-t.entry) * sign * 100) / 100;
   const margin     = t.dir==='spot' ? closedSize : closedSize/(t.leverage||1);
   const days       = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
 
@@ -1584,8 +1593,8 @@ window.confirmClose = async () => {
   if (!closePrice) { toast('Ingresá el precio de salida.','error'); return; }
   const t = trades.find(x => x.id === id);
   if (!t) return;
-  const sign   = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
-  const pnl    = Math.round((t.posSize/t.entry) * (t.entry-closePrice) * sign * 100) / 100;
+  const sign   = (t.dir==='short') ? -1 : 1;
+  const pnl    = Math.round((t.posSize/t.entry) * (closePrice-t.entry) * sign * 100) / 100;
   const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
   const days   = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
   try {
@@ -2682,15 +2691,18 @@ function renderWatchlist() {
       if(!tpPrice||!t.entry||!t.posSize) return null;
       return Math.round(contr*(tpPrice-t.entry)*sign*(pct/100)*100)/100;
     };
-    const rr = t.tp1&&t.entry&&t.sl ? Math.abs((t.tp1-t.entry)/(t.entry-t.sl)) : 0;
+    // R:R real = ganancia parcial TP1 / riesgo total
+    const rrRisk = t.risk || 0;
+    const rrPnlTP1 = t.tp1&&t.entry&&t.posSize ? Math.abs((t.tp1-t.entry)/t.entry*t.posSize*(t.tp1pct||33)/100) : 0;
+    const rr = rrRisk && rrPnlTP1 ? rrPnlTP1/rrRisk : (t.tp1&&t.entry&&t.sl ? Math.abs((t.tp1-t.entry)/(t.entry-t.sl)) : 0);
     const tps = [
       {l:'TP1',v:t.tp1,pct:t.tp1pct||33},
       {l:'TP2',v:t.tp2,pct:t.tp2pct||33},
       {l:'TP3',v:t.tp3,pct:t.tp3pct||34},
     ].filter(x=>x.v);
     // Liquidation estimate
-    const wLiqSign = (t.dir==='short') ? -1 : 1;
-    const wLiq = t.liquidation || (lev>1&&t.entry ? Math.round(t.entry*(1-wLiqSign/lev*0.9)*100)/100 : null);
+    const mmrW = 0.005;
+    const wLiq = t.liquidation || (lev>1&&t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrW) : t.entry/(1+1/lev-mmrW)) : null);
 
     return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);">
       <!-- Header -->
@@ -2820,7 +2832,7 @@ function renderPositions() {
   const manualHtml = manualActive.map(t => {
     const sym   = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
     const price = G.getPrice(t.ticker, t.dir);
-    const sign  = (t.dir==='short'||t.dir==='spot') ? 1 : -1;
+    const sign  = (t.dir==='short') ? -1 : 1;
     const contr = (t.posSize||0) / (t.entry||1);
     const pnl   = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
     const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
@@ -2828,8 +2840,10 @@ function renderPositions() {
     const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
     const slPct = price&&t.sl ? (t.sl-price)/price*100 : null;
     // Liquidation estimate: entry ± (margin/posSize * 100)%
-    const liqPct = t.leverage > 1 ? 1/(t.leverage||1) * 0.9 : null;
-    const liq    = liqPct && t.entry ? (t.dir==='short' ? t.entry*(1+liqPct) : t.entry*(1-liqPct)) : null;
+    // Binance isolated margin liquidation formula
+    const mmrPos = 0.005;
+    const lev = t.leverage||1;
+    const liq = lev > 1 && t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrPos) : t.entry/(1+1/lev-mmrPos)) : null;
     const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq };
 
     return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}">
@@ -3391,11 +3405,13 @@ window.saveEditTrade = async () => {
   const eDate = document.getElementById('eDate').value;
   if(!ticker||!entry){ toast('Completá ticker y entry como mínimo.','error'); return; }
 
-  // Calculate posSize: use manual size, or derive from risk+SL, or 0
+  // Calculate posSize: derive from risk+SL if both exist, else use manual size
   const sizeEl = document.getElementById('eSize');
   const manualSize = parseFloat(sizeEl?.value)||0;
   const slDist = sl && entry ? Math.abs(sl-entry)/entry : 0;
-  const posSize = manualSize > 0 ? manualSize : (risk && slDist ? risk/slDist : 0);
+  // If we have risk AND SL, always derive posSize from risk (source of truth)
+  // Only use manual size if no risk or no SL
+  const posSize = (risk && slDist) ? Math.round(risk/slDist*100)/100 : (manualSize || 0);
 
   try {
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
@@ -4677,12 +4693,7 @@ function startAutoSync() {
   if(syncTimer) clearInterval(syncTimer);
   // Sync positions every 30s (exchange rate limit friendly)
   // PnL updates in real-time via WebSocket (setPrice → updatePriceEl)
-  syncTimer = setInterval(async ()=>{
-    const posPage = document.getElementById('posPage');
-    if(posPage&&posPage.style.display!=='none') {
-      await syncAllExchanges();
-    }
-  }, 30000);
+  // Auto-sync removed — positions are manual, prices update via WebSocket
 }
 
 // ── AI Analysis autocomplete ───────────────────────────────────────────────
@@ -5443,7 +5454,8 @@ function renderOrders() {
 
     // Liquidación: usar la del backend si existe, si no calcular aprox
     const lev = o.leverage || 1;
-    const liqApprox = lev > 1 ? (o.liquidation || (entryPrice ? Math.round(entryPrice * (1 - sign/lev*0.9) * 100)/100 : null)) : null;
+    const mmrO = 0.005;
+    const liqApprox = lev > 1 ? (o.liquidation || (entryPrice ? (o.dir==='short' ? entryPrice/(1-1/lev+mmrO) : entryPrice/(1+1/lev-mmrO)) : null)) : null;
 
     // SL and TPs from order data
     const sl  = o.sl  || null;
