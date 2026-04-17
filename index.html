@@ -2728,7 +2728,7 @@ function renderWatchlist() {
 
       <!-- Price bar full width -->
       <div style="padding:0 4px;margin-bottom:12px;">
-        ${buildPriceBar(t, currentPrice)}
+        ${buildPriceBar({...t, liquidation: t.liquidation||wLiq}, currentPrice)}
       </div>
 
       ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:10px;">${t.notes}</div>`:''}
@@ -5431,7 +5431,7 @@ function renderOrders() {
     const tp3 = o.tp3 || null;
 
     // Build fake trade for price bar
-    const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir };
+    const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir, liquidation: liqApprox };
 
     // Distance from current price to order price
     const distToOrder = currentPrice&&entryPrice
