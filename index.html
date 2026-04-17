@@ -2417,7 +2417,7 @@ window.compute = () => {
 
   // Levels table
   const sign = sh ? -1 : 1;
-  const pnlAtTP = (tpPrice, pct) => posSize ? Math.round((tpPrice-entry)/entry * posSize * pct * sign * 100)/100 : null;
+  const pnlAtTP = (tpPrice, pct) => posSize ? Math.round((tpPrice-entry)/entry * posSize * (pct/100) * sign * 100)/100 : null;
   let cumPnl = 0;
   const tpRows = [];
   if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp1-entry)/(sl-entry)):null,pct:tp1pct}); }
