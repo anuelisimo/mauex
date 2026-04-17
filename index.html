@@ -412,8 +412,8 @@ textarea{resize:vertical;min-height:70px;}
             <div class="g2" style="gap:8px;margin-bottom:10px;">
               <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="Entry" oninput="compute()"></div>
               <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="Stop Loss" oninput="compute()"></div>
-              <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="onCalcRiskChange()"></div>
-              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="onCalcSizeChange()"></div>
+              <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
+              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
               <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
@@ -909,12 +909,12 @@ textarea{resize:vertical;min-height:70px;}
         <div><label class="lbl">Apalancamiento</label><input type="number" id="eLev" min="1" max="125"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
-        <div><label class="lbl">Entry</label><input type="number" id="eEntry" oninput="syncEditFields('entry')"></div>
-        <div><label class="lbl">Stop Loss</label><input type="number" id="eSL" oninput="syncEditFields('sl')"></div>
+        <div><label class="lbl">Entry</label><input type="number" id="eEntry"></div>
+        <div><label class="lbl">Stop Loss</label><input type="number" id="eSL"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
-        <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL" oninput="syncEditFields('size')"></div>
-        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional" oninput="syncEditFields('risk')"></div>
+        <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL"></div>
+        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Trader</label><select id="eTrader"></select></div>
@@ -2335,58 +2335,6 @@ window.setCustomLev = v => {
 };
 
 // ── Calc compute ───────────────────────────────────────────────────────────
-// ── Bidirectional calc helpers ─────────────────────────────────────────────
-
-// Calculadora: cuando cambia Tamaño, limpiar Riesgo y recalcular
-window.onCalcSizeChange = () => {
-  const size = parseFloat(document.getElementById('cSize').value)||0;
-  const entry = parseFloat(document.getElementById('cEntry').value)||0;
-  const sl    = parseFloat(document.getElementById('cSL').value)||0;
-  // Si tiene size + entry + SL, recalcular riesgo
-  if (size && entry && sl) {
-    const slDist = Math.abs(sl-entry)/entry;
-    const risk = Math.round(size * slDist * 100)/100;
-    document.getElementById('cRisk').value = risk;
-  }
-  compute();
-};
-
-// Calculadora: cuando cambia Riesgo, limpiar Tamaño y recalcular
-window.onCalcRiskChange = () => {
-  // Limpiar tamaño manual para que se calcule desde riesgo
-  document.getElementById('cSize').value = '';
-  compute();
-};
-
-// Modal edición: recálculo bidireccional
-window.syncEditFields = (changed) => {
-  const entry = parseFloat(document.getElementById('eEntry').value)||0;
-  const sl    = parseFloat(document.getElementById('eSL').value)||0;
-  const size  = parseFloat(document.getElementById('eSize').value)||0;
-  const risk  = parseFloat(document.getElementById('eRisk').value)||0;
-
-  if (!entry || !sl) return;
-  const slDist = Math.abs(sl-entry)/entry;
-  if (slDist <= 0) return;
-
-  if (changed === 'size' && size) {
-    // Tamaño cambió → recalcular riesgo
-    document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
-  } else if (changed === 'risk' && risk) {
-    // Riesgo cambió → recalcular tamaño
-    document.getElementById('eSize').value = Math.round(risk / slDist * 100)/100;
-  } else if ((changed === 'entry' || changed === 'sl')) {
-    // Entry o SL cambió → recalcular según lo que esté definido
-    if (risk) {
-      // Si hay riesgo, recalcular tamaño
-      document.getElementById('eSize').value = Math.round(risk / slDist * 100)/100;
-    } else if (size) {
-      // Si hay tamaño, recalcular riesgo
-      document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
-    }
-  }
-};
-
 window.compute = () => {
   const entry = parseFloat(document.getElementById('cEntry').value)||0;
   const sl    = parseFloat(document.getElementById('cSL').value)||0;
@@ -2618,23 +2566,32 @@ function buildPriceBar(t, currentPrice) {
   ];
 
   // Color zones
-  const redFrom  = stop && !isBreakeven ? Math.min(entry, stop) : null;
-  const redTo    = stop && !isBreakeven ? Math.max(entry, stop) : null;
+  // Red zone: entry → SL (if exists), else nothing
+  const hasSLZone = sl && !isBreakeven;
+  const redFrom = hasSLZone ? Math.min(entry, sl) : null;
+  const redTo   = hasSLZone ? Math.max(entry, sl) : null;
+
+  // Amber zone: entry → Liq (only if no SL or liq is beyond SL)
+  const hasLiqZone = liq && !isBreakeven && !hasSLZone;
+  const ambFrom = hasLiqZone ? Math.min(entry, liq) : null;
+  const ambTo   = hasLiqZone ? Math.max(entry, liq) : null;
 
   // Green gradient zones (entry → TPs)
   const greenZones = [];
-  if (tp1) greenZones.push({from:entry, to:tp1, op:0.3});
-  if (tp2) greenZones.push({from:tp1||entry, to:tp2, op:0.5});
-  if (tp3) greenZones.push({from:tp2||tp1||entry, to:tp3, op:0.7});
-
-  // For short positions, flip the zones
-  if (dir === 'short') {
-    greenZones.forEach(z => {
-      const tmp = z.from; z.from = z.to; z.to = tmp;
-    });
-    if (redFrom !== null) {
-      // Already correct for short
-    }
+  if (tp1) {
+    const from = dir==='short' ? tp1 : entry;
+    const to   = dir==='short' ? entry : tp1;
+    greenZones.push({from, to, op:0.3});
+  }
+  if (tp2) {
+    const from = dir==='short' ? tp2 : (tp1||entry);
+    const to   = dir==='short' ? (tp1||entry) : tp2;
+    greenZones.push({from, to, op:0.5});
+  }
+  if (tp3) {
+    const from = dir==='short' ? tp3 : (tp2||tp1||entry);
+    const to   = dir==='short' ? (tp2||tp1||entry) : tp3;
+    greenZones.push({from, to, op:0.7});
   }
 
   // Distance info for TPs
@@ -2649,11 +2606,17 @@ function buildPriceBar(t, currentPrice) {
     <!-- Bar background -->
     <div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;">
 
-      <!-- Red zone (entry to SL/Liq) -->
+      <!-- Red zone (entry to SL) -->
       ${redFrom !== null ? `<div style="position:absolute;
         left:${pct(Math.min(redFrom,redTo))}%;
         width:${Math.abs(parseFloat(pct(redTo))-parseFloat(pct(redFrom)))}%;
         height:6px;background:var(--red);opacity:.45;border-radius:3px;"></div>` : ''}
+
+      <!-- Amber zone (entry to Liq when no SL) -->
+      ${ambFrom !== null ? `<div style="position:absolute;
+        left:${pct(Math.min(ambFrom,ambTo))}%;
+        width:${Math.abs(parseFloat(pct(ambTo))-parseFloat(pct(ambFrom)))}%;
+        height:6px;background:var(--amber);opacity:.35;border-radius:3px;"></div>` : ''}
 
       <!-- Green zones (entry to TPs) -->
       ${greenZones.map(z => {
