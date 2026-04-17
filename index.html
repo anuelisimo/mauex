@@ -412,8 +412,8 @@ textarea{resize:vertical;min-height:70px;}
             <div class="g2" style="gap:8px;margin-bottom:10px;">
               <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="Entry" oninput="compute()"></div>
               <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="Stop Loss" oninput="compute()"></div>
-              <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
-              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
+              <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="onCalcRiskChange()"></div>
+              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="onCalcSizeChange()"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
               <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
@@ -909,12 +909,12 @@ textarea{resize:vertical;min-height:70px;}
         <div><label class="lbl">Apalancamiento</label><input type="number" id="eLev" min="1" max="125"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
-        <div><label class="lbl">Entry</label><input type="number" id="eEntry"></div>
-        <div><label class="lbl">Stop Loss</label><input type="number" id="eSL"></div>
+        <div><label class="lbl">Entry</label><input type="number" id="eEntry" oninput="syncEditFields('entry')"></div>
+        <div><label class="lbl">Stop Loss</label><input type="number" id="eSL" oninput="syncEditFields('sl')"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
-        <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL"></div>
-        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional"></div>
+        <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL" oninput="syncEditFields('size')"></div>
+        <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional" oninput="syncEditFields('risk')"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Trader</label><select id="eTrader"></select></div>
@@ -2335,6 +2335,58 @@ window.setCustomLev = v => {
 };
 
 // ── Calc compute ───────────────────────────────────────────────────────────
+// ── Bidirectional calc helpers ─────────────────────────────────────────────
+
+// Calculadora: cuando cambia Tamaño, limpiar Riesgo y recalcular
+window.onCalcSizeChange = () => {
+  const size = parseFloat(document.getElementById('cSize').value)||0;
+  const entry = parseFloat(document.getElementById('cEntry').value)||0;
+  const sl    = parseFloat(document.getElementById('cSL').value)||0;
+  // Si tiene size + entry + SL, recalcular riesgo
+  if (size && entry && sl) {
+    const slDist = Math.abs(sl-entry)/entry;
+    const risk = Math.round(size * slDist * 100)/100;
+    document.getElementById('cRisk').value = risk;
+  }
+  compute();
+};
+
+// Calculadora: cuando cambia Riesgo, limpiar Tamaño y recalcular
+window.onCalcRiskChange = () => {
+  // Limpiar tamaño manual para que se calcule desde riesgo
+  document.getElementById('cSize').value = '';
+  compute();
+};
+
+// Modal edición: recálculo bidireccional
+window.syncEditFields = (changed) => {
+  const entry = parseFloat(document.getElementById('eEntry').value)||0;
+  const sl    = parseFloat(document.getElementById('eSL').value)||0;
+  const size  = parseFloat(document.getElementById('eSize').value)||0;
+  const risk  = parseFloat(document.getElementById('eRisk').value)||0;
+
+  if (!entry || !sl) return;
+  const slDist = Math.abs(sl-entry)/entry;
+  if (slDist <= 0) return;
+
+  if (changed === 'size' && size) {
+    // Tamaño cambió → recalcular riesgo
+    document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
+  } else if (changed === 'risk' && risk) {
+    // Riesgo cambió → recalcular tamaño
+    document.getElementById('eSize').value = Math.round(risk / slDist * 100)/100;
+  } else if ((changed === 'entry' || changed === 'sl')) {
+    // Entry o SL cambió → recalcular según lo que esté definido
+    if (risk) {
+      // Si hay riesgo, recalcular tamaño
+      document.getElementById('eSize').value = Math.round(risk / slDist * 100)/100;
+    } else if (size) {
+      // Si hay tamaño, recalcular riesgo
+      document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
+    }
+  }
+};
+
 window.compute = () => {
   const entry = parseFloat(document.getElementById('cEntry').value)||0;
   const sl    = parseFloat(document.getElementById('cSL').value)||0;
