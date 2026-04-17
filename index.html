@@ -2667,6 +2667,9 @@ function renderWatchlist() {
       {l:'TP2',v:t.tp2,pct:t.tp2pct||33},
       {l:'TP3',v:t.tp3,pct:t.tp3pct||34},
     ].filter(x=>x.v);
+    // Liquidation estimate
+    const wLiqSign = (t.dir==='short') ? -1 : 1;
+    const wLiq = t.liquidation || (lev>1&&t.entry ? Math.round(t.entry*(1-wLiqSign/lev*0.9)*100)/100 : null);
 
     return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);">
       <!-- Header -->
@@ -2700,6 +2703,11 @@ function renderWatchlist() {
           <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${slDist.toFixed(2)}% desde entry</div>
         </div>
+        ${wLiq?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Liquidación</div>
+          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(wLiq)}</div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">estimada</div>
+        </div>`:''}
       </div>
 
       <!-- TPs -->
@@ -5413,8 +5421,8 @@ function renderOrders() {
     const sign = o.dir==='long' ? 1 : -1;
 
     // Liquidación: usar la del backend si existe, si no calcular aprox
-    const lev = o.leverage||10;
-    const liqApprox = o.liquidation || (entryPrice ? Math.round(entryPrice * (1 - sign/lev*0.9) * 100)/100 : null);
+    const lev = o.leverage || 1;
+    const liqApprox = lev > 1 ? (o.liquidation || (entryPrice ? Math.round(entryPrice * (1 - sign/lev*0.9) * 100)/100 : null)) : null;
 
     // SL and TPs from order data
     const sl  = o.sl  || null;
