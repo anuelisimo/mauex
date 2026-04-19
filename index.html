@@ -2665,6 +2665,39 @@ function buildPriceBar(t, currentPrice) {
 }
 
 
+// ── Exchange URL helper ────────────────────────────────────────────────────
+function getExchangeUrl(exchange, ticker, dir) {
+  const ex = (exchange||'').toUpperCase();
+  const isSpot = dir === 'spot';
+  const base = ticker ? ticker.replace(/USDT$/,'').replace(/_USDT$/,'') : '';
+  const symUsdt = base + 'USDT';
+  const symUnderscore = base + '_USDT'; // for MEXC commodities like USOIL_USDT
+
+  if (ex === 'BINANCE') {
+    return isSpot
+      ? `https://www.binance.com/en/trade/${base}_USDT`
+      : `https://www.binance.com/en/futures/${symUsdt}`;
+  }
+  if (ex === 'BYBIT') {
+    return isSpot
+      ? `https://www.bybit.com/en/trade/spot/${base}/USDT`
+      : `https://www.bybit.com/trade/usdt/${symUsdt}`;
+  }
+  if (ex === 'OKX') {
+    return isSpot
+      ? `https://www.okx.com/trade-spot/${base.toLowerCase()}-usdt`
+      : `https://www.okx.com/trade-swap/${base.toLowerCase()}-usdt-swap`;
+  }
+  if (ex === 'MEXC') {
+    // MEXC commodities already have underscore format (USOIL_USDT)
+    const mSym = ticker?.includes('_') ? ticker : symUnderscore;
+    return isSpot
+      ? `https://www.mexc.com/exchange/${mSym}`
+      : `https://futures.mexc.com/exchange/${mSym}`;
+  }
+  return null;
+}
+
 // ── Card minimize/maximize memory ──────────────────────────────────────────
 function getCardState() {
   try { return JSON.parse(localStorage.getItem('mauex_card_state')||'{}'); } catch(e){ return {}; }
@@ -2726,10 +2759,10 @@ function renderWatchlist() {
           <div class="status-dot-red" title="Watchlist"></div>
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
+          ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener" style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;cursor:pointer;" title="Abrir en ${t.exchange}" onmouseover="this.style.color='var(--t1)'" onmouseout="this.style.color='var(--t2)'">${t.exchange} ↗</a>`:''}
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry!=null?(distToEntry>=0?'▲ ':'▼ ')+Math.abs(distToEntry).toFixed(2)+'% al entry':''}</span>`:''}
         </div>
-        <div class="fx" style="gap:8px;align-items:center;">
           <div style="text-align:right;">
             <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">Riesgo $${fmt(riskUsd||0)} · Margen $${fmt(margin)}</div>
             <div style="font-size:10px;color:${rr>=2?'var(--accent)':'var(--red)'};font-family:var(--mono);font-weight:600;">R:R ${rr?rr.toFixed(2)+':1':'—'}</div>
@@ -2884,7 +2917,7 @@ function renderPositions() {
           <div class="status-dot-green" title="Posición abierta"></div>
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
-          ${t.exchange?`<span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);">${t.exchange}</span>`:''}
+          ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener" style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;cursor:pointer;" title="Abrir en ${t.exchange}" onmouseover="this.style.color='var(--t1)'" onmouseout="this.style.color='var(--t2)'">${t.exchange} ↗</a>`:''}
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
         </div>
         <div class="fx" style="gap:8px;align-items:center;">
@@ -5560,7 +5593,7 @@ function renderOrders() {
           <div class="status-dot-amber" title="Orden pendiente"></div>
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
-          <span style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span>
+          <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener" style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);text-decoration:none;cursor:pointer;" title="Abrir en ${o.exchange}" onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">${o.exchange} ↗</a>
           <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">${o.type==='GROUPED'?'AGRUPADA':'PENDIENTE'}</span>
           ${o.type==='GROUPED'?`<button onclick="window.ungroupOrder('${o.exchangeId}')" style="background:var(--bg3);border:0.5px solid var(--border2);padding:1px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);cursor:pointer;">✕ Desagrupar</button>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
