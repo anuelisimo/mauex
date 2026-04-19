@@ -464,6 +464,7 @@ textarea{resize:vertical;min-height:70px;}
       <div class="fxb" style="margin-bottom:20px;">
         <div>
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Órdenes abiertas</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:3px;">Ordenadas por distancia al entry — las más próximas a ejecutarse primero</div>
           <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
         </div>
         <div style="display:flex;gap:8px;">
@@ -476,7 +477,10 @@ textarea{resize:vertical;min-height:70px;}
     <!-- POSICIONES -->
     <div id="posPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Posiciones abiertas</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Posiciones abiertas</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:3px;">Ordenadas por distancia al SL — las más en riesgo primero</div>
+        </div>
         <div class="fx" style="gap:8px;flex-wrap:wrap;">
           <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
           <button class="btn sm" onclick="refreshPricesManual()">↻ Precios</button>
@@ -2675,8 +2679,9 @@ function renderWatchlist() {
     container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay setups en watchlist</div><div class="empty-sub">Agregá un setup desde la Calculadora</div></div>`;
     return;
   }
-  // Restart live prices to include watchlist tickers
   if (typeof startLivePrices === 'function') setTimeout(startLivePrices, 100);
+
+  const cardStates = getCardState();
 
   container.innerHTML = items.map(t => {
     const G = window.G;
@@ -2687,17 +2692,15 @@ function renderWatchlist() {
     const slDist = t.entry&&t.sl ? Math.abs(t.sl-t.entry)/t.entry*100 : 0;
     const sign = (t.dir==='short') ? -1 : 1;
     const contr = (t.posSize||0)/(t.entry||1);
+    const riskUsd = t.risk || (t.posSize&&slDist ? t.posSize*slDist/100 : null);
 
-    // Distance from current price to entry
     const distToEntry = currentPrice&&t.entry ? ((t.entry-currentPrice)/currentPrice*100*sign) : null;
     const distColor = distToEntry==null?'var(--t3)':Math.abs(distToEntry)<1?'var(--accent)':Math.abs(distToEntry)<3?'var(--amber)':'var(--t2)';
 
-    // PnL per TP
-    const tpPnl = (tpPrice, pct) => {
+    const tpPnlCalc = (tpPrice, pct) => {
       if(!tpPrice||!t.entry||!t.posSize) return null;
       return Math.round(contr*(tpPrice-t.entry)*sign*(pct/100)*100)/100;
     };
-    // R:R real = ganancia parcial TP1 / riesgo total
     const rrRisk = t.risk || 0;
     const rrPnlTP1 = t.tp1&&t.entry&&t.posSize ? Math.abs((t.tp1-t.entry)/t.entry*t.posSize*(t.tp1pct||33)/100) : 0;
     const rr = rrRisk && rrPnlTP1 ? rrPnlTP1/rrRisk : (t.tp1&&t.entry&&t.sl ? Math.abs((t.tp1-t.entry)/(t.entry-t.sl)) : 0);
@@ -2706,13 +2709,15 @@ function renderWatchlist() {
       {l:'TP2',v:t.tp2,pct:t.tp2pct||33},
       {l:'TP3',v:t.tp3,pct:t.tp3pct||34},
     ].filter(x=>x.v);
-    // Liquidation estimate
     const mmrW = 0.005;
     const wLiq = t.liquidation || (lev>1&&t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrW) : t.entry/(1+1/lev-mmrW)) : null);
+    const fakeT = {...t, liquidation: t.liquidation||wLiq};
 
-    return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);">
-      <!-- Header -->
-      <div class="pos-card-header" style="margin-bottom:12px;">
+    const isMin = !!cardStates[t.id];
+    const cardId = t.id;
+
+    const header = `
+      <div class="pos-card-header" style="margin-bottom:${isMin?'0':'12px'};">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
           <div class="status-dot-red" title="Watchlist"></div>
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
@@ -2720,59 +2725,83 @@ function renderWatchlist() {
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry!=null?(distToEntry>=0?'▲ ':'▼ ')+Math.abs(distToEntry).toFixed(2)+'% al entry':''}</span>`:''}
         </div>
-        <div style="text-align:right;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">Riesgo $${fmt(t.risk||0)} · Margen $${fmt(margin)}</div>
-          <div style="font-size:10px;color:${rr>=2?'var(--accent)':'var(--red)'};font-family:var(--mono);font-weight:600;">R:R ${rr?rr.toFixed(2)+':1':'—'}</div>
+        <div class="fx" style="gap:8px;align-items:center;">
+          <div style="text-align:right;">
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">Riesgo $${fmt(riskUsd||0)} · Margen $${fmt(margin)}</div>
+            <div style="font-size:10px;color:${rr>=2?'var(--accent)':'var(--red)'};font-family:var(--mono);font-weight:600;">R:R ${rr?rr.toFixed(2)+':1':'—'}</div>
+          </div>
+          <button onclick="window.toggleCardMin('${cardId}')" title="${isMin?'Expandir':'Minimizar'}"
+            style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 6px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;">
+            ${isMin?'▼':'▲'}
+          </button>
         </div>
-      </div>
+      </div>`;
+
+    if (isMin) {
+      return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);padding-bottom:${fakeT.entry&&(fakeT.sl||fakeT.tp1)?'18px':'14px'};" id="wcard-${cardId}">
+        ${header}
+        ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 4px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
+      </div>`;
+    }
+
+    return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);" id="wcard-${cardId}">
+      ${header}
 
       <!-- Levels grid -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
         <div class="pos-mini-metric">
           <div class="pos-mini-lbl">Entry</div>
-          <div class="pos-mini-val">$${fmtPx(t.entry)}</div>
-          <div style="font-size:9px;color:var(--blue);font-family:var(--mono);"
-            data-watchpx="${(t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase()}"
-            data-watchdir="${t.dir}">
+          <div class="pos-mini-val" style="color:var(--t1);">$${fmtPx(t.entry)}</div>
+          <div style="font-size:9px;color:#3d9cf0;font-family:var(--mono);"
+            data-watchpx="${sym}" data-watchdir="${t.dir}">
             ${currentPrice?'▶ $'+fmtPx(currentPrice):'— precio en vivo'}
           </div>
         </div>
         <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Stop Loss → <span style="color:var(--red);">-$${fmt(t.risk||0)}</span></div>
-          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${slDist.toFixed(2)}% desde entry</div>
+          <div class="pos-mini-lbl">Stop Loss</div>
+          <div class="pos-mini-val" style="color:var(--red);">${t.sl?'$'+fmtPx(t.sl):'—'}</div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">
+            ${slDist?slDist.toFixed(2)+'% del entry':''}
+            ${riskUsd?` · -$${fmt(riskUsd)}`:''}
+          </div>
         </div>
         ${wLiq?`<div class="pos-mini-metric">
           <div class="pos-mini-lbl">Liquidación</div>
           <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(wLiq)}</div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">estimada</div>
         </div>`:''}
+        ${margin?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Margen</div>
+          <div class="pos-mini-val" style="color:#a78bfa;">$${fmt(margin)}</div>
+        </div>`:''}
       </div>
 
       <!-- TPs -->
       ${tps.length?`<div style="display:grid;grid-template-columns:repeat(${tps.length},1fr);gap:8px;margin-bottom:12px;">
         ${tps.map(tp=>{
-          const p = tpPnl(tp.v, tp.pct);
-          const dist = t.entry ? Math.abs((tp.v-t.entry)/t.entry*100).toFixed(2) : '—';
+          const p = tpPnlCalc(tp.v, tp.pct);
+          const dist = t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
+          const distFromCur = currentPrice&&tp.v ? (tp.v-currentPrice)/currentPrice*100 : null;
+          const tpColor = tp.l==='TP1'?'#4ade80':tp.l==='TP2'?'#22c55e':'#16a34a';
           return `<div class="pos-mini-metric">
-            <div class="pos-mini-lbl">${tp.l} (${tp.pct}%)</div>
-            <div class="pos-mini-val" style="color:var(--accent);">$${fmtPx(tp.v)}</div>
+            <div class="pos-mini-lbl">${tp.l} <span style="color:var(--t3);">(${tp.pct}%)</span></div>
+            <div class="pos-mini-val" style="color:${tpColor};">$${fmtPx(tp.v)}</div>
             <div style="font-size:9px;font-family:var(--mono);">
-              <span style="color:var(--t3);">${dist}%</span>
-              ${p!=null?`<span style="color:var(--accent);margin-left:4px;">+$${fmt(p)}</span>`:''}
+              ${dist!=null?`<span style="color:var(--t3);">${dist.toFixed(2)}%</span>`:''}
+              ${p!=null?`<span style="color:${tpColor};margin-left:4px;">+$${fmt(p)}</span>`:''}
             </div>
+            ${distFromCur!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(distFromCur)} desde precio</div>`:''}
           </div>`;
         }).join('')}
       </div>`:''}
 
-      <!-- Price bar full width -->
+      <!-- Price bar -->
       <div style="padding:0 4px;margin-bottom:12px;">
-        ${buildPriceBar({...t, liquidation: t.liquidation||wLiq}, currentPrice)}
+        ${buildPriceBar(fakeT, currentPrice||0)}
       </div>
 
       ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:10px;">${t.notes}</div>`:''}
 
-      <!-- Footer -->
       <div style="display:flex;align-items:center;gap:6px;">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
           <option value="watchlist" selected>👁 Watchlist</option>
@@ -2789,6 +2818,21 @@ function renderWatchlist() {
   }).join('');
 }
 
+// ── Card minimize/maximize memory ──────────────────────────────────────────
+function getCardState(id) {
+  try { return JSON.parse(localStorage.getItem('mauex_card_state')||'{}'); } catch(e){ return {}; }
+}
+function setCardMinimized(id, minimized) {
+  const s = getCardState(); s[id] = minimized;
+  localStorage.setItem('mauex_card_state', JSON.stringify(s));
+}
+window.toggleCardMin = (id) => {
+  const s = getCardState();
+  const nowMin = !s[id]; // default is maximized (false), toggle to true
+  setCardMinimized(id, nowMin);
+  renderPositions(); renderOrders(); renderWatchlist();
+};
+
 // ── Positions ──────────────────────────────────────────────────────────────
 function renderPositions() {
   const G = window.G; if(!G) return;
@@ -2797,12 +2841,9 @@ function renderPositions() {
 
   const showZombies = window._showZombies || false;
   const allActive   = G.trades().filter(t=>t.status==='active'||t.status==='zombie');
-  const manualActive = showZombies
-    ? allActive
-    : allActive.filter(t=>t.status==='active');
+  const manualActive = showZombies ? allActive : allActive.filter(t=>t.status==='active');
   const zombieCount = allActive.filter(t=>t.status==='zombie').length;
 
-  // Empty state
   if (!allActive.filter(t=>t.status==='active').length && !showZombies) {
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
@@ -2814,9 +2855,17 @@ function renderPositions() {
     return;
   }
 
-  // PnL total from manual positions
+  // Sort by SL distance (closest SL = most at risk = first)
+  const sorted = [...manualActive].sort((a, b) => {
+    const pA = G.getPrice(a.ticker, a.dir);
+    const pB = G.getPrice(b.ticker, b.dir);
+    const distA = pA && a.sl ? Math.abs(pA - a.sl) / pA : Infinity;
+    const distB = pB && b.sl ? Math.abs(pB - b.sl) / pB : Infinity;
+    return distA - distB;
+  });
+
   let totalPnl = 0;
-  manualActive.filter(t=>t.status==='active').forEach(t => {
+  sorted.filter(t=>t.status==='active').forEach(t => {
     const price = G.getPrice(t.ticker, t.dir);
     if (!price) return;
     const sign = (t.dir==='short') ? -1 : 1;
@@ -2832,59 +2881,114 @@ function renderPositions() {
       </div>
     </div>` : '';
 
-  const exHtml = '';
+  const cardStates = getCardState();
 
-    // Manual positions cards
-  const manualHtml = manualActive.map(t => {
-    const sym   = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
-    const price = G.getPrice(t.ticker, t.dir);
-    const sign  = (t.dir==='short') ? -1 : 1;
-    const contr = (t.posSize||0) / (t.entry||1);
-    const pnl   = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
+  const manualHtml = sorted.map(t => {
+    const sym    = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
+    const price  = G.getPrice(t.ticker, t.dir);
+    const sign   = (t.dir==='short') ? -1 : 1;
+    const contr  = (t.posSize||0) / (t.entry||1);
+    const pnl    = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
     const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
-    const tps   = [{l:'TP1',v:t.tp1,k:'tp1'},{l:'TP2',v:t.tp2,k:'tp2'},{l:'TP3',v:t.tp3,k:'tp3'}].filter(x=>x.v);
-    const slPct = price&&t.sl ? (t.sl-price)/price*100 : null;
-    // Liquidation estimate: entry ± (margin/posSize * 100)%
-    // Binance isolated margin liquidation formula
+    const tps    = [{l:'TP1',v:t.tp1,k:'tp1',pct:t.tp1pct||33},{l:'TP2',v:t.tp2,k:'tp2',pct:t.tp2pct||33},{l:'TP3',v:t.tp3,k:'tp3',pct:t.tp3pct||34}].filter(x=>x.v);
     const mmrPos = 0.005;
-    const lev = t.leverage||1;
-    const liq = lev > 1 && t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrPos) : t.entry/(1+1/lev-mmrPos)) : null;
+    const lev    = t.leverage||1;
+    const liq    = lev > 1 && t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrPos) : t.entry/(1+1/lev-mmrPos)) : null;
     const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq };
 
-    return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}">
-      <div class="pos-card-header">
+    // SL info
+    const slDistPct  = t.sl&&t.entry ? Math.abs(t.sl-t.entry)/t.entry*100 : null;
+    const slDistFromCur = price&&t.sl ? Math.abs(price-t.sl)/price*100 : null;
+    const riskUsd    = t.risk || (t.posSize&&slDistPct ? t.posSize*slDistPct/100 : null);
+
+    // Price change from entry
+    const priceChg   = price&&t.entry ? (price-t.entry)/t.entry*100*sign : null;
+    const priceColor = '#3d9cf0'; // celeste for live price
+
+    const isMin = !!cardStates[t.id];
+    const cardId = t.id;
+
+    const header = `
+      <div class="pos-card-header" style="margin-bottom:${isMin?'0':'10px'};">
         <div class="pos-card-left">
           <div class="status-dot-green" title="Posición abierta"></div>
           <span class="pos-card-ticker">${t.ticker||'—'}</span>
-          <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span>
+          <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
           ${t.exchange?`<span style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);">${t.exchange}</span>`:''}
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
         </div>
-        <div class="fx" style="gap:6px;align-items:baseline;">
-          <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
-            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
-            ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
+        <div class="fx" style="gap:8px;align-items:center;">
+          <div class="fx" style="gap:4px;align-items:baseline;">
+            <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
+              data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
+              ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
+            </div>
+            ${pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</span>`:''}
           </div>
-          ${pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</span>`:''}
+          <button onclick="window.toggleCardMin('${cardId}')" title="${isMin?'Expandir':'Minimizar'}"
+            style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 6px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;">
+            ${isMin?'▼':'▲'}
+          </button>
         </div>
-      </div>
+      </div>`;
+
+    // Minimized: just price bar
+    if (isMin) {
+      return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}padding-bottom:${(t.entry&&(t.sl||t.tp1))?'18px':'14px'};" id="poscard-${cardId}">
+        ${header}
+        ${(t.entry&&(t.sl||t.tp1))?`<div style="padding:0 4px;">${buildPriceBar(fakeT, price||0)}</div>`:''}
+      </div>`;
+    }
+
+    // Maximized: full card
+    return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}" id="poscard-${cardId}">
+      ${header}
       <div class="pos-card-body">
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Entry</div><div class="pos-mini-val">$${fmtPx(t.entry)}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Precio actual</div><div class="pos-mini-val" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Margen</div><div class="pos-mini-val" style="color:var(--amber);">$${fmt(margin)}</div></div>
-        <div class="pos-mini-metric"><div class="pos-mini-lbl">Posición</div><div class="pos-mini-val">$${fmt(t.posSize)}</div></div>
-        ${t.sl?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Stop Loss</div><div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>${slPct!=null?`<div style="font-size:8px;color:var(--t3);">${fmtP(slPct)}</div>`:''}</div>`:''}
-        ${liq?`<div class="pos-mini-metric"><div class="pos-mini-lbl">Liquidación</div><div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(liq)}</div></div>`:''}
+        <div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Entry</div>
+          <div class="pos-mini-val" style="color:var(--t1);">$${fmtPx(t.entry)}</div>
+        </div>
+        <div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Precio actual</div>
+          <div class="pos-mini-val" style="color:${priceColor};" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div>
+          ${priceChg!=null?`<div style="font-size:8px;color:${priceColor};font-family:var(--mono);">${priceChg>=0?'+':''}${priceChg.toFixed(2)}%</div>`:''}
+        </div>
+        <div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Margen</div>
+          <div class="pos-mini-val" style="color:#a78bfa;">$${fmt(margin)}</div>
+        </div>
+        <div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Posición</div>
+          <div class="pos-mini-val">$${fmt(t.posSize)}</div>
+        </div>
+        ${t.sl?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Stop Loss</div>
+          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>
+          <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">
+            ${slDistPct!=null?slDistPct.toFixed(2)+'% del entry':''}
+            ${riskUsd?` · -$${fmt(riskUsd)}`:''}
+          </div>
+        </div>`:''}
+        ${liq?`<div class="pos-mini-metric">
+          <div class="pos-mini-lbl">Liquidación</div>
+          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(liq)}</div>
+        </div>`:''}
       </div>
       ${tps.length?`<div class="pos-tps">
         ${tps.map(tp=>{
-          const dist=price?(tp.v-price)/price*100:null;
-          const tpPnl=price?Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*100)/100:null;
-          return `<button class="pos-tp-btn" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})">
-            <div class="pos-tp-label">${tp.l}</div>
-            <div class="pos-tp-price">$${fmtPx(tp.v)}</div>
-            <div class="pos-tp-dist">${dist!=null?fmtP(dist):''} ${tpPnl!=null?'· '+(tpPnl>=0?'+':'')+fmt(tpPnl):''}</div>
+          const distFromEntry = tp.v&&t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
+          const distFromCur   = price&&tp.v ? (tp.v-price)/price*100 : null;
+          const tpPnlAmt = t.posSize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
+          const tpColor = tp.l==='TP1'?'#4ade80':tp.l==='TP2'?'#22c55e':'#16a34a';
+          return `<button class="pos-tp-btn" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})" style="border-color:${tpColor}22;">
+            <div class="pos-tp-label">${tp.l} <span style="color:var(--t3);">(${tp.pct}%)</span></div>
+            <div class="pos-tp-price" style="color:${tpColor};">$${fmtPx(tp.v)}</div>
+            <div class="pos-tp-dist">
+              ${distFromEntry!=null?`<span style="color:var(--t3);">${distFromEntry.toFixed(2)}%</span>`:''}
+              ${tpPnlAmt!=null?`<span style="color:${tpColor};"> +$${fmt(tpPnlAmt)}</span>`:''}
+            </div>
+            ${distFromCur!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(distFromCur)} desde precio</div>`:''}
           </button>`;
         }).join('')}
       </div>`:''}
@@ -2911,7 +3015,7 @@ function renderPositions() {
     </div>`;
   }).join('');
 
-  container.innerHTML = totalHtml + exHtml + manualHtml;
+  container.innerHTML = totalHtml + manualHtml;
 }
 
 
@@ -5445,11 +5549,26 @@ function renderOrders() {
     return;
   }
 
-  container.innerHTML = allOrders.map(o=>{
+  // Sort by distance to entry (closest = executes soonest = first)
+  const sortedOrders = [...allOrders].sort((a, b) => {
+    const G = window.G;
+    const symA = a.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || a.ticker;
+    const symB = b.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || b.ticker;
+    const pA = G?.getPrice(symA, a.dir) || G?.getPrice(symA+'USDT', a.dir) || 0;
+    const pB = G?.getPrice(symB, b.dir) || G?.getPrice(symB+'USDT', b.dir) || 0;
+    const eA = a.entry || a.price || 0;
+    const eB = b.entry || b.price || 0;
+    const dA = pA&&eA ? Math.abs(pA-eA)/pA : Infinity;
+    const dB = pB&&eB ? Math.abs(pB-eB)/pB : Infinity;
+    return dA - dB;
+  });
+
+  const cardStates = getCardState();
+
+  container.innerHTML = sortedOrders.map(o=>{
     const G = window.G;
     const sym = o.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || o.ticker;
     const currentPrice = G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
-    // Soporta tanto el nuevo formato (entry/totalSize) como el viejo (price/size)
     const entryPrice = o.entry || o.price || 0;
     const totalSize  = o.totalSize || o.size || 0;
     const dist = currentPrice&&entryPrice ? ((entryPrice-currentPrice)/currentPrice*100) : null;
@@ -5457,50 +5576,60 @@ function renderOrders() {
     const distColor = distAbs==null?'var(--t3)':distAbs<1?'var(--accent)':distAbs<3?'var(--amber)':'var(--t2)';
     const exColor = o.exchange==='BINANCE'?'#f0b90b':o.exchange==='BYBIT'?'#f7a600':o.exchange==='MEXC'?'#00b8d9':'#00a0ea';
     const sign = o.dir==='long' ? 1 : -1;
-
-    // Liquidación: usar la del backend si existe, si no calcular aprox
     const lev = o.leverage || 1;
     const mmrO = 0.005;
     const liqApprox = lev > 1 ? (o.liquidation || (entryPrice ? (o.dir==='short' ? entryPrice/(1-1/lev+mmrO) : entryPrice/(1+1/lev-mmrO)) : null)) : null;
-
-    // SL and TPs from order data
     const sl  = o.sl  || null;
     const tp1 = o.tp1 || null;
     const tp2 = o.tp2 || null;
     const tp3 = o.tp3 || null;
-
-    // Build fake trade for price bar
     const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir, liquidation: liqApprox };
+    const distToOrder = currentPrice&&entryPrice ? fmtP((entryPrice-currentPrice)/currentPrice*100) : '—';
+    const slDistPct = sl&&entryPrice ? Math.abs(sl-entryPrice)/entryPrice*100 : null;
+    const riskUsd = totalSize&&slDistPct ? totalSize*slDistPct/100 : null;
 
-    // Distance from current price to order price
-    const distToOrder = currentPrice&&entryPrice
-      ? fmtP((entryPrice-currentPrice)/currentPrice*100)
-      : '—';
+    const isMin = !!cardStates[o.exchangeId];
+    const cardId = o.exchangeId;
 
-    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;" id="order-card-${o.exchangeId}">
-      <!-- Header -->
-      <div class="pos-card-header" style="margin-bottom:12px;">
+    const header = `
+      <div class="pos-card-header" style="margin-bottom:${isMin?'0':'12px'};">
         <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
           <div class="status-dot-amber" title="Orden pendiente"></div>
           <span class="pos-card-ticker">${o.ticker}</span>
           <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
           <span style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);">${o.exchange}</span>
-          <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">${o.type||'LIMIT'}</span>
           <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">${o.type==='GROUPED'?'AGRUPADA':'PENDIENTE'}</span>
           ${o.type==='GROUPED'?`<button onclick="window.ungroupOrder('${o.exchangeId}')" style="background:var(--bg3);border:0.5px solid var(--border2);padding:1px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);cursor:pointer;">✕ Desagrupar</button>`:''}
           ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
         </div>
-        <div style="text-align:right;">
-          <div style="font-family:var(--mono);font-size:15px;font-weight:600;">$${fmtPx(entryPrice)}</div>
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">entry${lev&&o.leverage?` · ${lev}x`:''} · tamaño $${fmt(totalSize)}</div>
+        <div class="fx" style="gap:8px;align-items:center;">
+          <div style="text-align:right;">
+            <div style="font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t1);">$${fmtPx(entryPrice)}</div>
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">entry${lev&&o.leverage?` · ${lev}x`:''} · $${fmt(totalSize)}</div>
+          </div>
+          <button onclick="window.toggleCardMin('${cardId}')" title="${isMin?'Expandir':'Minimizar'}"
+            style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 6px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;">
+            ${isMin?'▼':'▲'}
+          </button>
         </div>
-      </div>
+      </div>`;
 
-      <!-- Metrics -->
+    if (isMin) {
+      return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;padding-bottom:${entryPrice&&(sl||tp1)?'18px':'14px'};" id="order-card-${cardId}">
+        ${header}
+        ${entryPrice&&(sl||tp1)?`<div style="padding:0 4px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
+      </div>`;
+    }
+
+    const tpList = [{l:'TP1',v:tp1,pct:o.tp1pct||33},{l:'TP2',v:tp2,pct:o.tp2pct||33},{l:'TP3',v:tp3,pct:o.tp3pct||34}].filter(x=>x.v);
+
+    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;" id="order-card-${cardId}">
+      ${header}
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">
         <div class="pos-mini-metric">
           <div class="pos-mini-lbl">Precio actual</div>
-          <div class="pos-mini-val" data-px="${o.ticker}" data-dir="${o.dir}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
+          <div class="pos-mini-val" style="color:#3d9cf0;" data-px="${o.ticker}" data-dir="${o.dir}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
         </div>
         <div class="pos-mini-metric">
           <div class="pos-mini-lbl">Distancia al entry</div>
@@ -5509,7 +5638,10 @@ function renderOrders() {
         ${sl?`<div class="pos-mini-metric">
           <div class="pos-mini-lbl">Stop Loss</div>
           <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(sl)}</div>
-          ${currentPrice?`<div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${fmtP((sl-currentPrice)/currentPrice*100)}</div>`:''}
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">
+            ${slDistPct!=null?slDistPct.toFixed(2)+'% del entry':''}
+            ${riskUsd?` · -$${fmt(riskUsd)}`:''}
+          </div>
         </div>`:''}
         ${liqApprox?`<div class="pos-mini-metric">
           <div class="pos-mini-lbl">Liq. aprox.</div>
@@ -5517,30 +5649,28 @@ function renderOrders() {
         </div>`:''}
       </div>
 
-      <!-- TPs -->
-      ${[{l:'TP1',v:tp1},{l:'TP2',v:tp2},{l:'TP3',v:tp3}].filter(x=>x.v).length?`
-      <div style="display:grid;grid-template-columns:repeat(${[tp1,tp2,tp3].filter(Boolean).length},1fr);gap:8px;margin-bottom:12px;">
-        ${[{l:'TP1',v:tp1},{l:'TP2',v:tp2},{l:'TP3',v:tp3}].filter(x=>x.v).map(tp=>{
-          const d = currentPrice&&tp.v ? fmtP((tp.v-currentPrice)/currentPrice*100) : '—';
+      ${tpList.length?`<div style="display:grid;grid-template-columns:repeat(${tpList.length},1fr);gap:8px;margin-bottom:12px;">
+        ${tpList.map(tp=>{
+          const distFromEntry = tp.v&&entryPrice ? Math.abs((tp.v-entryPrice)/entryPrice*100) : null;
+          const distFromCur = currentPrice&&tp.v ? (tp.v-currentPrice)/currentPrice*100 : null;
+          const tpPnlAmt = totalSize&&entryPrice ? Math.round((totalSize/entryPrice)*(tp.v-entryPrice)*(o.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
+          const tpColor = tp.l==='TP1'?'#4ade80':tp.l==='TP2'?'#22c55e':'#16a34a';
           return `<div class="pos-mini-metric">
-            <div class="pos-mini-lbl">${tp.l}</div>
-            <div class="pos-mini-val" style="color:var(--accent);">$${fmtPx(tp.v)}</div>
-            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">${d}</div>
+            <div class="pos-mini-lbl">${tp.l} <span style="color:var(--t3);">(${tp.pct}%)</span></div>
+            <div class="pos-mini-val" style="color:${tpColor};">$${fmtPx(tp.v)}</div>
+            <div style="font-size:9px;font-family:var(--mono);">
+              ${distFromEntry!=null?`<span style="color:var(--t3);">${distFromEntry.toFixed(2)}%</span>`:''}
+              ${tpPnlAmt!=null?`<span style="color:${tpColor};margin-left:4px;">+$${fmt(tpPnlAmt)}</span>`:''}
+            </div>
+            ${distFromCur!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(distFromCur)} desde precio</div>`:''}
           </div>`;
         }).join('')}
       </div>`:''}
 
-      <!-- No SL warning -->
-      ${!sl?`<div style="background:var(--red-dim);border:0.5px solid var(--red);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--red);margin-bottom:10px;">
-        ⚠️ Sin Stop Loss — posición de riesgo ilimitado si se ejecuta
-      </div>`:''}
+      ${!sl?`<div style="background:var(--red-dim);border:0.5px solid var(--red);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--red);margin-bottom:10px;">⚠️ Sin Stop Loss — posición de riesgo ilimitado si se ejecuta</div>`:''}
 
-      <!-- Price map -->
-      ${(entryPrice&&(sl||tp1))?`<div style="padding:0 4px;margin-bottom:10px;">
-        ${buildPriceBar(fakeT, currentPrice)}
-      </div>`:''}
+      ${entryPrice&&(sl||tp1)?`<div style="padding:0 4px;margin-bottom:10px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
 
-      <!-- Acciones manuales -->
       ${o._manual ? `
       <div style="display:flex;align-items:center;gap:6px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);">
         <select onchange="window.moveCardToStatus('${o.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
