@@ -2542,12 +2542,12 @@ async function fetchAndRenderLiquidity() {
     <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;">Capital en exchanges</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:${exRows?'14px':'0'};">
       <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Liquidez libre</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">USDT / USDC total</div>
         <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#3d9cf0;">$${fmt(liquidity.total)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT + USDC disponible</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">libre + en margen</div>
       </div>
       <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">En margen</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">En margen activo</div>
         <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#a78bfa;">$${fmt(marginUsed)}</div>
         <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">en posiciones abiertas</div>
       </div>
@@ -2558,8 +2558,8 @@ async function fetchAndRenderLiquidity() {
       </div>
       <div style="border-left:0.5px solid var(--border);padding-left:12px;">
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Patrimonio total</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:${patrimonio>=totalCapital?'var(--accent)':'var(--red)'};">$${fmt(patrimonio)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">libre + margen + PnL</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:${patrimonio>=liquidity.total?'var(--accent)':'var(--red)'};">$${fmt(patrimonio)}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT/USDC + PnL</div>
       </div>
     </div>
     ${exRows?`<div style="margin-top:4px;">${exRows}</div>`:''}
