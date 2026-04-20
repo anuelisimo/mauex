@@ -2495,7 +2495,7 @@ async function fetchAndRenderLiquidity() {
   if (!data && PROXY_URL) {
     try {
       el.style.display = 'block';
-      el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando liquidez...</div>`;
+      el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
       const r = await fetch(`${PROXY_URL}/balance`);
       if (r.ok) {
         const d = await r.json();
@@ -2512,57 +2512,143 @@ async function fetchAndRenderLiquidity() {
     return;
   }
 
-  const { balances, liquidity, marginInUse, totalPnl: cachedPnl } = data;
-  if (!liquidity || liquidity.total === 0) { el.style.display = 'none'; return; }
+  const { balances, liquidity } = data;
 
-  // Live PnL from exchange positions
-  const livePnl    = (window.exchangePositions||[]).reduce((s,p)=>s+(p.pnl||0),0);
-  const marginUsed = marginInUse || (window.exchangePositions||[]).reduce((s,p)=>s+(p.margin||0),0);
-  const totalCapital = liquidity.total + marginUsed;
-  const patrimonio   = totalCapital + livePnl;
+  // ── Build per-exchange breakdown from positions ────────────────────────────
+  const positions = window.exchangePositions || [];
+  // Include active + zombie positions (all open)
+  const manualPos = (window.G?.trades()||[]).filter(t => t.status==='active' || t.status==='zombie');
 
-  // Per-exchange breakdown rows
-  const exRows = Object.entries(balances||{}).map(([ex, b]) => {
-    const total = (b.USDT||0) + (b.USDC||0);
+  // Per-exchange: margin (futures) and spot posSize
+  const byEx = {};
+  const initEx = (ex) => {
+    if (!byEx[ex]) byEx[ex] = { margin: 0, spot: 0, pnl: 0 };
+  };
+
+  // Exchange positions (from sync)
+  positions.forEach(p => {
+    const ex = (p.exchange||'').toUpperCase();
+    initEx(ex);
+    if (p.type === 'spot') {
+      byEx[ex].spot += p.posSize || 0;
+    } else {
+      byEx[ex].margin += p.margin || 0;
+      byEx[ex].pnl    += p.pnl   || 0;
+    }
+  });
+
+  // Manual positions (from Firestore)
+  manualPos.forEach(p => {
+    const ex = (p.exchange||'MANUAL').toUpperCase();
+    initEx(ex);
+    if (p.dir === 'spot') {
+      byEx[ex].spot += p.posSize || 0;
+    } else {
+      const lev    = p.leverage || 1;
+      const margin = p.dir==='spot' ? (p.posSize||0) : (p.posSize||0)/lev;
+      byEx[ex].margin += margin;
+      // Live PnL from price if available
+      const sym   = (p.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+      const price = window.G?.getPrice(sym, p.dir);
+      if (price && p.entry && p.posSize) {
+        const sign = p.dir==='short' ? -1 : 1;
+        const contr = p.posSize / p.entry;
+        byEx[ex].pnl += Math.round(contr*(price-p.entry)*sign*100)/100;
+      }
+    }
+  });
+
+  // ── Totals ─────────────────────────────────────────────────────────────────
+  const totalFree   = liquidity.total;
+  const totalMargin = Object.values(byEx).reduce((s,e) => s + e.margin, 0);
+  const totalSpot   = Object.values(byEx).reduce((s,e) => s + e.spot,   0);
+  const totalPnl    = Object.values(byEx).reduce((s,e) => s + e.pnl,    0);
+  const patrimonio  = totalFree + totalMargin + totalSpot + totalPnl;
+
+  // ── Per-exchange table ─────────────────────────────────────────────────────
+  // Merge balances keys + byEx keys
+  const allExchanges = [...new Set([...Object.keys(balances||{}), ...Object.keys(byEx)])];
+
+  const exRows = allExchanges.map(ex => {
+    const b     = balances?.[ex] || {};
+    const pos   = byEx[ex]       || {};
+    const libre = (b.USDT||0) + (b.USDC||0);
+    const margin = pos.margin || 0;
+    const spot   = pos.spot   || 0;
+    const pnl    = pos.pnl    || 0;
+    const total  = libre + margin + spot + pnl;
     if (total === 0) return '';
-    const parts = [
-      b.USDT ? `$${fmt(b.USDT)} USDT` : '',
-      b.USDC ? `$${fmt(b.USDC)} USDC` : ''
-    ].filter(Boolean).join(' · ');
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border);">
-      <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">${ex}</span>
-      <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${parts}</span>
-      <span style="font-size:11px;font-weight:600;font-family:var(--mono);color:var(--t1);">$${fmt(total)}</span>
+
+    const pnlStr = pnl !== 0
+      ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
+      : '';
+
+    return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
+      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}</span>
+      <div>
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
+        <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${libre>0?'$'+fmt(libre):'—'}</div>
+      </div>
+      <div>
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN MARGEN</div>
+        <div style="font-size:11px;font-family:var(--mono);color:#a78bfa;">${margin>0?'$'+fmt(margin):'—'}</div>
+      </div>
+      <div>
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">SPOT</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--amber);">${spot>0?'$'+fmt(spot):'—'}</div>
+      </div>
+      <div>
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">PNL</div>
+        <div style="font-size:11px;font-family:var(--mono);">${pnlStr||'—'}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">TOTAL</div>
+        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">$${fmt(total)}</div>
+      </div>
     </div>`;
   }).join('');
 
   el.style.display = 'block';
   el.innerHTML = `
   <div class="card" style="padding:16px 20px;">
-    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;">Capital en exchanges</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:${exRows?'14px':'0'};">
+    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;">Capital en exchanges</div>
+
+    <!-- Summary row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border2);">
       <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">USDT / USDC total</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#3d9cf0;">$${fmt(liquidity.total)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">libre + en margen</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Libre</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#3d9cf0;">$${fmt(totalFree)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT + USDC</div>
       </div>
       <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">En margen activo</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#a78bfa;">$${fmt(marginUsed)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">en posiciones abiertas</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En margen</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#a78bfa;">$${fmt(totalMargin)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">futuros/perps</div>
       </div>
       <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">PnL abierto</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${livePnl>=0?'pnl-pos':'pnl-neg'}">${livePnl>=0?'+':''}$${fmt(livePnl)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">no realizado</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Spot</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--amber);">$${fmt(totalSpot)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">posiciones spot</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">PnL abierto</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':''}$${fmt(totalPnl)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">no realizado</div>
       </div>
       <div style="border-left:0.5px solid var(--border);padding-left:12px;">
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Patrimonio total</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:${patrimonio>=liquidity.total?'var(--accent)':'var(--red)'};">$${fmt(patrimonio)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT/USDC + PnL</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Patrimonio</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--accent);">$${fmt(patrimonio)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">total</div>
       </div>
     </div>
-    ${exRows?`<div style="margin-top:4px;">${exRows}</div>`:''}
+
+    <!-- Per-exchange header -->
+    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;padding-bottom:4px;margin-bottom:2px;">
+      ${['Exchange','Libre','En margen','Spot','PnL','Total'].map(h=>
+        `<span style="font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;${h==='Total'?'text-align:right;':''}">${h}</span>`
+      ).join('')}
+    </div>
+    ${exRows}
   </div>`;
 }
 
