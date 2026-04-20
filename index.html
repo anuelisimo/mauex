@@ -2512,18 +2512,23 @@ async function fetchAndRenderLiquidity() {
     return;
   }
 
-  const { balances, liquidity, totalPnl } = data;
+  const { balances, liquidity, marginInUse, totalPnl: cachedPnl } = data;
   if (!liquidity || liquidity.total === 0) { el.style.display = 'none'; return; }
 
   // Live PnL from exchange positions
-  const livePnl = (window.exchangePositions||[]).reduce((s,p)=>s+(p.pnl||0),0);
-  const patrimonio = liquidity.total + livePnl;
+  const livePnl    = (window.exchangePositions||[]).reduce((s,p)=>s+(p.pnl||0),0);
+  const marginUsed = marginInUse || (window.exchangePositions||[]).reduce((s,p)=>s+(p.margin||0),0);
+  const totalCapital = liquidity.total + marginUsed;
+  const patrimonio   = totalCapital + livePnl;
 
-  // Per-exchange rows
+  // Per-exchange breakdown rows
   const exRows = Object.entries(balances||{}).map(([ex, b]) => {
     const total = (b.USDT||0) + (b.USDC||0);
     if (total === 0) return '';
-    const parts = [b.USDT ? `$${fmt(b.USDT)} USDT` : '', b.USDC ? `$${fmt(b.USDC)} USDC` : ''].filter(Boolean).join(' · ');
+    const parts = [
+      b.USDT ? `$${fmt(b.USDT)} USDT` : '',
+      b.USDC ? `$${fmt(b.USDC)} USDC` : ''
+    ].filter(Boolean).join(' · ');
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border);">
       <span style="font-size:10px;color:var(--t2);font-family:var(--mono);">${ex}</span>
       <span style="font-size:10px;color:var(--t3);font-family:var(--mono);">${parts}</span>
@@ -2534,21 +2539,27 @@ async function fetchAndRenderLiquidity() {
   el.style.display = 'block';
   el.innerHTML = `
   <div class="card" style="padding:16px 20px;">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:${exRows?'14px':'0'};">
+    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;">Capital en exchanges</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:${exRows?'14px':'0'};">
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Liquidez libre</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:var(--blue);">$${fmt(liquidity.total)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT + USDC sin usar</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#3d9cf0;">$${fmt(liquidity.total)}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT + USDC disponible</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">En margen</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#a78bfa;">$${fmt(marginUsed)}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">en posiciones abiertas</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">PnL abierto</div>
         <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${livePnl>=0?'pnl-pos':'pnl-neg'}">${livePnl>=0?'+':''}$${fmt(livePnl)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">posiciones abiertas</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">no realizado</div>
       </div>
-      <div>
+      <div style="border-left:0.5px solid var(--border);padding-left:12px;">
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Patrimonio total</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:${patrimonio>=liquidity.total?'var(--accent)':'var(--red)'};">$${fmt(patrimonio)}</div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">liquidez + PnL abierto</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:${patrimonio>=totalCapital?'var(--accent)':'var(--red)'};">$${fmt(patrimonio)}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px;">libre + margen + PnL</div>
       </div>
     </div>
     ${exRows?`<div style="margin-top:4px;">${exRows}</div>`:''}
@@ -2557,7 +2568,12 @@ async function fetchAndRenderLiquidity() {
 
 // Called after each sync to update liquidity display
 window._updateLiquidityCache = (data) => {
-  if (data?.liquidity) _liquidityCache = data;
+  if (data?.liquidity) _liquidityCache = {
+    liquidity:    data.liquidity,
+    balances:     data.balances,
+    marginInUse:  data.marginInUse || 0,
+    totalPnl:     data.totalPnl    || 0,
+  };
   fetchAndRenderLiquidity();
 };
 
