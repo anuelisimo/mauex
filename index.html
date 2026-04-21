@@ -2491,7 +2491,6 @@ async function fetchAndRenderLiquidity() {
 
   let data = _liquidityCache;
 
-  // If no cache yet, try fetching /balance directly from Worker
   if (!data && PROXY_URL) {
     try {
       el.style.display = 'block';
@@ -2499,133 +2498,51 @@ async function fetchAndRenderLiquidity() {
       const r = await fetch(`${PROXY_URL}/balance`);
       if (r.ok) {
         const d = await r.json();
-        if (d.liquidity) {
-          _liquidityCache = { liquidity: d.liquidity, balances: d.balances };
-          data = _liquidityCache;
-        }
+        if (d.balances) { _liquidityCache = d; data = d; }
       }
     } catch(e) {}
   }
 
-  if (!data || !data.liquidity || data.liquidity.total === 0) {
+  if (!data?.balances || Object.keys(data.balances).length === 0) {
     el.style.display = 'none';
     return;
   }
 
-  const { balances, liquidity } = data;
+  const { balances } = data;
 
-  // ── Build per-exchange breakdown from positions ────────────────────────────
-  const positions = window.exchangePositions || [];
-  // Include active + zombie positions (all open)
-  const manualPos = (window.G?.trades()||[]).filter(t => t.status==='active' || t.status==='zombie');
-
-  // Per-exchange: margin (futures) and spot posSize
-  const byEx = {};
-  const initEx = (ex) => {
-    if (!byEx[ex]) byEx[ex] = { margin: 0, spot: 0, pnl: 0 };
-  };
-
-  // Exchange positions (from sync)
-  positions.forEach(p => {
-    const ex = (p.exchange||'').toUpperCase();
-    initEx(ex);
-    if (p.type === 'spot') {
-      byEx[ex].spot += p.posSize || 0;
-    } else {
-      byEx[ex].margin += p.margin || 0;
-      byEx[ex].pnl    += p.pnl   || 0;
-    }
+  // Totals — pure exchange data, no Firestore crossing
+  let grandTotal = 0, grandFree = 0, grandMargin = 0, grandPnl = 0;
+  Object.values(balances).forEach(b => {
+    grandTotal  += b.total  || 0;
+    grandFree   += b.free   || 0;
+    grandMargin += b.margin || 0;
+    grandPnl    += b.pnl    || 0;
   });
 
-  // Manual positions (from Firestore)
-  manualPos.forEach(p => {
-    const ex = (p.exchange||'MANUAL').toUpperCase();
-    initEx(ex);
-    if (p.dir === 'spot') {
-      byEx[ex].spot += p.posSize || 0;
-    } else {
-      const lev    = p.leverage || 1;
-      const margin = p.dir==='spot' ? (p.posSize||0) : (p.posSize||0)/lev;
-      byEx[ex].margin += margin;
-      // Live PnL from price if available
-      const sym   = (p.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
-      const price = window.G?.getPrice(sym, p.dir);
-      if (price && p.entry && p.posSize) {
-        const sign = p.dir==='short' ? -1 : 1;
-        const contr = p.posSize / p.entry;
-        byEx[ex].pnl += Math.round(contr*(price-p.entry)*sign*100)/100;
-      }
-    }
-  });
-
-  // ── Totals ─────────────────────────────────────────────────────────────────
-  const allExchanges = [...new Set([...Object.keys(balances||{}), ...Object.keys(byEx)])];
-
-  // Totals — use wallet balances (total deposited) + spot positions + pnl
-  // walletBalance already includes margin, so DON'T add margin separately
-  let totalWallet = 0, totalFreeAll = 0, totalMarginAll = 0;
-  const totalSpot = Object.values(byEx).reduce((s,e) => s + e.spot, 0);
-  const totalPnl  = Object.values(byEx).reduce((s,e) => s + e.pnl,  0);
-
-  allExchanges.forEach(ex => {
-    const b = balances?.[ex] || {};
-    const pos = byEx[ex] || {};
-    // wallet = total USDT/USDC deposited (free + in margin)
-    const wallet = (b.USDT||0) + (b.USDC||0);
-    totalWallet += wallet;
-    // free = explicitly from exchange if available, else wallet - margin from positions
-    const freeEx = (b.freeUSDT||0) + (b.freeUSDC||0);
-    const marginEx = (b.marginUSDT||0) + (b.marginUSDC||0);
-    if (freeEx > 0 || marginEx > 0) {
-      totalFreeAll   += freeEx;
-      totalMarginAll += marginEx;
-    } else {
-      // Fallback: derive free from positions margin
-      const posMargin = pos.margin || 0;
-      totalMarginAll += posMargin;
-      totalFreeAll   += Math.max(0, wallet - posMargin);
-    }
-  });
-
-  // Patrimonio = total USDT/USDC depositado + spot + pnl (no double count margin)
-  const patrimonio = totalWallet + totalSpot + totalPnl;
-
-  const exRows = allExchanges.map(ex => {
-    const b   = balances?.[ex] || {};
-    const pos = byEx[ex]       || {};
-
-    const wallet  = (b.USDT||0) + (b.USDC||0);
-    const freeEx  = (b.freeUSDT||0) + (b.freeUSDC||0);
-    const marginEx = (b.marginUSDT||0) + (b.marginUSDC||0);
-    // Use exchange-reported free/margin if available, else derive
-    const libre  = freeEx  > 0 ? freeEx  : Math.max(0, wallet - (pos.margin||0));
-    const margin = marginEx > 0 ? marginEx : (pos.margin||0);
-    const spot   = pos.spot || 0;
-    const pnl    = pos.pnl  || 0;
-    const total  = wallet + spot + pnl;
+  const exRows = Object.entries(balances).map(([ex, b]) => {
+    const total  = b.total  || 0;
+    const free   = b.free   || 0;
+    const margin = b.margin || 0;
+    const pnl    = b.pnl    || 0;
     if (total === 0) return '';
 
     const pnlStr = pnl !== 0
       ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
-      : '';
+      : '<span style="color:var(--t3);">—</span>';
 
-    return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
+    return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
       <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}</span>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
-        <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${libre>0?'$'+fmt(libre):'—'}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${free>0?'$'+fmt(free):'—'}</div>
       </div>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN MARGEN</div>
         <div style="font-size:11px;font-family:var(--mono);color:#a78bfa;">${margin>0?'$'+fmt(margin):'—'}</div>
       </div>
       <div>
-        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">SPOT</div>
-        <div style="font-size:11px;font-family:var(--mono);color:var(--amber);">${spot>0?'$'+fmt(spot):'—'}</div>
-      </div>
-      <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">PNL</div>
-        <div style="font-size:11px;font-family:var(--mono);">${pnlStr||'—'}</div>
+        <div style="font-size:11px;font-family:var(--mono);">${pnlStr}</div>
       </div>
       <div style="text-align:right;">
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">TOTAL</div>
@@ -2637,41 +2554,32 @@ async function fetchAndRenderLiquidity() {
   el.style.display = 'block';
   el.innerHTML = `
   <div class="card" style="padding:16px 20px;">
-    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;">Capital en exchanges</div>
-
-    <!-- Summary row -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border2);">
+    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;">Capital en exchanges — futuros</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border2);">
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Libre</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#3d9cf0;">$${fmt(totalFreeAll)}</div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT + USDC</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#3d9cf0;">$${fmt(grandFree)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">disponible para operar</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En margen</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#a78bfa;">$${fmt(totalMarginAll)}</div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">futuros/perps</div>
-      </div>
-      <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Spot</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--amber);">$${fmt(totalSpot)}</div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">posiciones spot</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#a78bfa;">$${fmt(grandMargin)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">bloqueado en posiciones</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">PnL abierto</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':''}$${fmt(totalPnl)}</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${grandPnl>=0?'pnl-pos':'pnl-neg'}">${grandPnl>=0?'+':''}$${fmt(grandPnl)}</div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">no realizado</div>
       </div>
       <div style="border-left:0.5px solid var(--border);padding-left:12px;">
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Patrimonio</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--accent);">$${fmt(patrimonio)}</div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">total</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Total</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--accent);">$${fmt(grandTotal)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">todos los exchanges</div>
       </div>
     </div>
-
-    <!-- Per-exchange header -->
-    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;padding-bottom:4px;margin-bottom:2px;">
-      ${['Exchange','Libre','En margen','Spot','PnL','Total'].map(h=>
-        `<span style="font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;${h==='Total'?'text-align:right;':''}">${h}</span>`
+    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 90px;gap:4px;padding-bottom:4px;margin-bottom:2px;">
+      ${['Exchange','Libre','En margen','PnL','Total'].map((h,i) =>
+        `<span style="font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;${i===4?'text-align:right;':''}">${h}</span>`
       ).join('')}
     </div>
     ${exRows}
@@ -2680,12 +2588,7 @@ async function fetchAndRenderLiquidity() {
 
 // Called after each sync to update liquidity display
 window._updateLiquidityCache = (data) => {
-  if (data?.liquidity) _liquidityCache = {
-    liquidity:    data.liquidity,
-    balances:     data.balances,
-    marginInUse:  data.marginInUse || 0,
-    totalPnl:     data.totalPnl    || 0,
-  };
+  if (data?.balances) _liquidityCache = data;
   fetchAndRenderLiquidity();
 };
 
