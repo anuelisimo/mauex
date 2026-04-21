@@ -2559,24 +2559,50 @@ async function fetchAndRenderLiquidity() {
   });
 
   // ── Totals ─────────────────────────────────────────────────────────────────
-  const totalFree   = liquidity.total;
-  const totalMargin = Object.values(byEx).reduce((s,e) => s + e.margin, 0);
-  const totalSpot   = Object.values(byEx).reduce((s,e) => s + e.spot,   0);
-  const totalPnl    = Object.values(byEx).reduce((s,e) => s + e.pnl,    0);
-  const patrimonio  = totalFree + totalMargin + totalSpot + totalPnl;
-
-  // ── Per-exchange table ─────────────────────────────────────────────────────
-  // Merge balances keys + byEx keys
   const allExchanges = [...new Set([...Object.keys(balances||{}), ...Object.keys(byEx)])];
 
+  // Totals — use wallet balances (total deposited) + spot positions + pnl
+  // walletBalance already includes margin, so DON'T add margin separately
+  let totalWallet = 0, totalFreeAll = 0, totalMarginAll = 0;
+  const totalSpot = Object.values(byEx).reduce((s,e) => s + e.spot, 0);
+  const totalPnl  = Object.values(byEx).reduce((s,e) => s + e.pnl,  0);
+
+  allExchanges.forEach(ex => {
+    const b = balances?.[ex] || {};
+    const pos = byEx[ex] || {};
+    // wallet = total USDT/USDC deposited (free + in margin)
+    const wallet = (b.USDT||0) + (b.USDC||0);
+    totalWallet += wallet;
+    // free = explicitly from exchange if available, else wallet - margin from positions
+    const freeEx = (b.freeUSDT||0) + (b.freeUSDC||0);
+    const marginEx = (b.marginUSDT||0) + (b.marginUSDC||0);
+    if (freeEx > 0 || marginEx > 0) {
+      totalFreeAll   += freeEx;
+      totalMarginAll += marginEx;
+    } else {
+      // Fallback: derive free from positions margin
+      const posMargin = pos.margin || 0;
+      totalMarginAll += posMargin;
+      totalFreeAll   += Math.max(0, wallet - posMargin);
+    }
+  });
+
+  // Patrimonio = total USDT/USDC depositado + spot + pnl (no double count margin)
+  const patrimonio = totalWallet + totalSpot + totalPnl;
+
   const exRows = allExchanges.map(ex => {
-    const b     = balances?.[ex] || {};
-    const pos   = byEx[ex]       || {};
-    const libre = (b.USDT||0) + (b.USDC||0);
-    const margin = pos.margin || 0;
-    const spot   = pos.spot   || 0;
-    const pnl    = pos.pnl    || 0;
-    const total  = libre + margin + spot + pnl;
+    const b   = balances?.[ex] || {};
+    const pos = byEx[ex]       || {};
+
+    const wallet  = (b.USDT||0) + (b.USDC||0);
+    const freeEx  = (b.freeUSDT||0) + (b.freeUSDC||0);
+    const marginEx = (b.marginUSDT||0) + (b.marginUSDC||0);
+    // Use exchange-reported free/margin if available, else derive
+    const libre  = freeEx  > 0 ? freeEx  : Math.max(0, wallet - (pos.margin||0));
+    const margin = marginEx > 0 ? marginEx : (pos.margin||0);
+    const spot   = pos.spot || 0;
+    const pnl    = pos.pnl  || 0;
+    const total  = wallet + spot + pnl;
     if (total === 0) return '';
 
     const pnlStr = pnl !== 0
@@ -2617,12 +2643,12 @@ async function fetchAndRenderLiquidity() {
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border2);">
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Libre</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#3d9cf0;">$${fmt(totalFree)}</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#3d9cf0;">$${fmt(totalFreeAll)}</div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">USDT + USDC</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En margen</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#a78bfa;">$${fmt(totalMargin)}</div>
+        <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:#a78bfa;">$${fmt(totalMarginAll)}</div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">futuros/perps</div>
       </div>
       <div>
