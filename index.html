@@ -3285,7 +3285,7 @@ function renderHistCharts(trades) {
   el.innerHTML = `
   <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">EQUITY CURVE ${info('PnL acumulado en el tiempo. La línea verde muestra ganancias sobre el capital inicial, la roja pérdidas. El área sombreada indica la zona de ganancia/pérdida. Hover para ver el estado en cada fecha.')}</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">EQUITY CURVE ${info('PnL acumulado en el tiempo.')}</div>
       <div style="position:relative;">
         <canvas id="eqCanvas" height="90" style="width:100%;height:90px;display:block;cursor:crosshair;"></canvas>
         <div id="eqTooltip" style="display:none;position:absolute;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:10px;font-family:var(--mono);pointer-events:none;z-index:10;white-space:nowrap;"></div>
@@ -3295,12 +3295,18 @@ function renderHistCharts(trades) {
         <span style="font-size:12px;font-family:var(--mono);font-weight:600;color:${totPnl>=0?'var(--accent)':'var(--red)'};">${totPnl>=0?'+':''}$${fmt(Math.abs(totPnl))}</span>
       </div>
     </div>
-    <div class="card" style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;">
-      <div style="grid-column:1/-1;font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;">ESTADÍSTICAS ${info('Métricas clave de performance. Win Rate: % de trades ganadores. Expectancy: ganancia promedio esperada por trade (positivo = sistema rentable). Avg Win/Loss: promedio de ganancias y pérdidas.')}</div>
-      <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${winRate>=50?'var(--accent)':'var(--red)'};">${winRate}%</div></div>
-      <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">EXPECTANCY</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${expectancy>=0?'var(--accent)':'var(--red)'};">${expectancy>=0?'+':''}$${fmt(Math.abs(expectancy))}</div></div>
-      <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG WIN</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--accent);">+$${fmt(avgWin)}</div></div>
-      <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG LOSS</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--red);">${fmt(avgLoss)}</div></div>
+    <div style="display:grid;grid-template-rows:auto auto;gap:12px;">
+      <div class="card" style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;">
+        <div style="grid-column:1/-1;font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;">ESTADÍSTICAS ${info('Métricas clave de performance.')}</div>
+        <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${winRate>=50?'var(--accent)':'var(--red)'};">${winRate}%</div></div>
+        <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">EXPECTANCY</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${expectancy>=0?'var(--accent)':'var(--red)'};">${expectancy>=0?'+':''}$${fmt(Math.abs(expectancy))}</div></div>
+        <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG WIN</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--accent);">+$${fmt(avgWin)}</div></div>
+        <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG LOSS</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--red);">${fmt(avgLoss)}</div></div>
+      </div>
+      <div class="card" style="padding:14px;" id="capitalPieCard">
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">CAPITAL ${info('Distribución del capital: libre, en margen de posiciones y reservado en órdenes.')}</div>
+        <canvas id="capitalPieCanvas" height="100" style="width:100%;height:100px;display:block;"></canvas>
+      </div>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
@@ -3336,32 +3342,65 @@ function renderHistCharts(trades) {
 
     const drawChart = (highlightIdx=-1) => {
       ctx.clearRect(0,0,W,H);
-      if (minEq<0&&maxEq>0) {
-        ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.setLineDash([4,4]);
-        ctx.beginPath();ctx.moveTo(0,zeroY2);ctx.lineTo(W,zeroY2);ctx.stroke();ctx.setLineDash([]);
+
+      // Grid lines — subtle horizontal
+      const gridLines = 4;
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([]);
+      for (let i=0; i<=gridLines; i++) {
+        const y = pad + (cH / gridLines) * i;
+        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W-pad, y); ctx.stroke();
       }
+      // Vertical grid lines
+      const vLines = 6;
+      for (let i=0; i<=vLines; i++) {
+        const x = pad + (cW / vLines) * i;
+        ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, H-pad); ctx.stroke();
+      }
+
+      // Zero line
+      if (minEq < 0 && maxEq > 0) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(pad, zeroY2); ctx.lineTo(W-pad, zeroY2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       if (equityPoints.length < 2) return;
-      const gainGrad=ctx.createLinearGradient(0,0,0,H);
-      gainGrad.addColorStop(0,'rgba(0,196,122,0.3)');gainGrad.addColorStop(1,'rgba(0,196,122,0)');
-      const lossGrad=ctx.createLinearGradient(0,0,0,H);
-      lossGrad.addColorStop(0,'rgba(240,61,61,0)');lossGrad.addColorStop(1,'rgba(240,61,61,0.3)');
-      ctx.beginPath();ctx.moveTo(toX(0),zeroY2);
-      equityPoints.forEach((p,i)=>ctx.lineTo(toX(i),toY(p.v)));
-      ctx.lineTo(toX(equityPoints.length-1),zeroY2);ctx.closePath();
-      ctx.save();ctx.rect(0,0,W,zeroY2);ctx.clip();ctx.fillStyle=gainGrad;ctx.fill();ctx.restore();
-      ctx.save();ctx.rect(0,zeroY2,W,H);ctx.clip();ctx.fillStyle=lossGrad;ctx.fill();ctx.restore();
-      for(let i=1;i<equityPoints.length;i++){
-        ctx.strokeStyle=equityPoints[i].v>=0?'#00c47a':'#f03d3d';
-        ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(toX(i-1),toY(equityPoints[i-1].v));ctx.lineTo(toX(i),toY(equityPoints[i].v));ctx.stroke();
+
+      // Single cyan line — no gradient fill
+      ctx.beginPath();
+      ctx.moveTo(toX(0), toY(equityPoints[0].v));
+      equityPoints.forEach((p,i) => { if(i>0) ctx.lineTo(toX(i), toY(p.v)); });
+      ctx.strokeStyle = '#3d9cf0';
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      // Date labels
+      ctx.fillStyle = 'rgba(100,120,140,0.6)';
+      ctx.font = '9px monospace';
+      const lc = Math.min(4, equityPoints.length);
+      for (let i=0; i<lc; i++) {
+        const idx = Math.floor(i/(lc-1||1)*(equityPoints.length-1));
+        const x = toX(idx);
+        const date = equityPoints[idx].date?.slice(0,7)||'';
+        ctx.fillText(date, Math.min(x, W-44), H-1);
       }
-      ctx.fillStyle='rgba(100,120,140,0.6)';ctx.font='9px monospace';
-      const lc=Math.min(4,equityPoints.length);
-      for(let i=0;i<lc;i++){const idx=Math.floor(i/(lc-1||1)*(equityPoints.length-1));const x=toX(idx);const date=equityPoints[idx].date?.slice(0,7)||'';ctx.fillText(date,Math.min(x,W-44),H-1);}
-      if(highlightIdx>=0){
-        const x=toX(highlightIdx),y=toY(equityPoints[highlightIdx].v);
-        ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=0.5;ctx.setLineDash([2,2]);
-        ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();ctx.setLineDash([]);
-        ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle=equityPoints[highlightIdx].v>=0?'#00c47a':'#f03d3d';ctx.fill();
+
+      // Highlight dot
+      if (highlightIdx >= 0) {
+        const x = toX(highlightIdx), y = toY(equityPoints[highlightIdx].v);
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2,2]);
+        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
+        ctx.fillStyle = '#3d9cf0';
+        ctx.fill();
       }
     };
     drawChart();
@@ -3379,6 +3418,73 @@ function renderHistCharts(trades) {
       tooltip.innerHTML=`<span style="color:var(--t3);">${pt.date}</span><br><span style="color:${pt.v>=0?'var(--accent)':'var(--red)'};">${pt.v>=0?'+':''}$${fmt(Math.abs(pt.v))}</span> <span style="font-size:9px;color:var(--t3);">(${pt.pnl>=0?'+':''}$${fmt(pt.pnl)})</span>`;
     };
     canvas.onmouseleave=()=>{tooltip.style.display='none';drawChart();};
+
+    // ── Capital pie chart ─────────────────────────────────────────────────
+    const pieCanvas = document.getElementById('capitalPieCanvas');
+    if (pieCanvas && window._liquidityCache?.balances) {
+      const balances = window._liquidityCache.balances;
+      let libre = 0, margen = 0, ordenes = 0;
+      Object.values(balances).forEach(b => {
+        libre   += b.free   || 0;
+        margen  += b.margin || 0;
+        ordenes += b.orders || 0;
+      });
+      const total = libre + margen + ordenes;
+      if (total > 0) {
+        const PW = pieCanvas.offsetWidth || 200;
+        const PH = 100;
+        pieCanvas.width = PW;
+        pieCanvas.height = PH;
+        const pc = pieCanvas.getContext('2d');
+        const r = 36;
+        const cx = r + 10;
+        const cy = PH / 2;
+        const slices = [
+          { val: libre,   color: '#3d9cf0', label: 'Libre' },
+          { val: margen,  color: '#a78bfa', label: 'Margen' },
+          { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
+        ].filter(s => s.val > 0);
+
+        let angle = -Math.PI / 2;
+        slices.forEach(s => {
+          const sweep = (s.val / total) * Math.PI * 2;
+          pc.beginPath();
+          pc.moveTo(cx, cy);
+          pc.arc(cx, cy, r, angle, angle + sweep);
+          pc.closePath();
+          pc.fillStyle = s.color;
+          pc.fill();
+          angle += sweep;
+        });
+
+        // Legend
+        const lx = cx + r + 14;
+        let ly = cy - (slices.length * 18) / 2 + 9;
+        pc.font = '9px monospace';
+        slices.forEach(s => {
+          const pct = Math.round(s.val / total * 100);
+          pc.fillStyle = s.color;
+          pc.fillRect(lx, ly - 6, 8, 8);
+          pc.fillStyle = '#a8b8cc';
+          pc.fillText(`${s.label}`, lx + 12, ly);
+          pc.fillStyle = '#e2e8f0';
+          pc.fillText(`$${fmt(s.val)} (${pct}%)`, lx + 12, ly + 11);
+          ly += 26;
+        });
+
+        // Total in center
+        pc.fillStyle = 'rgba(10,12,15,0.6)';
+        pc.beginPath(); pc.arc(cx, cy, r * 0.55, 0, Math.PI * 2); pc.fill();
+        pc.fillStyle = '#e2e8f0';
+        pc.font = 'bold 9px monospace';
+        pc.textAlign = 'center';
+        pc.fillText('$'+fmt(total), cx, cy + 3);
+        pc.textAlign = 'left';
+      } else {
+        const pieCard = document.getElementById('capitalPieCard');
+        if (pieCard) pieCard.style.display = 'none';
+      }
+    }
   });
 }
 
