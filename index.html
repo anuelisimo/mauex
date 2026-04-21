@@ -2511,11 +2511,12 @@ async function fetchAndRenderLiquidity() {
   const { balances } = data;
 
   // Totals — pure exchange data, no Firestore crossing
-  let grandTotal = 0, grandFree = 0, grandMargin = 0, grandPnl = 0;
+  let grandTotal = 0, grandFree = 0, grandMargin = 0, grandOrders = 0, grandPnl = 0;
   Object.values(balances).forEach(b => {
     grandTotal  += b.total  || 0;
     grandFree   += b.free   || 0;
     grandMargin += b.margin || 0;
+    grandOrders += b.orders || 0;
     grandPnl    += b.pnl    || 0;
   });
 
@@ -2523,6 +2524,7 @@ async function fetchAndRenderLiquidity() {
     const total  = b.total  || 0;
     const free   = b.free   || 0;
     const margin = b.margin || 0;
+    const orders = b.orders || 0;
     const pnl    = b.pnl    || 0;
     if (total === 0) return '';
 
@@ -2530,7 +2532,7 @@ async function fetchAndRenderLiquidity() {
       ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
       : '<span style="color:var(--t3);">—</span>';
 
-    return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
+    return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
       <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}</span>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
@@ -2539,6 +2541,10 @@ async function fetchAndRenderLiquidity() {
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN MARGEN</div>
         <div style="font-size:11px;font-family:var(--mono);color:#a78bfa;">${margin>0?'$'+fmt(margin):'—'}</div>
+      </div>
+      <div>
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN ÓRDENES</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--amber);">${orders>0?'$'+fmt(orders):'—'}</div>
       </div>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">PNL</div>
@@ -2555,7 +2561,7 @@ async function fetchAndRenderLiquidity() {
   el.innerHTML = `
   <div class="card" style="padding:16px 20px;">
     <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;">Capital en exchanges — futuros</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border2);">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border2);">
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Libre</div>
         <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#3d9cf0;">$${fmt(grandFree)}</div>
@@ -2565,6 +2571,11 @@ async function fetchAndRenderLiquidity() {
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En margen</div>
         <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:#a78bfa;">$${fmt(grandMargin)}</div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">bloqueado en posiciones</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En órdenes</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:var(--amber);">$${fmt(grandOrders)}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">reservado en limit orders</div>
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">PnL abierto</div>
@@ -2577,9 +2588,9 @@ async function fetchAndRenderLiquidity() {
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">todos los exchanges</div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 90px;gap:4px;padding-bottom:4px;margin-bottom:2px;">
-      ${['Exchange','Libre','En margen','PnL','Total'].map((h,i) =>
-        `<span style="font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;${i===4?'text-align:right;':''}">${h}</span>`
+    <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;padding-bottom:4px;margin-bottom:2px;">
+      ${['Exchange','Libre','En margen','En órdenes','PnL','Total'].map((h,i) =>
+        `<span style="font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;${i===5?'text-align:right;':''}">${h}</span>`
       ).join('')}
     </div>
     ${exRows}
