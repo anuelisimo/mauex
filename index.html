@@ -2626,6 +2626,8 @@ function renderDashboard() {
   // Charts
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
   fetchAndRenderLiquidity();
+  // Render equity curve + stats + capital pie (same as historial)
+  setTimeout(() => renderHistCharts(closed), 50);
 
   // Active positions mini-list with live PnL total
   let liveTot=0, hasPx=false;
@@ -3326,7 +3328,7 @@ function renderHistCharts(trades) {
   </div>`;
 
   // Draw equity curve on canvas
-  requestAnimationFrame(() => requestAnimationFrame(() => {
+  setTimeout(() => {
     const canvas = document.getElementById('eqCanvas');
     if (!canvas) return;
     const W = canvas.offsetWidth;
@@ -3485,7 +3487,7 @@ function renderHistCharts(trades) {
         if (pieCard) pieCard.style.display = 'none';
       }
     }
-  }));
+  }, 80);
 }
 
 
