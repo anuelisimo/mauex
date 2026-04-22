@@ -2597,6 +2597,9 @@ async function fetchAndRenderLiquidity() {
 window._updateLiquidityCache = (data) => {
   if (data?.balances) _liquidityCache = data;
   fetchAndRenderLiquidity();
+  // Redraw capital pie if visible
+  const pieCanvas = document.getElementById('capitalPieCanvas');
+  if (pieCanvas) setTimeout(() => renderHistCharts(window.G?.trades().filter(t=>t.status==='closed')||[]), 100);
 };
 
 function renderDashboard() {
@@ -3286,10 +3289,10 @@ function renderHistCharts(trades) {
 
   el.innerHTML = `
   <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">
-    <div class="card" style="padding:14px;">
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;">
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">EQUITY CURVE ${info('PnL acumulado en el tiempo.')}</div>
-      <div style="position:relative;">
-        <canvas id="eqCanvas" height="90" style="width:100%;height:90px;display:block;cursor:crosshair;"></canvas>
+      <div style="position:relative;flex:1;min-height:80px;">
+        <canvas id="eqCanvas" style="width:100%;height:100%;display:block;cursor:crosshair;position:absolute;top:0;left:0;"></canvas>
         <div id="eqTooltip" style="display:none;position:absolute;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:10px;font-family:var(--mono);pointer-events:none;z-index:10;white-space:nowrap;"></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:6px;">
@@ -3297,7 +3300,7 @@ function renderHistCharts(trades) {
         <span style="font-size:12px;font-family:var(--mono);font-weight:600;color:${totPnl>=0?'var(--accent)':'var(--red)'};">${totPnl>=0?'+':''}$${fmt(Math.abs(totPnl))}</span>
       </div>
     </div>
-    <div style="display:grid;grid-template-rows:auto auto;gap:12px;">
+    <div style="display:grid;grid-template-rows:auto 1fr;gap:12px;">
       <div class="card" style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;">
         <div style="grid-column:1/-1;font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;">ESTADÍSTICAS ${info('Métricas clave de performance.')}</div>
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${winRate>=50?'var(--accent)':'var(--red)'};">${winRate}%</div></div>
@@ -3305,9 +3308,9 @@ function renderHistCharts(trades) {
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG WIN</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--accent);">+$${fmt(avgWin)}</div></div>
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG LOSS</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--red);">${fmt(avgLoss)}</div></div>
       </div>
-      <div class="card" style="padding:14px;" id="capitalPieCard">
+      <div class="card" style="padding:14px;display:flex;flex-direction:column;" id="capitalPieCard">
         <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">CAPITAL ${info('Distribución del capital: libre, en margen de posiciones y reservado en órdenes.')}</div>
-        <canvas id="capitalPieCanvas" height="100" style="width:100%;height:100px;display:block;"></canvas>
+        <canvas id="capitalPieCanvas" style="width:100%;flex:1;min-height:80px;display:block;"></canvas>
       </div>
     </div>
   </div>
@@ -3331,8 +3334,8 @@ function renderHistCharts(trades) {
   setTimeout(() => {
     const canvas = document.getElementById('eqCanvas');
     if (!canvas) return;
-    const W = canvas.offsetWidth;
-    const H = 90;
+    const W = canvas.offsetWidth || canvas.parentElement?.offsetWidth || 400;
+    const H = canvas.parentElement?.offsetHeight || 120;
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
@@ -3421,10 +3424,15 @@ function renderHistCharts(trades) {
     };
     canvas.onmouseleave=()=>{tooltip.style.display='none';drawChart();};
 
-    // ── Capital pie chart ─────────────────────────────────────────────────
-    const pieCanvas = document.getElementById('capitalPieCanvas');
-    if (pieCanvas && window._liquidityCache?.balances) {
-      const balances = window._liquidityCache.balances;
+    const drawCapitalPie = () => {
+      const pieCanvas = document.getElementById('capitalPieCanvas');
+      if (!pieCanvas) return;
+      const balances = window._liquidityCache?.balances;
+      if (!balances) {
+        // retry when cache arrives
+        setTimeout(drawCapitalPie, 500);
+        return;
+      }
       let libre = 0, margen = 0, ordenes = 0;
       Object.values(balances).forEach(b => {
         libre   += b.free   || 0;
@@ -3432,61 +3440,60 @@ function renderHistCharts(trades) {
         ordenes += b.orders || 0;
       });
       const total = libre + margen + ordenes;
-      if (total > 0) {
-        const PW = pieCanvas.offsetWidth || 200;
-        const PH = 100;
-        pieCanvas.width = PW;
-        pieCanvas.height = PH;
-        const pc = pieCanvas.getContext('2d');
-        const r = 36;
-        const cx = r + 10;
-        const cy = PH / 2;
-        const slices = [
-          { val: libre,   color: '#3d9cf0', label: 'Libre' },
-          { val: margen,  color: '#a78bfa', label: 'Margen' },
-          { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
-        ].filter(s => s.val > 0);
-
-        let angle = -Math.PI / 2;
-        slices.forEach(s => {
-          const sweep = (s.val / total) * Math.PI * 2;
-          pc.beginPath();
-          pc.moveTo(cx, cy);
-          pc.arc(cx, cy, r, angle, angle + sweep);
-          pc.closePath();
-          pc.fillStyle = s.color;
-          pc.fill();
-          angle += sweep;
-        });
-
-        // Legend
-        const lx = cx + r + 14;
-        let ly = cy - (slices.length * 18) / 2 + 9;
-        pc.font = '9px monospace';
-        slices.forEach(s => {
-          const pct = Math.round(s.val / total * 100);
-          pc.fillStyle = s.color;
-          pc.fillRect(lx, ly - 6, 8, 8);
-          pc.fillStyle = '#a8b8cc';
-          pc.fillText(`${s.label}`, lx + 12, ly);
-          pc.fillStyle = '#e2e8f0';
-          pc.fillText(`$${fmt(s.val)} (${pct}%)`, lx + 12, ly + 11);
-          ly += 26;
-        });
-
-        // Total in center
-        pc.fillStyle = 'rgba(10,12,15,0.6)';
-        pc.beginPath(); pc.arc(cx, cy, r * 0.55, 0, Math.PI * 2); pc.fill();
-        pc.fillStyle = '#e2e8f0';
-        pc.font = 'bold 9px monospace';
-        pc.textAlign = 'center';
-        pc.fillText('$'+fmt(total), cx, cy + 3);
-        pc.textAlign = 'left';
-      } else {
-        const pieCard = document.getElementById('capitalPieCard');
-        if (pieCard) pieCard.style.display = 'none';
+      if (total === 0) {
+        setTimeout(drawCapitalPie, 500);
+        return;
       }
-    }
+      const PW = pieCanvas.parentElement?.offsetWidth || pieCanvas.offsetWidth || 200;
+      const PH = Math.max(pieCanvas.parentElement?.offsetHeight || 100, 100);
+      pieCanvas.width  = PW;
+      pieCanvas.height = PH;
+      const pc = pieCanvas.getContext('2d');
+      const r  = Math.min(PH / 2 - 8, 44);
+      const cx = r + 10;
+      const cy = PH / 2;
+      const slices = [
+        { val: libre,   color: '#3d9cf0', label: 'Libre' },
+        { val: margen,  color: '#a78bfa', label: 'Margen' },
+        { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
+      ].filter(s => s.val > 0);
+
+      let angle = -Math.PI / 2;
+      slices.forEach(s => {
+        const sweep = (s.val / total) * Math.PI * 2;
+        pc.beginPath(); pc.moveTo(cx, cy);
+        pc.arc(cx, cy, r, angle, angle + sweep);
+        pc.closePath(); pc.fillStyle = s.color; pc.fill();
+        angle += sweep;
+      });
+
+      // Donut hole
+      pc.beginPath(); pc.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
+      pc.fillStyle = getComputedStyle(pieCanvas.parentElement).backgroundColor || '#161b22';
+      pc.fill();
+
+      // Total in center
+      pc.fillStyle = '#e2e8f0'; pc.font = 'bold 9px monospace';
+      pc.textAlign = 'center';
+      pc.fillText('$' + fmt(total), cx, cy + 3);
+      pc.textAlign = 'left';
+
+      // Legend
+      const lx = cx + r + 14;
+      let ly = cy - (slices.length * 22) / 2 + 11;
+      pc.font = '9px monospace';
+      slices.forEach(s => {
+        const pct = Math.round(s.val / total * 100);
+        pc.fillStyle = s.color;
+        pc.fillRect(lx, ly - 7, 8, 8);
+        pc.fillStyle = '#a8b8cc';
+        pc.fillText(s.label, lx + 12, ly);
+        pc.fillStyle = '#e2e8f0';
+        pc.fillText('$' + fmt(s.val) + ' (' + pct + '%)', lx + 12, ly + 11);
+        ly += 26;
+      });
+    };
+    drawCapitalPie();
   }, 80);
 }
 
