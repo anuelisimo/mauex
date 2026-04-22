@@ -54,6 +54,16 @@
 
 /* ── POSITION CARD COMPACT ───────────────────────────────────────────────── */
 .pos-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:14px 16px;margin-bottom:8px;}
+.pos-card.alert-sl{animation:pulse-sl 1.4s ease-in-out infinite;border-width:1px;}
+.pos-card.alert-tp{animation:pulse-tp 1.4s ease-in-out infinite;border-width:1px;}
+.pos-card.hit-sl{border:1px solid #e05252!important;}
+.pos-card.hit-tp{border:1px solid #4ade80!important;}
+@keyframes pulse-sl{0%,100%{box-shadow:0 0 0 0 rgba(224,82,82,0);border-color:#e05252;}50%{box-shadow:0 0 0 4px rgba(224,82,82,0.15);border-color:#e05252;}}
+@keyframes pulse-tp{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0);border-color:#4ade80;}50%{box-shadow:0 0 0 4px rgba(74,222,128,0.15);border-color:#4ade80;}}
+@keyframes blink-fast{0%,100%{opacity:1;}50%{opacity:0.15;}}
+@keyframes blink-slow{0%,100%{opacity:1;}50%{opacity:0.3;}}
+.badge-alert-fast{animation:blink-fast 0.5s ease-in-out infinite;}
+.badge-alert-slow{animation:blink-slow 1.2s ease-in-out infinite;}
 .status-dot-red{width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;flex-shrink:0;}
 .status-dot-amber{width:8px;height:8px;border-radius:50%;background:#f59e0b;box-shadow:0 0 6px #f59e0b;flex-shrink:0;}
 .status-dot-green{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;flex-shrink:0;}
@@ -1088,6 +1098,20 @@ textarea{resize:vertical;min-height:70px;}
       <div><label class="lbl">Notas</label><textarea id="mNotes" placeholder="Contexto..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('manualTradeModal')">Cancelar</button><button class="btn acc" onclick="saveManualTrade()">Guardar</button></div>
+  </div>
+</div>
+
+<!-- Orden ejecutada modal -->
+<div class="modal-overlay" id="orderExecutedModal">
+  <div class="modal" style="width:380px;border:1px solid rgba(245,158,11,0.3);">
+    <div class="modal-hdr">
+      <div class="modal-title" style="color:#f59e0b;">⚡ Orden ejecutada</div>
+      <button class="modal-close" onclick="closeModal('orderExecutedModal')">✕</button>
+    </div>
+    <div class="modal-body" id="orderExecutedBody"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('orderExecutedModal')">Cerrar</button>
+    </div>
   </div>
 </div>
 
@@ -2196,6 +2220,33 @@ window.toast = (msg, type='success') => {
 
 window.openModal  = id => document.getElementById(id).classList.add('open');
 window.closeModal = id => document.getElementById(id).classList.remove('open');
+
+function showOrderExecutedModal(order) {
+  const body = document.getElementById('orderExecutedBody');
+  if (!body) return;
+  const dir   = order.dir || '—';
+  const dirCls = dir==='long'?'bl':dir==='short'?'bs':'bsp';
+  const size  = order.totalSize || order.size || 0;
+  const entry = order.entry || order.price || 0;
+  const lev   = order.leverage ? ` x${order.leverage}` : '';
+  body.innerHTML = `
+    <div style="font-family:var(--mono);margin-bottom:14px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+        <span style="font-size:16px;font-weight:600;">${order.ticker||order.symbol||'—'}</span>
+        <span class="badge ${dirCls}">${dir.toUpperCase()}${lev}</span>
+        <span style="font-size:11px;color:var(--t3);">${order.exchange||''}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
+        <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Precio de entrada</div><div style="color:#3d9cf0;">$${fmtPx(entry)}</div></div>
+        <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Tamaño</div><div>$${fmt(size)}</div></div>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;background:var(--bg3);border-radius:var(--r);font-size:11px;color:var(--t2);line-height:1.6;">
+        La orden ya no aparece en el exchange — probablemente fue ejecutada.<br>
+        Usá el desplegable en la tarjeta para moverla a Posiciones.
+      </div>
+    </div>`;
+  openModal('orderExecutedModal');
+}
 document.querySelectorAll('.modal-overlay').forEach(el =>
   el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); })
 );
@@ -2965,6 +3016,75 @@ function renderWatchlist() {
 }
 
 // ── Positions ──────────────────────────────────────────────────────────────
+// ── Alert state (persists in localStorage) ──────────────────────────────────
+const ALERT_KEY = 'mauex_alerts';
+function getAlerts() { try { return JSON.parse(localStorage.getItem(ALERT_KEY)||'{}'); } catch(e) { return {}; } }
+function setAlert(id, level) { const a=getAlerts(); a[id]=a[id]||{}; if(!a[id][level]) { a[id][level]=Date.now(); localStorage.setItem(ALERT_KEY, JSON.stringify(a)); } }
+function clearAlerts(id) { const a=getAlerts(); delete a[id]; localStorage.setItem(ALERT_KEY, JSON.stringify(a)); }
+function hasAlert(id, level) { return !!getAlerts()[id]?.[level]; }
+
+// Build alert badge (icon + label)
+function alertBadge(level, blinkClass) {
+  const isSL = level === 'sl';
+  const colors = { sl:'#e05252', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
+  const color  = colors[level] || '#4ade80';
+  const icon   = isSL
+    ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/></svg>`
+    : `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9.5 10.5,2" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const label  = level.toUpperCase();
+  return `<span class="${blinkClass}" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:${color}22;color:${color};">${icon}${label}</span>`;
+}
+
+// Get proximity/hit alert info for a position
+function getPositionAlert(t, price) {
+  if (!price || !t.entry) return { cardClass:'', badges:'' };
+  const sign = t.dir==='short' ? -1 : 1;
+  const THRESHOLD = 0.02; // 2%
+
+  // Check hits first (stored)
+  const hits = [];
+  if (hasAlert(t.id, 'sl'))  hits.push(alertBadge('sl',  'badge-alert-fast'));
+  if (hasAlert(t.id, 'tp1')) hits.push(alertBadge('tp1', 'badge-alert-fast'));
+  if (hasAlert(t.id, 'tp2')) hits.push(alertBadge('tp2', 'badge-alert-fast'));
+  if (hasAlert(t.id, 'tp3')) hits.push(alertBadge('tp3', 'badge-alert-fast'));
+
+  // Detect new hits from current price
+  if (t.sl && !hasAlert(t.id,'sl')) {
+    const hitSL = t.dir==='long' ? price <= t.sl : price >= t.sl;
+    if (hitSL) { setAlert(t.id,'sl'); hits.push(alertBadge('sl','badge-alert-fast')); }
+  }
+  ['tp1','tp2','tp3'].forEach(k => {
+    if (t[k] && !hasAlert(t.id,k)) {
+      const hitTP = t.dir==='long' ? price >= t[k] : price <= t[k];
+      if (hitTP) { setAlert(t.id,k); hits.push(alertBadge(k,'badge-alert-fast')); }
+    }
+  });
+
+  if (hits.length) return { cardClass: hasAlert(t.id,'sl') ? 'hit-sl' : 'hit-tp', badges: hits.join('') };
+
+  // Proximity — check if within 2% of SL or nearest TP
+  if (t.sl) {
+    const dist = Math.abs(price - t.sl) / price;
+    if (dist < THRESHOLD) {
+      const pct = (dist*100).toFixed(1);
+      const badge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#e0525222;color:#e05252;">${pct}% al SL</span>`;
+      return { cardClass:'alert-sl', badges: badge };
+    }
+  }
+  const nextTP = ['tp1','tp2','tp3'].find(k => t[k] && !hasAlert(t.id,k));
+  if (nextTP && t[nextTP]) {
+    const dist = Math.abs(price - t[nextTP]) / price;
+    if (dist < THRESHOLD) {
+      const pct = (dist*100).toFixed(1);
+      const label = nextTP.toUpperCase();
+      const badge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#4ade8022;color:#4ade80;">${pct}% al ${label}</span>`;
+      return { cardClass:'alert-tp', badges: badge };
+    }
+  }
+
+  return { cardClass:'', badges:'' };
+}
+
 function renderPositions() {
   const G = window.G; if(!G) return;
   const container = document.getElementById('posList');
@@ -3031,6 +3151,7 @@ function renderPositions() {
     const riskUsd   = t.risk || (t.posSize&&slDistPct ? t.posSize*slDistPct/100 : null);
     const priceChg  = price&&t.entry ? (price-t.entry)/t.entry*100*sign : null;
     const isMin = !!cardStates[t.id];
+    const alert = getPositionAlert(t, price);
 
     const minBtn = `<button onclick="window.toggleCardMin('${t.id}')" title="${isMin?'Expandir':'Minimizar'}"
       style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 7px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
@@ -3043,6 +3164,7 @@ function renderPositions() {
           <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
           ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener" style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;cursor:pointer;" title="Abrir en ${t.exchange}" onmouseover="this.style.color='var(--t1)'" onmouseout="this.style.color='var(--t2)'">${t.exchange} ↗</a>`:''}
           ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+          ${alert.badges ? `<span style="display:inline-flex;gap:4px;">${alert.badges}</span>` : ''}
         </div>
         <div class="fx" style="gap:8px;align-items:center;">
           <div class="fx" style="gap:4px;align-items:baseline;">
@@ -3057,13 +3179,13 @@ function renderPositions() {
       </div>`;
 
     if (isMin) {
-      return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}padding-bottom:${t.entry&&(t.sl||t.tp1)?'18px':'14px'};">
+      return `<div class="pos-card ${alert.cardClass}" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}padding-bottom:${t.entry&&(t.sl||t.tp1)?'18px':'14px'};">
         ${header}
         ${t.entry&&(t.sl||t.tp1)?`<div style="padding:0 4px;">${buildPriceBar(fakeT, price||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div class="pos-card" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}">
+    return `<div class="pos-card ${alert.cardClass}" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}">
       ${header}
       <div class="pos-card-body">
         <div class="pos-mini-metric">
@@ -4918,6 +5040,16 @@ window.syncAllExchanges = async () => {
     try {
       const r    = await fetch(`${PROXY_URL}/summary`);
       const data = await r.json();
+
+      // Detect executed orders (orders that disappeared from exchange)
+      const prevOrderIds = new Set((exchangeOrders||[]).map(o=>o.exchangeId).filter(Boolean));
+      const newOrderIds  = new Set((data.orders||[]).map(o=>o.exchangeId).filter(Boolean));
+      const executedOrders = (exchangeOrders||[]).filter(o =>
+        o.exchangeId && prevOrderIds.has(o.exchangeId) && !newOrderIds.has(o.exchangeId)
+      );
+      if (executedOrders.length && prevOrderIds.size > 0) {
+        executedOrders.forEach(o => showOrderExecutedModal(o));
+      }
 
       exchangePositions        = data.positions || [];
       window.exchangePositions = exchangePositions;
