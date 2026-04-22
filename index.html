@@ -3481,10 +3481,13 @@ function renderHistCharts(trades) {
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
-    const pad = 4;
-    const cW = W - pad*2, cH = H - pad*2;
-    const toX = i => pad + i/(Math.max(equityPoints.length-1,1))*cW;
-    const toY = v => pad + cH - (v - minEq)/eqRange * cH;
+    const padX = 8, padTop = 12, padBot = 16; // more vertical padding
+    const cW = W - padX*2;
+    const cH = H - padTop - padBot;
+    // Add 10% margin above/below the data range
+    const margin = eqRange * 0.1;
+    const toX = i => padX + i/(Math.max(equityPoints.length-1,1))*cW;
+    const toY = v => padTop + cH - (v - (minEq - margin))/((eqRange + margin*2) || 1) * cH;
     const zeroY2 = toY(0);
 
     const drawChart = (highlightIdx=-1) => {
@@ -3496,14 +3499,14 @@ function renderHistCharts(trades) {
       ctx.lineWidth = 0.5;
       ctx.setLineDash([]);
       for (let i=0; i<=gridLines; i++) {
-        const y = pad + (cH / gridLines) * i;
-        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W-pad, y); ctx.stroke();
+        const y = padTop + (cH / gridLines) * i;
+        ctx.beginPath(); ctx.moveTo(padX, y); ctx.lineTo(W-padX, y); ctx.stroke();
       }
       // Vertical grid lines
       const vLines = 6;
       for (let i=0; i<=vLines; i++) {
-        const x = pad + (cW / vLines) * i;
-        ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, H-pad); ctx.stroke();
+        const x = padX + (cW / vLines) * i;
+        ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop+cH); ctx.stroke();
       }
 
       // Zero line
@@ -3511,13 +3514,13 @@ function renderHistCharts(trades) {
         ctx.strokeStyle = 'rgba(255,255,255,0.12)';
         ctx.lineWidth = 0.5;
         ctx.setLineDash([4,4]);
-        ctx.beginPath(); ctx.moveTo(pad, zeroY2); ctx.lineTo(W-pad, zeroY2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(padX, zeroY2); ctx.lineTo(W-padX, zeroY2); ctx.stroke();
         ctx.setLineDash([]);
       }
 
       if (equityPoints.length < 2) return;
 
-      // Single cyan line — no gradient fill
+      // Single cyan line
       ctx.beginPath();
       ctx.moveTo(toX(0), toY(equityPoints[0].v));
       equityPoints.forEach((p,i) => { if(i>0) ctx.lineTo(toX(i), toY(p.v)); });
@@ -3534,7 +3537,7 @@ function renderHistCharts(trades) {
         const idx = Math.floor(i/(lc-1||1)*(equityPoints.length-1));
         const x = toX(idx);
         const date = equityPoints[idx].date?.slice(0,7)||'';
-        ctx.fillText(date, Math.min(x, W-44), H-1);
+        ctx.fillText(date, Math.min(x, W-44), H-2);
       }
 
       // Highlight dot
@@ -3543,7 +3546,7 @@ function renderHistCharts(trades) {
         ctx.strokeStyle = 'rgba(255,255,255,0.15)';
         ctx.lineWidth = 0.5;
         ctx.setLineDash([2,2]);
-        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop+cH); ctx.stroke();
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
         ctx.fillStyle = '#3d9cf0';
@@ -3555,7 +3558,7 @@ function renderHistCharts(trades) {
     canvas.onmousemove=e=>{
       const rect=canvas.getBoundingClientRect();
       const mx=e.clientX-rect.left;
-      const idx=Math.max(0,Math.min(equityPoints.length-1,Math.round((mx-pad)/cW*(equityPoints.length-1))));
+      const idx=Math.max(0,Math.min(equityPoints.length-1,Math.round((mx-padX)/cW*(equityPoints.length-1))));
       const pt=equityPoints[idx];
       drawChart(idx);
       const x=toX(idx),y=toY(pt.v);
@@ -3570,11 +3573,8 @@ function renderHistCharts(trades) {
       const pieCanvas = document.getElementById('capitalPieCanvas');
       if (!pieCanvas) return;
       const balances = window._liquidityCache?.balances;
-      if (!balances) {
-        // retry when cache arrives
-        setTimeout(drawCapitalPie, 500);
-        return;
-      }
+      if (!balances) { setTimeout(drawCapitalPie, 600); return; }
+
       let libre = 0, margen = 0, ordenes = 0;
       Object.values(balances).forEach(b => {
         libre   += b.free   || 0;
@@ -3582,57 +3582,55 @@ function renderHistCharts(trades) {
         ordenes += b.orders || 0;
       });
       const total = libre + margen + ordenes;
-      if (total === 0) {
-        setTimeout(drawCapitalPie, 500);
-        return;
-      }
-      const PW = pieCanvas.offsetWidth || 300;
-      const PH = 110;
-      pieCanvas.width  = PW;
-      pieCanvas.height = PH;
-      const pc = pieCanvas.getContext('2d');
-      const r  = Math.min(PH / 2 - 8, 44);
-      const cx = r + 10;
-      const cy = PH / 2;
-      const slices = [
-        { val: libre,   color: '#3d9cf0', label: 'Libre' },
-        { val: margen,  color: '#a78bfa', label: 'Margen' },
-        { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
-      ].filter(s => s.val > 0);
+      if (total === 0) { setTimeout(drawCapitalPie, 600); return; }
 
-      let angle = -Math.PI / 2;
-      slices.forEach(s => {
-        const sweep = (s.val / total) * Math.PI * 2;
-        pc.beginPath(); pc.moveTo(cx, cy);
-        pc.arc(cx, cy, r, angle, angle + sweep);
-        pc.closePath(); pc.fillStyle = s.color; pc.fill();
-        angle += sweep;
-      });
+      // Destroy previous chart if exists
+      if (pieCanvas._chartInstance) { pieCanvas._chartInstance.destroy(); }
 
-      // Donut hole
-      pc.beginPath(); pc.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
-      pc.fillStyle = getComputedStyle(pieCanvas.parentElement).backgroundColor || '#161b22';
-      pc.fill();
+      const pctL = Math.round(libre/total*100);
+      const pctM = Math.round(margen/total*100);
+      const pctO = Math.round(ordenes/total*100);
 
-      // Total in center
-      pc.fillStyle = '#e2e8f0'; pc.font = 'bold 9px monospace';
-      pc.textAlign = 'center';
-      pc.fillText('$' + fmt(total), cx, cy + 3);
-      pc.textAlign = 'left';
+      const vals = [libre, margen, ordenes];
+      const lbls = [
+        `Libre  $${fmt(libre)} (${pctL}%)`,
+        `Margen  $${fmt(margen)} (${pctM}%)`,
+        `Órdenes  $${fmt(ordenes)} (${pctO}%)`,
+      ];
+      const colors = ['#3d9cf0','#a78bfa','#f59e0b'];
+      const filtered = vals.map((v,i) => ({v, l: lbls[i], c: colors[i]})).filter(x => x.v > 0);
 
-      // Legend
-      const lx = cx + r + 14;
-      let ly = cy - (slices.length * 22) / 2 + 11;
-      pc.font = '9px monospace';
-      slices.forEach(s => {
-        const pct = Math.round(s.val / total * 100);
-        pc.fillStyle = s.color;
-        pc.fillRect(lx, ly - 7, 8, 8);
-        pc.fillStyle = '#a8b8cc';
-        pc.fillText(s.label, lx + 12, ly);
-        pc.fillStyle = '#e2e8f0';
-        pc.fillText('$' + fmt(s.val) + ' (' + pct + '%)', lx + 12, ly + 11);
-        ly += 26;
+      pieCanvas._chartInstance = new Chart(pieCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: filtered.map(x => x.l),
+          datasets: [{
+            data: filtered.map(x => x.v),
+            backgroundColor: filtered.map(x => x.c),
+            borderWidth: 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '55%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                color: '#a8b8cc',
+                font: { size: 10, family: 'monospace' },
+                boxWidth: 10,
+                padding: 8,
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => ` $${fmt(ctx.parsed)} (${Math.round(ctx.parsed/total*100)}%)`
+              }
+            }
+          }
+        }
       });
     };
     drawCapitalPie();
