@@ -3368,21 +3368,20 @@ function renderHistCharts(trades) {
   pnlVals.forEach(v=>{ const i=Math.min(Math.floor((v-pMin)/bucketSize), bucketCount-1); buckets[i]++; });
   const maxBucket = Math.max(...buckets,1);
 
-  // Monthly bars
-  const barAreaH = 60;
+  // Monthly bars — flex-based, fill available height
   const bars = mVals.map((v,i)=>{
-    const h=Math.max(3,Math.abs(v)/maxM*(barAreaH/2));
-    const c=v>=0?'var(--accent)':'var(--red)';
-    const lbl=mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0;">
-      <div style="height:${barAreaH/2}px;display:flex;align-items:flex-end;width:100%;">
-        ${v>=0?`<div title="${v>=0?'+':''}$${fmt(v)}" style="width:100%;height:${h}px;background:${c};border-radius:2px 2px 0 0;opacity:0.85;"></div>`:`<div style="width:100%;height:0;"></div>`}
+    const pct = Math.max(2, Math.abs(v)/maxM*50); // % of half-height
+    const c = v>=0?'var(--accent)':'var(--red)';
+    const lbl = mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0;min-width:0;">
+      <div style="flex:1;display:flex;align-items:flex-end;width:100%;padding-bottom:0;">
+        ${v>=0?`<div title="${v>=0?'+':''}$${fmt(v)}" style="width:100%;height:${pct}%;background:${c};border-radius:2px 2px 0 0;opacity:0.85;min-height:${v!==0?'3px':'0'};"></div>`:`<div style="width:100%;"></div>`}
       </div>
-      <div style="height:1px;width:100%;background:rgba(255,255,255,0.08);"></div>
-      <div style="height:${barAreaH/2}px;display:flex;align-items:flex-start;width:100%;">
-        ${v<0?`<div title="${fmt(v)}" style="width:100%;height:${h}px;background:${c};border-radius:0 0 2px 2px;opacity:0.85;"></div>`:`<div style="width:100%;height:0;"></div>`}
+      <div style="height:1px;width:100%;background:rgba(255,255,255,0.1);flex-shrink:0;"></div>
+      <div style="flex:1;display:flex;align-items:flex-start;width:100%;padding-top:0;">
+        ${v<0?`<div title="$${fmt(v)}" style="width:100%;height:${pct}%;background:${c};border-radius:0 0 2px 2px;opacity:0.85;min-height:${v!==0?'3px':'0'};"></div>`:`<div style="width:100%;"></div>`}
       </div>
-      <div style="font-size:8px;color:var(--t3);white-space:nowrap;margin-top:2px;">${mKeys.length<=8?lbl:''}</div>
+      <div style="font-size:8px;color:var(--t3);white-space:nowrap;margin-top:3px;flex-shrink:0;">${mKeys.length<=8?lbl:''}</div>
     </div>`;
   }).join('');
 
@@ -3450,14 +3449,30 @@ function renderHistCharts(trades) {
       </div>
       <div class="card" style="padding:14px;" id="capitalPieCard">
         <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">CAPITAL ${info('Distribución del capital: libre, en margen de posiciones y reservado en órdenes.')}</div>
-        <canvas id="capitalPieCanvas" width="300" height="110" style="width:100%;height:110px;display:block;"></canvas>
+        <div id="capitalPieDiv" style="width:100%;height:110px;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:11px;font-family:var(--mono);">Cargando...</div>
       </div>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-    <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PnL MENSUAL ${info('Resultado neto por mes. Las barras verdes que suben indican meses ganadores, las rojas que bajan indican meses perdedores. El eje central es el punto cero.')}</div>
-      <div style="display:flex;align-items:stretch;gap:4px;height:${barAreaH*2+4}px;">${bars}</div>
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;min-height:160px;">
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PnL MENSUAL ${info('Resultado neto por mes.')}</div>
+      <div style="flex:1;display:flex;align-items:flex-end;gap:3px;padding-bottom:16px;position:relative;" id="pnlMonthlyBars">
+        ${mVals.map((v,i)=>{
+          const pct = Math.max(2, Math.abs(v)/maxM*100);
+          const c = v>=0?'var(--accent)':'var(--red)';
+          const lbl = mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:center;min-width:0;">
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1;">
+              ${v>=0?`<div style="width:80%;background:${c};border-radius:2px 2px 0 0;height:${pct}%;min-height:3px;opacity:0.85;" title="+$${fmt(v)}"></div>`:``}
+            </div>
+            <div style="height:1px;width:100%;background:rgba(255,255,255,0.1);flex-shrink:0;"></div>
+            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;flex:1;">
+              ${v<0?`<div style="width:80%;background:${c};border-radius:0 0 2px 2px;height:${pct}%;min-height:3px;opacity:0.85;" title="$${fmt(v)}"></div>`:``}
+            </div>
+            <div style="font-size:8px;color:var(--t3);white-space:nowrap;position:absolute;bottom:0;">${mKeys.length<=8?lbl:''}</div>
+          </div>`;
+        }).join('')}
+      </div>
     </div>
     <div class="card" style="padding:14px;">
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PERFORMANCE POR TRADER ${info('Tabla de rendimiento por trader/analista. # = cantidad de trades. WR = win rate. Avg W/L = ganancia y pérdida promedio por trade. La barra muestra el PnL total proporcional.')}</div>
@@ -3539,8 +3554,8 @@ function renderHistCharts(trades) {
 
     // ── Capital pie via Chart.js ─────────────────────────────────────────
     window._drawCapitalPie = () => {
-      const pieCanvas = document.getElementById('capitalPieCanvas');
-      if (!pieCanvas) return;
+      const div = document.getElementById('capitalPieDiv');
+      if (!div) return;
       const balances = window._liquidityCache?.balances;
       if (!balances) { setTimeout(window._drawCapitalPie, 600); return; }
       let libre = 0, margen = 0, ordenes = 0;
@@ -3551,29 +3566,44 @@ function renderHistCharts(trades) {
       });
       const total = libre + margen + ordenes;
       if (total === 0) { setTimeout(window._drawCapitalPie, 600); return; }
-      if (pieCanvas._chartInstance) pieCanvas._chartInstance.destroy();
-      const pctL = Math.round(libre/total*100);
-      const pctM = Math.round(margen/total*100);
-      const pctO = Math.round(ordenes/total*100);
-      const items = [
-        { v: libre,   l: `Libre $${fmt(libre)} (${pctL}%)`,    c: '#3d9cf0' },
-        { v: margen,  l: `Margen $${fmt(margen)} (${pctM}%)`,  c: '#a78bfa' },
-        { v: ordenes, l: `Órdenes $${fmt(ordenes)} (${pctO}%)`,c: '#f59e0b' },
-      ].filter(x => x.v > 0);
-      pieCanvas._chartInstance = new Chart(pieCanvas, {
-        type: 'doughnut',
-        data: {
-          labels: items.map(x => x.l),
-          datasets: [{ data: items.map(x => x.v), backgroundColor: items.map(x => x.c), borderWidth: 0 }]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '55%',
-          plugins: {
-            legend: { position: 'right', labels: { color: '#a8b8cc', font: { size: 10, family: 'monospace' }, boxWidth: 10, padding: 6 } },
-            tooltip: { callbacks: { label: ctx => ` $${fmt(ctx.parsed)} (${Math.round(ctx.parsed/total*100)}%)` } }
-          }
-        }
+
+      const slices = [
+        { val: libre,   color: '#3d9cf0', label: 'Libre' },
+        { val: margen,  color: '#a78bfa', label: 'Margen' },
+        { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
+      ].filter(s => s.val > 0);
+
+      const cx = 55, cy = 55, r = 42, ri = 24;
+      let angle = -Math.PI / 2;
+      let paths = '';
+      slices.forEach(s => {
+        const sweep = (s.val / total) * Math.PI * 2;
+        const x1  = cx + r  * Math.cos(angle);
+        const y1  = cy + r  * Math.sin(angle);
+        const x2  = cx + r  * Math.cos(angle + sweep);
+        const y2  = cy + r  * Math.sin(angle + sweep);
+        const xi1 = cx + ri * Math.cos(angle + sweep);
+        const yi1 = cy + ri * Math.sin(angle + sweep);
+        const xi2 = cx + ri * Math.cos(angle);
+        const yi2 = cy + ri * Math.sin(angle);
+        const lg  = sweep > Math.PI ? 1 : 0;
+        paths += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${lg},1 ${x2.toFixed(1)},${y2.toFixed(1)} L${xi1.toFixed(1)},${yi1.toFixed(1)} A${ri},${ri} 0 ${lg},0 ${xi2.toFixed(1)},${yi2.toFixed(1)} Z" fill="${s.color}" opacity="0.85"/>`;
+        angle += sweep;
       });
+
+      const legend = slices.map((s, i) => {
+        const pct = Math.round(s.val / total * 100);
+        const y = 18 + i * 30;
+        return `<rect x="122" y="${y}" width="9" height="9" fill="${s.color}" rx="2"/>
+          <text x="136" y="${y+8}" fill="#a8b8cc" font-size="10" font-family="monospace">${s.label}</text>
+          <text x="136" y="${y+20}" fill="#e2e8f0" font-size="10" font-family="monospace">$${fmt(s.val)} (${pct}%)</text>`;
+      }).join('');
+
+      div.innerHTML = `<svg viewBox="0 0 260 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:110px;">
+        ${paths}
+        <text x="${cx}" y="${cy+4}" text-anchor="middle" fill="#e2e8f0" font-size="9" font-family="monospace" font-weight="bold">$${fmt(total)}</text>
+        ${legend}
+      </svg>`;
     };
     window._drawCapitalPie();
   }, 80);
