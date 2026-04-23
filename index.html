@@ -2705,6 +2705,16 @@ function renderDashboard() {
   // Render equity curve + stats + capital pie (same as historial)
   setTimeout(() => renderHistCharts(closed), 50);
 
+  // If no liquidity cache yet, fetch balance directly and draw pie
+  if (!_liquidityCache && PROXY_URL) {
+    fetch(`${PROXY_URL}/balance`).then(r=>r.json()).then(d=>{
+      if (d.balances) {
+        _liquidityCache = d;
+        if (window._drawCapitalPie) window._drawCapitalPie();
+      }
+    }).catch(()=>{});
+  }
+
   // Active positions mini-list with live PnL total
   let liveTot=0, hasPx=false;
   active.forEach(t=>{ const p=G.getPrice(t.ticker,t.dir); if(p==null) return; hasPx=true; liveTot+=Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100; });
