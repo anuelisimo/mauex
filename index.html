@@ -5056,6 +5056,10 @@ window.syncAllExchanges = async () => {
       lastSyncTime             = new Date();
 
       // Cache liquidity data for dashboard
+      if (data.balances) {
+        _liquidityCache = data;
+        if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 200);
+      }
       if (data.liquidity) window._updateLiquidityCache(data);
 
       try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
