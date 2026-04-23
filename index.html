@@ -2666,9 +2666,8 @@ async function fetchAndRenderLiquidity() {
 window._updateLiquidityCache = (data) => {
   if (data?.balances) _liquidityCache = data;
   fetchAndRenderLiquidity();
-  // Redraw capital pie if visible
-  const pieCanvas = document.getElementById('capitalPieCanvas');
-  if (pieCanvas) setTimeout(() => renderHistCharts(window.G?.trades().filter(t=>t.status==='closed')||[]), 100);
+  // Redraw capital pie with fresh data
+  if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 100);
 };
 
 function renderDashboard() {
@@ -3433,9 +3432,8 @@ function renderHistCharts(trades) {
   <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px;">
     <div class="card" style="padding:14px;display:flex;flex-direction:column;">
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">EQUITY CURVE ${info('PnL acumulado en el tiempo.')}</div>
-      <div style="position:relative;height:120px;">
-        <canvas id="eqCanvas" style="width:100%;height:120px;display:block;cursor:crosshair;"></canvas>
-        <div id="eqTooltip" style="display:none;position:absolute;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:10px;font-family:var(--mono);pointer-events:none;z-index:10;white-space:nowrap;"></div>
+      <div style="flex:1;min-height:120px;position:relative;">
+        <canvas id="eqCanvas"></canvas>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:6px;">
         <span style="font-size:10px;color:var(--t3);">Max DD: <span style="color:var(--red);">-$${fmt(maxDd)}</span></span>
@@ -3474,107 +3472,77 @@ function renderHistCharts(trades) {
 
   // Draw equity curve on canvas
   setTimeout(() => {
+    // ── Equity curve via Chart.js ────────────────────────────────────────
     const canvas = document.getElementById('eqCanvas');
-    if (!canvas) return;
-    const W = canvas.offsetWidth || canvas.parentElement?.offsetWidth || 400;
-    const H = 120;
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext('2d');
-    const padX = 8, padTop = 12, padBot = 16; // more vertical padding
-    const cW = W - padX*2;
-    const cH = H - padTop - padBot;
-    // Add 10% margin above/below the data range
-    const margin = eqRange * 0.1;
-    const toX = i => padX + i/(Math.max(equityPoints.length-1,1))*cW;
-    const toY = v => padTop + cH - (v - (minEq - margin))/((eqRange + margin*2) || 1) * cH;
-    const zeroY2 = toY(0);
+    if (canvas && equityPoints.length >= 2) {
+      if (canvas._chartInstance) canvas._chartInstance.destroy();
+      canvas._chartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: equityPoints.map(p => p.date?.slice(0,7)||''),
+          datasets: [{
+            data: equityPoints.map(p => Math.round(p.v * 100)/100),
+            borderColor: '#3d9cf0',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBackgroundColor: '#3d9cf0',
+            tension: 0.3,
+            fill: false,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: items => items[0]?.label || '',
+                label: ctx => {
+                  const v = ctx.parsed.y;
+                  const pt = equityPoints[ctx.dataIndex];
+                  return ` $${fmt(Math.abs(v))} (${pt?.pnl>=0?'+':''}$${fmt(pt?.pnl||0)})`;
+                }
+              },
+              backgroundColor: 'rgba(22,27,34,0.95)',
+              borderColor: 'rgba(255,255,255,0.1)',
+              borderWidth: 0.5,
+              titleColor: '#6a7888',
+              bodyColor: '#e2e8f0',
+              bodyFont: { family: 'monospace', size: 11 },
+              titleFont: { family: 'monospace', size: 10 },
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: '#6a7888', font: { size: 9, family: 'monospace' },
+                maxTicksLimit: 5,
+                maxRotation: 0,
+              },
+              grid: { color: 'rgba(255,255,255,0.04)' },
+            },
+            y: {
+              ticks: {
+                color: '#6a7888', font: { size: 9, family: 'monospace' },
+                callback: v => '$' + fmt(v),
+                maxTicksLimit: 5,
+              },
+              grid: { color: 'rgba(255,255,255,0.04)' },
+            }
+          }
+        }
+      });
+    }
 
-    const drawChart = (highlightIdx=-1) => {
-      ctx.clearRect(0,0,W,H);
-
-      // Grid lines — subtle horizontal
-      const gridLines = 4;
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([]);
-      for (let i=0; i<=gridLines; i++) {
-        const y = padTop + (cH / gridLines) * i;
-        ctx.beginPath(); ctx.moveTo(padX, y); ctx.lineTo(W-padX, y); ctx.stroke();
-      }
-      // Vertical grid lines
-      const vLines = 6;
-      for (let i=0; i<=vLines; i++) {
-        const x = padX + (cW / vLines) * i;
-        ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop+cH); ctx.stroke();
-      }
-
-      // Zero line
-      if (minEq < 0 && maxEq > 0) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([4,4]);
-        ctx.beginPath(); ctx.moveTo(padX, zeroY2); ctx.lineTo(W-padX, zeroY2); ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      if (equityPoints.length < 2) return;
-
-      // Single cyan line
-      ctx.beginPath();
-      ctx.moveTo(toX(0), toY(equityPoints[0].v));
-      equityPoints.forEach((p,i) => { if(i>0) ctx.lineTo(toX(i), toY(p.v)); });
-      ctx.strokeStyle = '#3d9cf0';
-      ctx.lineWidth = 1.5;
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-
-      // Date labels
-      ctx.fillStyle = 'rgba(100,120,140,0.6)';
-      ctx.font = '9px monospace';
-      const lc = Math.min(4, equityPoints.length);
-      for (let i=0; i<lc; i++) {
-        const idx = Math.floor(i/(lc-1||1)*(equityPoints.length-1));
-        const x = toX(idx);
-        const date = equityPoints[idx].date?.slice(0,7)||'';
-        ctx.fillText(date, Math.min(x, W-44), H-2);
-      }
-
-      // Highlight dot
-      if (highlightIdx >= 0) {
-        const x = toX(highlightIdx), y = toY(equityPoints[highlightIdx].v);
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([2,2]);
-        ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop+cH); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
-        ctx.fillStyle = '#3d9cf0';
-        ctx.fill();
-      }
-    };
-    drawChart();
-    const tooltip=document.getElementById('eqTooltip');
-    canvas.onmousemove=e=>{
-      const rect=canvas.getBoundingClientRect();
-      const mx=e.clientX-rect.left;
-      const idx=Math.max(0,Math.min(equityPoints.length-1,Math.round((mx-padX)/cW*(equityPoints.length-1))));
-      const pt=equityPoints[idx];
-      drawChart(idx);
-      const x=toX(idx),y=toY(pt.v);
-      tooltip.style.display='block';
-      tooltip.style.left=(x+12>W-110?x-110:x+12)+'px';
-      tooltip.style.top=Math.max(0,y-28)+'px';
-      tooltip.innerHTML=`<span style="color:var(--t3);">${pt.date}</span><br><span style="color:${pt.v>=0?'var(--accent)':'var(--red)'};">${pt.v>=0?'+':''}$${fmt(Math.abs(pt.v))}</span> <span style="font-size:9px;color:var(--t3);">(${pt.pnl>=0?'+':''}$${fmt(pt.pnl)})</span>`;
-    };
-    canvas.onmouseleave=()=>{tooltip.style.display='none';drawChart();};
-
-    const drawCapitalPie = () => {
+    // ── Capital pie via Chart.js ─────────────────────────────────────────
+    window._drawCapitalPie = () => {
       const pieCanvas = document.getElementById('capitalPieCanvas');
       if (!pieCanvas) return;
       const balances = window._liquidityCache?.balances;
-      if (!balances) { setTimeout(drawCapitalPie, 600); return; }
-
+      if (!balances) { setTimeout(window._drawCapitalPie, 600); return; }
       let libre = 0, margen = 0, ordenes = 0;
       Object.values(balances).forEach(b => {
         libre   += b.free   || 0;
@@ -3582,58 +3550,32 @@ function renderHistCharts(trades) {
         ordenes += b.orders || 0;
       });
       const total = libre + margen + ordenes;
-      if (total === 0) { setTimeout(drawCapitalPie, 600); return; }
-
-      // Destroy previous chart if exists
-      if (pieCanvas._chartInstance) { pieCanvas._chartInstance.destroy(); }
-
+      if (total === 0) { setTimeout(window._drawCapitalPie, 600); return; }
+      if (pieCanvas._chartInstance) pieCanvas._chartInstance.destroy();
       const pctL = Math.round(libre/total*100);
       const pctM = Math.round(margen/total*100);
       const pctO = Math.round(ordenes/total*100);
-
-      const vals = [libre, margen, ordenes];
-      const lbls = [
-        `Libre  $${fmt(libre)} (${pctL}%)`,
-        `Margen  $${fmt(margen)} (${pctM}%)`,
-        `Órdenes  $${fmt(ordenes)} (${pctO}%)`,
-      ];
-      const colors = ['#3d9cf0','#a78bfa','#f59e0b'];
-      const filtered = vals.map((v,i) => ({v, l: lbls[i], c: colors[i]})).filter(x => x.v > 0);
-
+      const items = [
+        { v: libre,   l: `Libre $${fmt(libre)} (${pctL}%)`,    c: '#3d9cf0' },
+        { v: margen,  l: `Margen $${fmt(margen)} (${pctM}%)`,  c: '#a78bfa' },
+        { v: ordenes, l: `Órdenes $${fmt(ordenes)} (${pctO}%)`,c: '#f59e0b' },
+      ].filter(x => x.v > 0);
       pieCanvas._chartInstance = new Chart(pieCanvas, {
         type: 'doughnut',
         data: {
-          labels: filtered.map(x => x.l),
-          datasets: [{
-            data: filtered.map(x => x.v),
-            backgroundColor: filtered.map(x => x.c),
-            borderWidth: 0,
-          }]
+          labels: items.map(x => x.l),
+          datasets: [{ data: items.map(x => x.v), backgroundColor: items.map(x => x.c), borderWidth: 0 }]
         },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          cutout: '55%',
+          responsive: true, maintainAspectRatio: false, cutout: '55%',
           plugins: {
-            legend: {
-              position: 'right',
-              labels: {
-                color: '#a8b8cc',
-                font: { size: 10, family: 'monospace' },
-                boxWidth: 10,
-                padding: 8,
-              }
-            },
-            tooltip: {
-              callbacks: {
-                label: ctx => ` $${fmt(ctx.parsed)} (${Math.round(ctx.parsed/total*100)}%)`
-              }
-            }
+            legend: { position: 'right', labels: { color: '#a8b8cc', font: { size: 10, family: 'monospace' }, boxWidth: 10, padding: 6 } },
+            tooltip: { callbacks: { label: ctx => ` $${fmt(ctx.parsed)} (${Math.round(ctx.parsed/total*100)}%)` } }
           }
         }
       });
     };
-    drawCapitalPie();
+    window._drawCapitalPie();
   }, 80);
 }
 
