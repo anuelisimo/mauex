@@ -3454,24 +3454,26 @@ function renderHistCharts(trades) {
     </div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-    <div class="card" style="padding:14px;display:flex;flex-direction:column;min-height:160px;">
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;">
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PnL MENSUAL ${info('Resultado neto por mes.')}</div>
-      <div style="flex:1;display:flex;align-items:flex-end;gap:3px;padding-bottom:16px;position:relative;" id="pnlMonthlyBars">
-        ${mVals.map((v,i)=>{
-          const pct = Math.max(2, Math.abs(v)/maxM*100);
-          const c = v>=0?'var(--accent)':'var(--red)';
-          const lbl = mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
-          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:center;min-width:0;">
-            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1;">
-              ${v>=0?`<div style="width:80%;background:${c};border-radius:2px 2px 0 0;height:${pct}%;min-height:3px;opacity:0.85;" title="+$${fmt(v)}"></div>`:``}
-            </div>
-            <div style="height:1px;width:100%;background:rgba(255,255,255,0.1);flex-shrink:0;"></div>
-            <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;flex:1;">
-              ${v<0?`<div style="width:80%;background:${c};border-radius:0 0 2px 2px;height:${pct}%;min-height:3px;opacity:0.85;" title="$${fmt(v)}"></div>`:``}
-            </div>
-            <div style="font-size:8px;color:var(--t3);white-space:nowrap;position:absolute;bottom:0;">${mKeys.length<=8?lbl:''}</div>
-          </div>`;
-        }).join('')}
+      <div style="flex:1;display:flex;flex-direction:column;min-height:140px;">
+        <div style="flex:1;display:flex;align-items:flex-end;gap:3px;">
+          ${mVals.map((v,i)=>{
+            const pct = Math.max(3, Math.abs(v)/maxM*100);
+            const c = v>=0?'var(--accent)':'var(--red)';
+            const lbl = mKeys[i].split('-')[1]+'/'+mKeys[i].split('-')[0].slice(2);
+            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:0;">
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:60px;">
+                ${v>=0?`<div style="width:80%;background:${c};border-radius:2px 2px 0 0;height:${pct}%;min-height:2px;opacity:0.85;" title="+$${fmt(v)}"></div>`:``}
+              </div>
+              <div style="height:1px;width:100%;background:rgba(255,255,255,0.1);"></div>
+              <div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:60px;">
+                ${v<0?`<div style="width:80%;background:${c};border-radius:0 0 2px 2px;height:${pct}%;min-height:2px;opacity:0.85;" title="$${fmt(v)}"></div>`:``}
+              </div>
+              <div style="font-size:8px;color:var(--t3);white-space:nowrap;margin-top:2px;text-align:center;">${mKeys.length<=8?lbl:''}</div>
+            </div>`;
+          }).join('')}
+        </div>
       </div>
     </div>
     <div class="card" style="padding:14px;">
@@ -3552,62 +3554,63 @@ function renderHistCharts(trades) {
       });
     }
 
-    // ── Capital pie via Chart.js ─────────────────────────────────────────
-    window._drawCapitalPie = () => {
-      const div = document.getElementById('capitalPieDiv');
-      if (!div) return;
-      const balances = window._liquidityCache?.balances;
-      if (!balances) { setTimeout(window._drawCapitalPie, 600); return; }
-      let libre = 0, margen = 0, ordenes = 0;
-      Object.values(balances).forEach(b => {
-        libre   += b.free   || 0;
-        margen  += b.margin || 0;
-        ordenes += b.orders || 0;
-      });
-      const total = libre + margen + ordenes;
-      if (total === 0) { setTimeout(window._drawCapitalPie, 600); return; }
-
-      const slices = [
-        { val: libre,   color: '#3d9cf0', label: 'Libre' },
-        { val: margen,  color: '#a78bfa', label: 'Margen' },
-        { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
-      ].filter(s => s.val > 0);
-
-      const cx = 55, cy = 55, r = 42, ri = 24;
-      let angle = -Math.PI / 2;
-      let paths = '';
-      slices.forEach(s => {
-        const sweep = (s.val / total) * Math.PI * 2;
-        const x1  = cx + r  * Math.cos(angle);
-        const y1  = cy + r  * Math.sin(angle);
-        const x2  = cx + r  * Math.cos(angle + sweep);
-        const y2  = cy + r  * Math.sin(angle + sweep);
-        const xi1 = cx + ri * Math.cos(angle + sweep);
-        const yi1 = cy + ri * Math.sin(angle + sweep);
-        const xi2 = cx + ri * Math.cos(angle);
-        const yi2 = cy + ri * Math.sin(angle);
-        const lg  = sweep > Math.PI ? 1 : 0;
-        paths += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${lg},1 ${x2.toFixed(1)},${y2.toFixed(1)} L${xi1.toFixed(1)},${yi1.toFixed(1)} A${ri},${ri} 0 ${lg},0 ${xi2.toFixed(1)},${yi2.toFixed(1)} Z" fill="${s.color}" opacity="0.85"/>`;
-        angle += sweep;
-      });
-
-      const legend = slices.map((s, i) => {
-        const pct = Math.round(s.val / total * 100);
-        const y = 18 + i * 30;
-        return `<rect x="122" y="${y}" width="9" height="9" fill="${s.color}" rx="2"/>
-          <text x="136" y="${y+8}" fill="#a8b8cc" font-size="10" font-family="monospace">${s.label}</text>
-          <text x="136" y="${y+20}" fill="#e2e8f0" font-size="10" font-family="monospace">$${fmt(s.val)} (${pct}%)</text>`;
-      }).join('');
-
-      div.innerHTML = `<svg viewBox="0 0 260 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:110px;">
-        ${paths}
-        <text x="${cx}" y="${cy+4}" text-anchor="middle" fill="#e2e8f0" font-size="9" font-family="monospace" font-weight="bold">$${fmt(total)}</text>
-        ${legend}
-      </svg>`;
-    };
     window._drawCapitalPie();
   }, 80);
 }
+
+// ── Capital pie — global, can be called anytime ───────────────────────────
+window._drawCapitalPie = () => {
+  const div = document.getElementById('capitalPieDiv');
+  if (!div) return;
+  const balances = window._liquidityCache?.balances;
+  if (!balances) { setTimeout(window._drawCapitalPie, 800); return; }
+  let libre = 0, margen = 0, ordenes = 0;
+  Object.values(balances).forEach(b => {
+    libre   += b.free   || 0;
+    margen  += b.margin || 0;
+    ordenes += b.orders || 0;
+  });
+  const total = libre + margen + ordenes;
+  if (total === 0) { setTimeout(window._drawCapitalPie, 800); return; }
+
+  const slices = [
+    { val: libre,   color: '#3d9cf0', label: 'Libre' },
+    { val: margen,  color: '#a78bfa', label: 'Margen' },
+    { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
+  ].filter(s => s.val > 0);
+
+  const cx = 55, cy = 55, r = 42, ri = 24;
+  let angle = -Math.PI / 2;
+  let paths = '';
+  slices.forEach(s => {
+    const sweep = (s.val / total) * Math.PI * 2;
+    const x1  = cx + r  * Math.cos(angle);
+    const y1  = cy + r  * Math.sin(angle);
+    const x2  = cx + r  * Math.cos(angle + sweep);
+    const y2  = cy + r  * Math.sin(angle + sweep);
+    const xi1 = cx + ri * Math.cos(angle + sweep);
+    const yi1 = cy + ri * Math.sin(angle + sweep);
+    const xi2 = cx + ri * Math.cos(angle);
+    const yi2 = cy + ri * Math.sin(angle);
+    const lg  = sweep > Math.PI ? 1 : 0;
+    paths += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${lg},1 ${x2.toFixed(1)},${y2.toFixed(1)} L${xi1.toFixed(1)},${yi1.toFixed(1)} A${ri},${ri} 0 ${lg},0 ${xi2.toFixed(1)},${yi2.toFixed(1)} Z" fill="${s.color}" opacity="0.85"/>`;
+    angle += sweep;
+  });
+
+  const legend = slices.map((s, i) => {
+    const pct = Math.round(s.val / total * 100);
+    const y = 18 + i * 30;
+    return `<rect x="122" y="${y}" width="9" height="9" fill="${s.color}" rx="2"/>
+      <text x="136" y="${y+8}" fill="#a8b8cc" font-size="10" font-family="monospace">${s.label}</text>
+      <text x="136" y="${y+20}" fill="#e2e8f0" font-size="10" font-family="monospace">$${fmt(s.val)} (${pct}%)</text>`;
+  }).join('');
+
+  div.innerHTML = `<svg viewBox="0 0 260 110" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:110px;">
+    ${paths}
+    <text x="${cx}" y="${cy+4}" text-anchor="middle" fill="#e2e8f0" font-size="9" font-family="monospace" font-weight="bold">$${fmt(total)}</text>
+    ${legend}
+  </svg>`;
+};
 
 
 function renderHistory() {
