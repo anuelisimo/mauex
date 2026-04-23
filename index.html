@@ -2550,7 +2550,11 @@ async function fetchAndRenderLiquidity() {
       const r = await fetch(`${PROXY_URL}/balance`);
       if (r.ok) {
         const d = await r.json();
-        if (d.balances) { _liquidityCache = d; data = d; }
+        if (d.balances) {
+          _liquidityCache = d;
+          data = d;
+          if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
+        }
       }
     } catch(e) {}
   }
@@ -2664,10 +2668,11 @@ async function fetchAndRenderLiquidity() {
 
 // Called after each sync to update liquidity display
 window._updateLiquidityCache = (data) => {
-  if (data?.balances) _liquidityCache = data;
+  if (data?.balances) {
+    _liquidityCache = data;
+    if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
+  }
   fetchAndRenderLiquidity();
-  // Redraw capital pie with fresh data
-  if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 100);
 };
 
 function renderDashboard() {
