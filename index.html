@@ -2907,16 +2907,67 @@ function buildPriceBar(t, currentPrice) {
     greenZones.forEach(z => { const tmp = z.from; z.from = z.to; z.to = tmp; });
   }
 
-  const zoneDiv = (fromP, toP, color, opacity, extra='') => {
+  const zoneDiv = (fromP, toP, color, opacity) => {
     const l = Math.min(pctN(fromP), pctN(toP));
     const r = Math.max(pctN(fromP), pctN(toP));
     const w = r - l;
     if (w <= 0) return '';
-    return `<div style="position:absolute;left:${l}%;width:${w}%;height:6px;background:${color};opacity:${opacity};border-radius:3px;${extra}"></div>`;
+    return `<div style="position:absolute;left:${l}%;width:${w}%;height:6px;background:${color};opacity:${opacity};border-radius:3px;"></div>`;
   };
 
+  // ── Collision detection for labels ────────────────────────────────────────
+  // Estimate label width in % of bar (approx 8px per char at font-size 9px)
+  const BAR_PX     = 600; // assumed bar width for collision calc
+  const CHAR_PX    = 7;
+  const labelWidthPct = (text) => (text.length * CHAR_PX / BAR_PX * 100);
+
+  // Build label objects with position and estimated width
+  const labelObjs = markers.filter(m => !m.isCur).map(m => {
+    const priceStr = `$${fmtPx(m.v)}`;
+    const nameW  = labelWidthPct(m.l);
+    const priceW = labelWidthPct(priceStr);
+    const w = Math.max(nameW, priceW);
+    return { m, left: pctN(m.v), w, topRow: true, priceStr };
+  });
+
+  // Current price label separate
+  const curMarker = markers.find(m => m.isCur);
+
+  // Resolve collisions: sort by position, then alternate top/bottom when overlap
+  labelObjs.sort((a, b) => a.left - b.left);
+  for (let i = 1; i < labelObjs.length; i++) {
+    const prev = labelObjs[i - 1];
+    const curr = labelObjs[i];
+    const prevRight = prev.left + prev.w / 2;
+    const currLeft  = curr.left - curr.w / 2;
+    if (currLeft < prevRight + 1) {
+      // Collision — flip current to opposite row of previous
+      curr.topRow = !prev.topRow;
+    }
+  }
+
+  const markerHtml = labelObjs.map(({ m, left, topRow, priceStr }) => {
+    const clampedLeft = Math.max(3, Math.min(97, left));
+    const baseStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;left:${clampedLeft}%;transform:translateX(-50%);`;
+    const nameDiv  = `<div style="${baseStyle}${topRow ? 'top:-17px' : 'bottom:-32px'};">${m.l}</div>`;
+    const priceDiv = `<div style="${baseStyle}${topRow ? 'top:-28px' : 'bottom:-43px'};">${priceStr}</div>`;
+    // connector line extends further if label is on bottom row
+    const lineH = topRow ? 10 : 10;
+    return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">
+      ${nameDiv}${priceDiv}
+    </div>`;
+  }).join('');
+
+  // Current price label — always top, bold
+  const curHtml = curMarker ? (() => {
+    const left = Math.max(3, Math.min(97, pctN(curMarker.v)));
+    return `<div style="position:absolute;left:${pctN(curMarker.v)}%;top:-2px;bottom:-2px;width:3px;background:#3d9cf0;transform:translateX(-50%);border-radius:1px;">
+      <div style="position:absolute;font-size:9px;font-family:var(--mono);color:#3d9cf0;white-space:nowrap;left:${left}%;transform:translateX(-50%);top:-17px;font-weight:700;">▼ $${fmtPx(curMarker.v)}</div>
+    </div>`;
+  })() : '';
+
   return `
-  <div style="position:relative;margin:28px 4px 24px;">
+  <div style="position:relative;margin:36px 4px 50px;">
     <div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;">
 
       <!-- Amber zone (Liq risk) -->
@@ -2928,22 +2979,12 @@ function buildPriceBar(t, currentPrice) {
       <!-- Green zones (Entry to TPs) -->
       ${greenZones.map(z => zoneDiv(z.from, z.to, 'var(--accent)', z.op)).join('')}
 
-      <!-- Markers -->
-      ${markers.map(m => {
-        const left = pctN(m.v);
-        // Clamp label position so it doesn't overflow the bar
-        const clampedLeft = Math.max(5, Math.min(95, left));
-        const labelStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;left:${clampedLeft}%;transform:translateX(-50%);`;
-        const priceStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;left:${clampedLeft}%;transform:translateX(-50%);`;
-        const priceLabel = m.isCur
-          ? `<div style="${labelStyle}top:-18px;font-weight:700;">▼ $${fmtPx(m.v)}</div>`
-          : `<div style="${labelStyle}top:-17px;">${m.l}</div>
-             <div style="${priceStyle}bottom:-17px;">$${fmtPx(m.v)}</div>`;
-        return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">${priceLabel}</div>`;
-      }).join('')}
+      <!-- Markers with collision detection -->
+      ${markerHtml}
+      ${curHtml}
 
-      <!-- No-SL warning emoji centered on amber zone -->
-      ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-20px;font-size:13px;line-height:1;" title="Sin Stop Loss configurado">⚠️</div>` : ''}
+      <!-- No-SL warning emoji -->
+      ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-22px;font-size:13px;line-height:1;" title="Sin Stop Loss">⚠️</div>` : ''}
 
     </div>
   </div>`;
