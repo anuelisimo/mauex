@@ -28,56 +28,76 @@
 
 /* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
 @media(max-width:768px){
-  .topbar-nav{display:none;}
+  /* ── Hide top nav completely ── */
+  .topbar{display:none!important;}
   .mobile-nav{display:flex!important;}
-  .page-wrap{padding:12px;}
-  .g4{grid-template-columns:1fr 1fr;}
-  .g3{grid-template-columns:1fr;}
-  .g2{grid-template-columns:1fr;}
+
+  /* ── No horizontal scroll ever ── */
+  html,body{overflow-x:hidden!important;max-width:100vw!important;}
+  *{max-width:100%;}
+
+  /* ── Hide scrollbar ── */
+  ::-webkit-scrollbar{display:none!important;}
+  *{scrollbar-width:none!important;}
+
+  /* ── Bottom nav always fixed ── */
+  .mobile-nav{
+    position:fixed!important;
+    bottom:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:100!important;
+    padding-bottom:env(safe-area-inset-bottom)!important;
+  }
+
+  /* ── Page wrap with bottom padding for nav ── */
+  .page-wrap{
+    padding:14px 14px calc(70px + env(safe-area-inset-bottom)) 14px!important;
+    max-width:100vw!important;
+    overflow-x:hidden!important;
+  }
+
+  /* ── Grids ── */
+  .g4{grid-template-columns:1fr 1fr!important;}
+  .g3{grid-template-columns:1fr!important;}
+  .g2{grid-template-columns:1fr!important;}
   .calc-layout{grid-template-columns:1fr!important;}
-  .auth-card{width:95vw;padding:24px 20px;}
-  .topbar{padding:0 12px;}
-  .logo-text{display:none;}
 
-  /* Bottom nav clearance */
-  #app{padding-bottom:calc(64px + env(safe-area-inset-bottom))!important;}
+  /* ── Cards ── */
+  .card{padding:12px!important;min-width:0!important;}
+  .auth-card{width:95vw!important;padding:24px 20px!important;}
 
-  /* Status bar compact */
-  .status-bar{padding:0 12px;gap:12px;font-size:10px;overflow-x:auto;}
-
-  /* Dashboard page padding */
-  #dashPage,#histPage,#positionsPage,#ordersPage,#watchlistPage,
-  #calcPage,#analysisPage,#settingsPage,#tradersPage{padding:12px!important;}
-
-  /* Metrics 2 cols on mobile */
+  /* ── Metrics 2 cols ── */
   #dashMetrics{grid-template-columns:1fr 1fr!important;}
+  .metric{padding:12px!important;}
+  .metric-val{font-size:16px!important;}
 
-  /* Capital widget stacked */
+  /* ── Capital widget ── */
   #dashLiquidity .card{padding:12px!important;}
 
-  /* Equity+stats+capital → single column */
-  #histCharts>div:first-child{grid-template-columns:1fr!important;}
-  #histCharts>div:first-child>div:last-child{grid-template-rows:auto auto!important;}
+  /* ── Charts single column ── */
+  #histCharts>div{grid-template-columns:1fr!important;}
 
-  /* Bottom 3 charts → single column */
-  #histCharts>div:last-child{grid-template-columns:1fr!important;}
-
-  /* Position cards */
+  /* ── Position cards ── */
+  .pos-card{padding:10px 12px!important;}
   .pos-card-body{grid-template-columns:repeat(2,1fr)!important;}
-  .pos-card-header{flex-wrap:wrap;}
-  .pos-card-left{flex-wrap:wrap;gap:4px;}
-
-  /* Modal */
-  .modal{width:95vw!important;max-width:95vw!important;}
-
-  /* Typography */
-  .metric-val{font-size:16px!important;}
+  .pos-card-header{flex-wrap:wrap!important;}
+  .pos-card-left{flex-wrap:wrap!important;gap:4px!important;}
   .pos-card-ticker{font-size:13px!important;}
   .pos-card-pnl{font-size:14px!important;}
 
-  /* Prevent horizontal overflow */
-  body{overflow-x:hidden;}
-  .card{min-width:0;}
+  /* ── Modal full width ── */
+  .modal{width:95vw!important;max-width:95vw!important;margin:10px!important;}
+
+  /* ── Status bar ── */
+  .status-bar{padding:0 12px!important;gap:10px!important;font-size:10px!important;overflow-x:auto!important;}
+  .status-bar::-webkit-scrollbar{display:none!important;}
+
+  /* ── Page titles ── */
+  .fxb{flex-wrap:wrap!important;gap:8px!important;}
+
+  /* ── Tables ── */
+  table{font-size:11px!important;}
 }
 .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--bg1);border-top:0.5px solid var(--border);z-index:50;padding:8px 0 calc(8px + env(safe-area-inset-bottom));}
 .mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;color:var(--t3);cursor:pointer;font-size:9px;font-family:var(--mono);padding:4px 0;}
