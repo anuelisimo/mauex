@@ -96,8 +96,22 @@
   /* ── Page titles ── */
   .fxb{flex-wrap:wrap!important;gap:8px!important;}
 
-  /* ── Tables ── */
+  /* ── Tables: horizontal scroll inside card ── */
   table{font-size:11px!important;}
+  #histPage .card:has(table){overflow-x:auto!important;}
+  #histPage table{min-width:560px!important;}
+
+  /* ── Capital summary: 2x2 grid on mobile ── */
+  .capital-summary-grid{
+    grid-template-columns:1fr 1fr!important;
+    gap:12px!important;
+  }
+  .capital-summary-grid > div:nth-child(2){display:none!important;}
+
+  /* ── Price bar labels: smaller font to avoid overlap ── */
+  .pos-card [style*="font-size:8px"][style*="white-space:nowrap"]{
+    font-size:7px!important;
+  }
 }
 .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--bg1);border-top:0.5px solid var(--border);z-index:50;padding:8px 0 calc(8px + env(safe-area-inset-bottom));}
 .mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;color:var(--t3);cursor:pointer;font-size:9px;font-family:var(--mono);padding:4px 0;}
@@ -574,8 +588,10 @@ textarea{resize:vertical;min-height:70px;}
         <select id="filtResult" style="width:100px;" onchange="renderHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
       </div>
       <div class="card" style="padding:0;overflow:hidden;">
-        <table class="tbl"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry px</th><th>Exit px</th><th>PnL</th><th>PnL%</th><th>F.Entrada</th><th>F.Cierre</th><th>Resultado</th><th>Notas</th><th></th></tr></thead>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        <table class="tbl" style="min-width:700px;"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry px</th><th>Exit px</th><th>PnL</th><th>PnL%</th><th>F.Entrada</th><th>F.Cierre</th><th>Resultado</th><th>Notas</th><th></th></tr></thead>
         <tbody id="histTbody"></tbody></table>
+        </div>
       </div>
     </div>
 
@@ -2685,7 +2701,7 @@ async function fetchAndRenderLiquidity() {
     </div>
 
     <!-- Summary: Total first, then breakdown -->
-    <div style="display:grid;grid-template-columns:1.2fr 0.5px 1fr 1fr 1fr 1fr;gap:0;margin-bottom:0;">
+    <div style="display:grid;grid-template-columns:1.2fr 0.5px 1fr 1fr 1fr 1fr;gap:0;margin-bottom:0;" class="capital-summary-grid">
       <div style="padding-right:20px;">
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">Total</div>
         <div style="font-family:var(--mono);font-size:24px;font-weight:700;color:var(--accent);">$${fmt(grandTotal)}</div>
@@ -2915,11 +2931,14 @@ function buildPriceBar(t, currentPrice) {
       <!-- Markers -->
       ${markers.map(m => {
         const left = pctN(m.v);
-        const labelStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;transform:translateX(-50%);`;
+        // Clamp label position so it doesn't overflow the bar
+        const clampedLeft = Math.max(5, Math.min(95, left));
+        const labelStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;left:${clampedLeft}%;transform:translateX(-50%);`;
+        const priceStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;left:${clampedLeft}%;transform:translateX(-50%);`;
         const priceLabel = m.isCur
           ? `<div style="${labelStyle}top:-18px;font-weight:700;">▼ $${fmtPx(m.v)}</div>`
           : `<div style="${labelStyle}top:-17px;">${m.l}</div>
-             <div style="${labelStyle}bottom:-17px;">$${fmtPx(m.v)}</div>`;
+             <div style="${priceStyle}bottom:-17px;">$${fmtPx(m.v)}</div>`;
         return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">${priceLabel}</div>`;
       }).join('')}
 
