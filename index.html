@@ -26,92 +26,64 @@
 [data-theme="glass-rose"]{--bg0:#10040a;--bg1:#14040c;--bg2:#18050e;--bg3:#230814;--bg4:#2d0a19;--border:rgba(255,60,120,0.15);--border2:rgba(255,60,120,0.3);--t1:#ffd8e8;--t2:rgba(255,100,150,0.7);--t3:rgba(255,100,150,0.5);--accent:#00ffaa;--accent-dim:rgba(0,255,170,0.1);--red:#ff3c78;--red-dim:rgba(255,60,120,0.1);}
 [data-theme="light"]{--bg0:#f0f2f5;--bg1:#f7f8fa;--bg2:#ffffff;--bg3:#f0f2f5;--bg4:#e4e7ec;--border:rgba(0,0,0,0.07);--border2:rgba(0,0,0,0.14);--t1:#0f1217;--t2:#3a4558;--t3:#6a7888;--accent:#00a865;--accent-dim:rgba(0,164,100,0.1);--red:#dc2626;--red-dim:rgba(220,38,38,0.1);}
 
-/* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
+/* ── BOTTOM NAV — unified desktop + mobile ───────────────────────────────── */
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;
+  height:60px;
+  background:var(--bg1);
+  border-top:0.5px solid var(--border2);
+  display:flex;align-items:stretch;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.bnav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;border:none;background:none;color:var(--t3);cursor:pointer;
+  font-family:var(--mono);font-size:10px;font-weight:500;
+  transition:color .15s;padding:4px 2px;
+  -webkit-tap-highlight-color:transparent;
+}
+.bnav-btn svg{width:20px;height:20px;stroke-width:1.8;}
+.bnav-btn span{font-size:9px;letter-spacing:.02em;}
+.bnav-btn:hover{color:var(--t2);}
+.bnav-btn.active{color:var(--accent);}
+.bnav-btn.active svg{stroke:var(--accent);}
+
+/* ── TOPBAR — solo logo + acciones ─────────────────────────────────────── */
+.topbar{
+  height:48px;background:var(--bg1);border-bottom:0.5px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:12px;
+  position:sticky;top:0;z-index:40;
+}
+.topbar-nav{display:none;}  /* hidden — nav is now bottom nav */
 @media(max-width:768px){
-  /* ── Hide top nav completely ── */
-  .topbar{display:none!important;}
-  .mobile-nav{display:flex!important;}
-
-  /* ── No horizontal scroll ever ── */
   html,body{overflow-x:hidden!important;max-width:100vw!important;}
-  *{max-width:100%;}
-
-  /* ── Hide scrollbar ── */
   ::-webkit-scrollbar{display:none!important;}
-  *{scrollbar-width:none!important;}
-
-  /* ── Bottom nav always fixed ── */
-  .mobile-nav{
-    position:fixed!important;
-    bottom:0!important;
-    left:0!important;
-    right:0!important;
-    z-index:100!important;
-    padding-bottom:env(safe-area-inset-bottom)!important;
-  }
-
-  /* ── Page wrap with bottom padding for nav ── */
-  .page-wrap{
-    padding:14px 14px calc(70px + env(safe-area-inset-bottom)) 14px!important;
-    max-width:100vw!important;
-    overflow-x:hidden!important;
-  }
-
-  /* ── Grids ── */
+  *{scrollbar-width:none!important;box-sizing:border-box;}
+  .page-wrap{padding:12px 12px calc(72px + env(safe-area-inset-bottom)) 12px!important;max-width:100vw!important;overflow-x:hidden!important;}
+  .bnav-btn svg{width:22px;height:22px;}
   .g4{grid-template-columns:1fr 1fr!important;}
   .g3{grid-template-columns:1fr!important;}
   .g2{grid-template-columns:1fr!important;}
   .calc-layout{grid-template-columns:1fr!important;}
-
-  /* ── Cards ── */
   .card{padding:12px!important;min-width:0!important;}
   .auth-card{width:95vw!important;padding:24px 20px!important;}
-
-  /* ── Metrics 2 cols ── */
+  .capital-summary-grid{grid-template-columns:1fr 1fr!important;gap:12px!important;}
+  .capital-summary-grid>div:nth-child(2){display:none!important;}
   #dashMetrics{grid-template-columns:1fr 1fr!important;}
   .metric{padding:12px!important;}
   .metric-val{font-size:16px!important;}
-
-  /* ── Capital widget ── */
-  #dashLiquidity .card{padding:12px!important;}
-
-  /* ── Charts single column ── */
   #histCharts>div{grid-template-columns:1fr!important;}
-
-  /* ── Position cards ── */
   .pos-card{padding:10px 12px!important;}
   .pos-card-body{grid-template-columns:repeat(2,1fr)!important;}
   .pos-card-header{flex-wrap:wrap!important;}
   .pos-card-left{flex-wrap:wrap!important;gap:4px!important;}
   .pos-card-ticker{font-size:13px!important;}
   .pos-card-pnl{font-size:14px!important;}
-
-  /* ── Modal full width ── */
   .modal{width:95vw!important;max-width:95vw!important;margin:10px!important;}
-
-  /* ── Status bar ── */
-  .status-bar{padding:0 12px!important;gap:10px!important;font-size:10px!important;overflow-x:auto!important;}
-  .status-bar::-webkit-scrollbar{display:none!important;}
-
-  /* ── Page titles ── */
+  .status-bar{padding:0 12px!important;gap:10px!important;font-size:10px!important;overflow-x:auto!important;white-space:nowrap!important;}
   .fxb{flex-wrap:wrap!important;gap:8px!important;}
-
-  /* ── Tables: horizontal scroll inside card ── */
   table{font-size:11px!important;}
-  #histPage .card:has(table){overflow-x:auto!important;}
   #histPage table{min-width:560px!important;}
-
-  /* ── Capital summary: 2x2 grid on mobile ── */
-  .capital-summary-grid{
-    grid-template-columns:1fr 1fr!important;
-    gap:12px!important;
-  }
-  .capital-summary-grid > div:nth-child(2){display:none!important;}
-
-  /* ── Price bar labels: smaller font to avoid overlap ── */
-  .pos-card [style*="font-size:8px"][style*="white-space:nowrap"]{
-    font-size:7px!important;
-  }
 }
 .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--bg1);border-top:0.5px solid var(--border);z-index:50;padding:8px 0 calc(8px + env(safe-area-inset-bottom));}
 .mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;color:var(--t3);cursor:pointer;font-size:9px;font-family:var(--mono);padding:4px 0;}
@@ -211,7 +183,7 @@ body{background:var(--bg0);color:var(--t1);font-family:var(--sans);font-size:14p
 .user-name{font-size:12px;font-weight:500;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .logout-btn{font-size:11px;color:var(--t3);cursor:pointer;background:none;border:none;font-family:var(--sans);}
 .logout-btn:hover{color:var(--red);}
-.page-wrap{flex:1;padding:20px;max-width:1400px;margin:0 auto;width:100%;}
+.page-wrap{flex:1;padding:20px 20px calc(72px + env(safe-area-inset-bottom)) 20px;max-width:1400px;margin:0 auto;width:100%;}
 
 /* ── COMPONENTS ──────────────────────────────────────────────────────────── */
 .card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:20px;}
@@ -345,14 +317,12 @@ textarea{resize:vertical;min-height:70px;}
 
 <!-- APP -->
 <div id="app">
+
+  <!-- TOP BAR — solo logo + acciones, sin nav -->
   <div class="topbar">
     <div class="logo" onclick="window.showPage('dashboard')">
       <div class="logo-mark">
         <svg viewBox="0 0 90 90" fill="none" width="22" height="22">
-          <line x1="10" y1="8" x2="10" y2="78" stroke="#303840" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="80" y1="8" x2="80" y2="78" stroke="#303840" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="10" y1="8" x2="45" y2="26" stroke="#303840" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="80" y1="8" x2="45" y2="26" stroke="#303840" stroke-width="1.5" stroke-linecap="round"/>
           <polyline points="10,78 27,52 45,26" fill="none" stroke="#f03d3d" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
           <polyline points="45,26 63,52 80,78" fill="none" stroke="#00c47a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
           <circle cx="45" cy="26" r="3.5" fill="#e8edf3"/>
@@ -360,22 +330,15 @@ textarea{resize:vertical;min-height:70px;}
       </div>
       <div class="logo-text">MAU<span>ex</span></div>
     </div>
-    <nav class="topbar-nav">
-      <button class="nav-btn" data-page="dashboard" onclick="window.showPage('dashboard')">Dashboard</button>
-      <button class="nav-btn" data-page="calc" onclick="window.showPage('calc')">Calculadora</button>
-      <button class="nav-btn" data-page="watchlist" onclick="window.showPage('watchlist')">Watchlist</button>
-      <button class="nav-btn" data-page="orders" onclick="window.showPage('orders')">Órdenes</button>
-      <button class="nav-btn" data-page="positions" onclick="window.showPage('positions')">Posiciones</button>
-      <button class="nav-btn" data-page="history" onclick="window.showPage('history')">Historial</button>
-      <button class="nav-btn" data-page="analysis" onclick="window.showPage('analysis')">AI Analysis</button>
-      <button class="nav-btn" data-page="settings" onclick="window.showPage('settings')">⚙ Settings</button>
-    </nav>
     <div class="topbar-right">
       <button class="icon-btn" onclick="openThemePicker()" title="Tema">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
       </button>
       <button class="icon-btn" onclick="openModal('importModal')" title="Importar CSV">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </button>
+      <button class="icon-btn" onclick="window.showPage('settings')" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       </button>
       <div class="user-chip">
         <div class="user-avatar" id="userAvatar">?</div>
@@ -385,35 +348,31 @@ textarea{resize:vertical;min-height:70px;}
     </div>
   </div>
 
-  <!-- MOBILE NAV -->
-  <nav class="mobile-nav" id="mobileNav">
-    <button class="mobile-nav-btn active" data-page="dashboard" onclick="window.showPage('dashboard')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      Dash
+  <!-- BOTTOM NAV — siempre visible, desktop y mobile -->
+  <nav class="bottom-nav" id="bottomNav">
+    <button class="bnav-btn active" data-page="dashboard" onclick="window.showPage('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Dash</span>
     </button>
-    <button class="mobile-nav-btn" data-page="calc" onclick="window.showPage('calc')">
+    <button class="bnav-btn" data-page="calc" onclick="window.showPage('calc')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
-      Calc
+      <span>Calc</span>
     </button>
-    <button class="mobile-nav-btn" data-page="watchlist" onclick="window.showPage('watchlist')">
+    <button class="bnav-btn" data-page="watchlist" onclick="window.showPage('watchlist')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-      Watch
+      <span>Watch</span>
     </button>
-    <button class="mobile-nav-btn" data-page="positions" onclick="window.showPage('positions')">
+    <button class="bnav-btn" data-page="positions" onclick="window.showPage('positions')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Pos.
+      <span>Pos.</span>
     </button>
-    <button class="mobile-nav-btn" data-page="history" onclick="window.showPage('history')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Hist.
+    <button class="bnav-btn" data-page="orders" onclick="window.showPage('orders')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      <span>Órdenes</span>
     </button>
-    <button class="mobile-nav-btn" data-page="traders" onclick="window.showPage('traders')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-      Traders
-    </button>
-    <button class="mobile-nav-btn" data-page="analysis" onclick="window.showPage('analysis')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/><circle cx="22" cy="12" r="0"/><path d="M14 2l4 4-4 4"/></svg>
-      AI
+    <button class="bnav-btn" data-page="analysis" onclick="window.showPage('analysis')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20 10 10 0 010-20z"/><path d="M12 8v4l3 3"/><path d="M9.5 2.5C9.5 2.5 7 5 7 12s2.5 9.5 2.5 9.5"/><path d="M14.5 2.5S17 5 17 12s-2.5 9.5-2.5 9.5"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+      <span>AI</span>
     </button>
   </nav>
 
@@ -2340,16 +2299,14 @@ const PAGES = {
 };
 
 window.showPage = page => {
-  // Update mobile nav
-  document.querySelectorAll('.mobile-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+  // Update bottom nav active state
+  document.querySelectorAll('.bnav-btn').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
   Object.values(PAGES).forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const pageEl = document.getElementById(PAGES[page]);
   if (pageEl) pageEl.style.display = 'block';
-  document.querySelectorAll(`.nav-btn[data-page="${page}"]`).forEach(b => b.classList.add('active'));
 
   // Render the page
   const renders = {
