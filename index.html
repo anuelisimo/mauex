@@ -2035,8 +2035,8 @@ function updateTimestamp() {
 }
 
 function startLivePrices() {
-  // Include both active trades AND watchlist items for live prices
-  const relevant = trades.filter(t => t.status === 'active' || t.status === 'watchlist' || t.status === 'pending');
+  // Include active, watchlist, pending AND zombie trades for live prices
+  const relevant = trades.filter(t => t.status === 'active' || t.status === 'watchlist' || t.status === 'pending' || t.status === 'zombie');
   // Also include open exchange positions
   const posTickers = (window.exchangePositions||[]).map(p => p.ticker?.toUpperCase()).filter(Boolean);
   const allTickers = [...new Set([
@@ -3165,53 +3165,62 @@ function alertBadge(level, blinkClass) {
 // Get proximity/hit alert info for a position
 function getPositionAlert(t, price) {
   if (!price || !t.entry) return { cardClass:'', badges:'' };
-  const sign = t.dir==='short' ? -1 : 1;
   const THRESHOLD = 0.02; // 2%
 
-  // Check hits first (stored)
-  const hits = [];
-  if (hasAlert(t.id, 'sl'))  hits.push(alertBadge('sl',  'badge-alert-fast'));
-  if (hasAlert(t.id, 'tp1')) hits.push(alertBadge('tp1', 'badge-alert-fast'));
-  if (hasAlert(t.id, 'tp2')) hits.push(alertBadge('tp2', 'badge-alert-fast'));
-  if (hasAlert(t.id, 'tp3')) hits.push(alertBadge('tp3', 'badge-alert-fast'));
+  // ── Persistent hit badges (always shown once triggered) ──────────────────
+  const hitBadges = [];
+  if (hasAlert(t.id, 'sl'))  hitBadges.push(alertBadge('sl',  'badge-alert-fast'));
+  if (hasAlert(t.id, 'tp1')) hitBadges.push(alertBadge('tp1', 'badge-alert-fast'));
+  if (hasAlert(t.id, 'tp2')) hitBadges.push(alertBadge('tp2', 'badge-alert-fast'));
+  if (hasAlert(t.id, 'tp3')) hitBadges.push(alertBadge('tp3', 'badge-alert-fast'));
 
-  // Detect new hits from current price
+  // ── Detect NEW hits from current price ───────────────────────────────────
   if (t.sl && !hasAlert(t.id,'sl')) {
     const hitSL = (t.dir==='short') ? price >= t.sl : price <= t.sl;
-    if (hitSL) { setAlert(t.id,'sl'); hits.push(alertBadge('sl','badge-alert-fast')); }
+    if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(alertBadge('sl','badge-alert-fast')); }
   }
   ['tp1','tp2','tp3'].forEach(k => {
     if (t[k] && !hasAlert(t.id,k)) {
       const hitTP = (t.dir==='short') ? price <= t[k] : price >= t[k];
-      if (hitTP) { setAlert(t.id,k); hits.push(alertBadge(k,'badge-alert-fast')); }
+      if (hitTP) { setAlert(t.id,k); hitBadges.push(alertBadge(k,'badge-alert-fast')); }
     }
   });
 
-  if (hits.length) return { cardClass: hasAlert(t.id,'sl') ? 'hit-sl' : 'hit-tp', badges: hits.join('') };
+  // ── Proximity alert — only for NEXT untouched level ──────────────────────
+  let proximityBadge = '';
+  let proximityClass = '';
 
-  // Proximity — check if within 2% of SL or nearest TP
-  if (t.sl) {
+  // SL proximity (only if not already hit)
+  if (t.sl && !hasAlert(t.id,'sl')) {
     const dist = Math.abs(price - t.sl) / price;
     const nearSL = (t.dir==='short') ? price >= t.sl * (1-THRESHOLD) : price <= t.sl * (1+THRESHOLD);
     if (dist < THRESHOLD && nearSL) {
       const pct = (dist*100).toFixed(1);
-      const badge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#e0525222;color:#e05252;">${pct}% al SL</span>`;
-      return { cardClass:'alert-sl', badges: badge };
-    }
-  }
-  const nextTP = ['tp1','tp2','tp3'].find(k => t[k] && !hasAlert(t.id,k));
-  if (nextTP && t[nextTP]) {
-    const dist = Math.abs(price - t[nextTP]) / price;
-    const nearTP = (t.dir==='short') ? price <= t[nextTP] * (1+THRESHOLD) : price >= t[nextTP] * (1-THRESHOLD);
-    if (dist < THRESHOLD && nearTP) {
-      const pct = (dist*100).toFixed(1);
-      const label = nextTP.toUpperCase();
-      const badge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#4ade8022;color:#4ade80;">${pct}% al ${label}</span>`;
-      return { cardClass:'alert-tp', badges: badge };
+      proximityBadge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#e0525222;color:#e05252;">${pct}% al SL</span>`;
+      proximityClass = 'alert-sl';
     }
   }
 
-  return { cardClass:'', badges:'' };
+  // Next TP proximity (skip already-hit TPs)
+  if (!proximityBadge) {
+    const nextTP = ['tp1','tp2','tp3'].find(k => t[k] && !hasAlert(t.id,k));
+    if (nextTP && t[nextTP]) {
+      const dist = Math.abs(price - t[nextTP]) / price;
+      const nearTP = (t.dir==='short') ? price <= t[nextTP] * (1+THRESHOLD) : price >= t[nextTP] * (1-THRESHOLD);
+      if (dist < THRESHOLD && nearTP) {
+        const pct = (dist*100).toFixed(1);
+        const label = nextTP.toUpperCase();
+        proximityBadge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#4ade8022;color:#4ade80;">${pct}% al ${label}</span>`;
+        proximityClass = 'alert-tp';
+      }
+    }
+  }
+
+  // Combine: hit badges (persistent) + proximity badge (contextual)
+  const allBadges = [...hitBadges, ...(proximityBadge ? [proximityBadge] : [])].join('');
+  const cardClass = proximityClass || (hasAlert(t.id,'sl') ? 'hit-sl' : hitBadges.length ? 'hit-tp' : '');
+
+  return { cardClass, badges: allBadges };
 }
 
 function renderPositions() {
