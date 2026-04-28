@@ -400,17 +400,29 @@ textarea{resize:vertical;min-height:70px;}
 
     <!-- DASHBOARD -->
     <div id="dashPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
+      <div class="fxb" style="margin-bottom:16px;">
         <div><div style="font-family:var(--mono);font-size:18px;font-weight:600;">Dashboard</div><div style="font-size:12px;color:var(--t2);margin-top:2px;" id="dashDate"></div></div>
         <button class="btn acc sm" onclick="window.showPage('calc')">+ Nuevo trade</button>
       </div>
-      <!-- Liquidity widget -->
-      <div id="dashLiquidity" style="margin-bottom:20px;display:none;"></div>
-      <!-- Charts de rendimiento (moved from historial) -->
-      <div id="histCharts" style="margin-bottom:20px;"></div>
-      <div class="g2">
-        <div class="card"><div class="sec-label">Distribución por activo</div><div style="position:relative;height:180px;"><canvas id="chartAssets"></canvas></div></div>
-        <div class="card"><div class="sec-label">Posiciones activas</div><div id="dashActivePos"></div></div>
+      <!-- Tabs -->
+      <div style="display:flex;gap:2px;margin-bottom:20px;background:var(--bg3);border-radius:var(--r);padding:3px;">
+        <button id="dashTabResumen" onclick="showDashTab('resumen')" style="flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:var(--accent);color:#000;font-weight:600;">Resumen</button>
+        <button id="dashTabHistorial" onclick="showDashTab('historial')" style="flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:none;color:var(--t2);">Historial</button>
+      </div>
+      <!-- Resumen tab -->
+      <div id="dashTabResumenContent">
+        <div id="dashLiquidity" style="margin-bottom:20px;display:none;"></div>
+        <div id="histCharts" style="margin-bottom:20px;"></div>
+        <div class="g2">
+          <div class="card"><div class="sec-label">Distribución por activo</div><div style="position:relative;height:180px;"><canvas id="chartAssets"></canvas></div></div>
+          <div class="card"><div class="sec-label">Posiciones activas</div><div id="dashActivePos"></div></div>
+        </div>
+      </div>
+      <!-- Historial tab -->
+      <div id="dashTabHistorialContent" style="display:none;" id="dashHistContent">
+        <div id="dashMetrics" class="g4" style="margin-bottom:20px;"></div>
+        <div id="dashHistFilters"></div>
+        <div id="dashHistTable"></div>
       </div>
     </div>
 
@@ -650,155 +662,158 @@ textarea{resize:vertical;min-height:70px;}
     </div>
 
     <!-- SETTINGS -->
-    <div id="settingsPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
-        <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">⚙ Configuración</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">API Keys de exchanges · Solo lectura</div>
-        </div>
-      </div>
-
-      <!-- Step by step guide -->
-      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:14px 16px;margin-bottom:20px;">
-        <div style="font-size:11px;font-weight:600;color:var(--t1);margin-bottom:10px;font-family:var(--mono);">📋 CÓMO CONFIGURAR — 3 PASOS</div>
-        <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--t2);line-height:1.6;">
-          <div><span style="background:var(--accent);color:#000;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:8px;">1</span><strong style="color:var(--t1);">Creá una contraseña maestra</strong> — protege tus API Keys</div>
-          <div><span style="background:var(--accent);color:#000;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:8px;">2</span><strong style="color:var(--t1);">Pegá tus API Keys</strong> de cada exchange y guardá</div>
-          <div><span style="background:var(--accent);color:#000;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:8px;">3</span><strong style="color:var(--t1);">Probá la conexión</strong> con el botón "Probar" — debe decir ✅</div>
-        </div>
-        <div style="margin-top:10px;font-size:11px;color:var(--t3);">La próxima vez que abras la app, ingresás la contraseña maestra y la app sincroniza sola.</div>
-      </div>
-
-      <!-- Step 1: Master password -->
+<!-- API Config Modal -->
+<div class="modal-overlay" id="apiConfigModal">
+  <div class="modal" style="width:680px;max-height:85vh;overflow-y:auto;">
+    <div class="modal-hdr">
+      <div class="modal-title">Configurar API Keys</div>
+      <button class="modal-close" onclick="closeModal('apiConfigModal')">✕</button>
+    </div>
+    <div class="modal-body">
       <div class="card" style="margin-bottom:16px;border-left:3px solid var(--accent);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <span style="background:var(--accent);color:#000;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">1</span>
           <div class="sec-label" style="margin:0;">Contraseña maestra</div>
-          <div id="masterStatus" style="font-size:11px;margin-left:auto;display:none;"></div>
+          <div id="masterStatus2" style="font-size:11px;margin-left:auto;display:none;"></div>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;"><label class="lbl">Elegí una contraseña (mínimo 8 caracteres)</label><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
-          <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
+          <div style="flex:1;"><label class="lbl">Elegí una contraseña (mínimo 8 caracteres)</label><input type="password" id="masterPass2" placeholder="Tu contraseña maestra"></div>
+          <button class="btn acc" onclick="saveMasterPass2()">Guardar</button>
         </div>
-        <div style="font-size:11px;color:var(--t3);margin-top:8px;">⚠️ Si la olvidás, podés regenerar las keys en el exchange y cargarlas de nuevo.</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:8px;">⚠️ Si la olvidás, regenerá las keys en el exchange y cargalas de nuevo.</div>
       </div>
-
-      <!-- Step 2: Exchange cards label -->
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-        <span style="background:var(--accent);color:#000;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">2</span>
-        <div class="sec-label" style="margin:0;">API Keys de exchanges (solo lectura)</div>
-      </div>
-
-      <!-- Exchange cards -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px;">
-
-        <!-- BINANCE -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://bin.bnbstatic.com/static/images/common/favicon.ico" width="24" height="24" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:24px;height:24px;background:#f0b90b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
-            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">Binance</div>
-            <div id="bnbStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+            <img src="https://bin.bnbstatic.com/static/images/common/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#f0b90b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
+            <div style="font-family:var(--mono);font-weight:600;">Binance</div>
+            <div id="bnbStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="bnbKey" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bnbSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bnbKey2" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bnbSecret2" placeholder="Pegá tu API Secret"></div>
           <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('binance')">Guardar</button>
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('binance')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('binance')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('binance')">✕</button>
           </div>
         </div>
-
-        <!-- BYBIT -->
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://www.bybit.com/favicon.ico" width="24" height="24" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:24px;height:24px;background:#f7a600;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
-            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">Bybit</div>
-            <div id="bybitStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+            <img src="https://www.bybit.com/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#f7a600;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
+            <div style="font-family:var(--mono);font-weight:600;">Bybit</div>
+            <div id="bybitStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="bybitKey" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bybitSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bybitKey2" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bybitSecret2" placeholder="Pegá tu API Secret"></div>
           <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('bybit')">Guardar</button>
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('bybit')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('bybit')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('bybit')">✕</button>
           </div>
         </div>
-
-        <!-- OKX -->
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://www.okx.com/favicon.ico" width="24" height="24" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:24px;height:24px;background:#1a1a2e;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;\'>OKX</div>'">
-            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">OKX</div>
-            <div id="okxStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+            <img src="https://www.okx.com/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#1a1a2e;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;\'>OKX</div>'">
+            <div style="font-family:var(--mono);font-weight:600;">OKX</div>
+            <div id="okxStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="okxKey" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="okxSecret" placeholder="Pegá tu API Secret"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="okxPass" placeholder="Tu passphrase de OKX"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="okxKey2" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="okxSecret2" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="okxPass2" placeholder="Tu passphrase de OKX"></div>
           <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('okx')">Guardar</button>
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('okx')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('okx')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('okx')">✕</button>
           </div>
         </div>
-      <!-- MEXC -->
-        <div class="card" style="margin-top:12px;">
+        <div class="card">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://www.mexc.com/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-            <div style="width:22px;height:22px;background:#00b8d9;border-radius:4px;display:none;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#000;">M</div>
-            <div style="font-family:var(--mono);font-weight:600;font-size:14px;">MEXC</div>
-            <div id="mexcStatus" style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--t3);">No configurado</div>
+            <div style="width:22px;height:22px;background:#00b8d9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#000;">M</div>
+            <div style="font-family:var(--mono);font-weight:600;">MEXC</div>
+            <div id="mexcStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Key</label><input type="text" id="mexcKey" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="mexcSecret" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="mexcKey2" placeholder="Pegá tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="mexcSecret2" placeholder="Pegá tu API Secret"></div>
           <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys('mexc')">Guardar</button>
+            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('mexc')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('mexc')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('mexc')">✕</button>
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
 
-      <!-- Sync status -->
-      <div class="card" id="syncCard" style="display:none;">
-        <div class="sec-label">Estado de sincronización</div>
-        <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-
-          <button class="btn sm" onclick="window.showPage('positions')">Ver posiciones</button>
-        </div>
-        <div style="font-size:10px;color:var(--t3);margin-top:8px;font-family:var(--mono);">
-          El historial se importa desde el 1 de enero 2026. Los trades ya importados no se duplican.
-        </div>
-        <div style="background:var(--amber-dim);border:0.5px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-top:10px;font-size:11px;color:var(--amber);line-height:1.6;">
-          ⚠️ <strong>Nota:</strong> Las APIs privadas de exchanges (posiciones, historial) requieren un proxy para funcionar desde el browser debido a restricciones CORS. Los precios en vivo via WebSocket funcionan sin proxy.
-          <br>Para habilitar sync completo, configurá el <a href="https://github.com/anuelisimo/mauex" target="_blank" style="color:var(--accent);">Cloudflare Worker proxy</a>.
+<!-- Settings page -->
+    <div id="settingsPage" style="display:none;">
+      <div class="fxb" style="margin-bottom:20px;">
+        <div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Configuración</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">MAUex · Trading Journal</div>
         </div>
       </div>
 
-      <!-- Import history standalone card -->
-      <div class="card" style="margin-top:16px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <!-- API Keys -->
+      <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
           <div>
-            <div class="sec-label" style="margin:0;">Importar historial de trades</div>
-            <div style="font-size:11px;color:var(--t3);margin-top:4px;">Trae trades cerrados de todos los exchanges configurados</div>
+            <div style="font-size:13px;font-weight:500;margin-bottom:3px;">API Keys de exchanges</div>
+            <div style="font-size:11px;color:var(--t3);">Conectá tus exchanges para sincronizar posiciones y balances</div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+              <span id="bnbStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Binance —</span>
+              <span id="bybitStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Bybit —</span>
+              <span id="okxStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">OKX —</span>
+              <span id="mexcStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">MEXC —</span>
+            </div>
           </div>
-          <button class="btn acc sm" onclick="openImportHistoryModal()" id="importHistBtn">📥 Importar...</button>
+          <button class="btn acc sm" onclick="openModal('apiConfigModal');syncApiModalStatus();">Configurar API</button>
         </div>
+      </div>
+
+      <!-- Traders -->
+      <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Traders seguidos</div>
+            <div style="font-size:11px;color:var(--t3);">Administrá los traders que seguís</div>
+          </div>
+          <button class="btn sm" onclick="window.showPage('traders')">Gestionar traders →</button>
+        </div>
+      </div>
+
+      <!-- Master password -->
+      <div class="card" style="margin-bottom:12px;">
+        <div class="sec-label">Contraseña maestra</div>
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div style="flex:1;"><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
+          <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
+        </div>
+        <div id="masterStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px;">⚠️ Protege tus API Keys. Si la olvidás, regenerá las keys en el exchange.</div>
+      </div>
+
+      <!-- Proxy URL -->
+      <div class="card" style="margin-bottom:12px;">
+        <div class="sec-label">Proxy URL (Cloudflare Worker)</div>
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <div style="flex:1;"><input type="text" id="proxyUrl" placeholder="https://mauex-proxy.tuusuario.workers.dev"></div>
+          <button class="btn acc sm" onclick="saveProxyUrl()">Guardar</button>
+          <button class="btn sm" onclick="testProxyUrl()">Probar</button>
+        </div>
+        <div id="proxyStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
       </div>
 
       <!-- Trading preferences -->
-      <div class="card" style="margin-top:16px;margin-bottom:16px;">
+      <div class="card" style="margin-bottom:12px;">
         <div class="sec-label">Preferencias de trading</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
             <label class="lbl">Capital base (USD)</label>
             <input type="number" id="prefCapital" placeholder="ej: 10000" oninput="savePrefs()">
-            <div style="font-size:10px;color:var(--t3);margin-top:4px;">Tu capital total disponible para tradear</div>
           </div>
           <div>
             <label class="lbl">Riesgo por defecto (USD)</label>
             <input type="number" id="prefRisk" placeholder="ej: 200" oninput="savePrefs()">
-            <div style="font-size:10px;color:var(--t3);margin-top:4px;">Valor inicial en la calculadora</div>
           </div>
           <div>
             <label class="lbl">Apalancamiento por defecto</label>
@@ -823,51 +838,24 @@ textarea{resize:vertical;min-height:70px;}
             <span style="font-size:12px;">Activar</span>
           </label>
         </div>
-        <div style="margin-top:16px;padding-top:16px;border-top:0.5px solid var(--border);">
-          <!-- Traders management -->
-          <div class="card" style="margin-bottom:16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <div>
-                <div class="sec-label" style="margin:0;">Gestión de Traders</div>
-                <div style="font-size:11px;color:var(--t3);margin-top:4px;">Administrá los traders que seguís</div>
-              </div>
-              <button class="btn sm" onclick="window.showPage('traders')">Ver traders →</button>
-            </div>
-          </div>
+      </div>
 
-          <div class="sec-label" style="color:var(--red);">Danger zone</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn sm" onclick="exportAllData()">📥 Exportar datos (CSV)</button>
-            <button class="btn dan sm" onclick="deleteExchangeTrades()">🗑 Borrar trades importados del exchange</button>
-            <button class="btn dan sm" onclick="deleteAllData()">🗑 Borrar TODOS los trades</button>
-          </div>
+      <!-- Danger zone -->
+      <div class="card" style="margin-bottom:12px;">
+        <div class="sec-label" style="color:var(--red);">Danger zone</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn sm" onclick="exportAllData()">📥 Exportar datos (CSV)</button>
+          <button class="btn dan sm" onclick="deleteExchangeTrades()">🗑 Borrar trades del exchange</button>
+          <button class="btn dan sm" onclick="deleteAllData()">🗑 Borrar TODOS los trades</button>
         </div>
       </div>
 
-      <!-- Proxy settings -->
-      <div class="card" style="margin-top:16px;margin-bottom:16px;">
-        <div class="sec-label">Proxy URL (para sync con exchanges)</div>
-        <div style="font-size:11px;color:var(--t2);margin-bottom:10px;line-height:1.6;">
-          Los exchanges bloquean llamadas directas desde el browser. Necesitás deployar el <strong>worker.js</strong> en Cloudflare (gratis) e ingresarlo acá.
-        </div>
-        <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;">
-            <label class="lbl">Cloudflare Worker URL</label>
-            <input type="text" id="proxyUrl" placeholder="https://mauex-proxy.tuusuario.workers.dev">
-          </div>
-          <button class="btn acc sm" onclick="saveProxyUrl()">Guardar</button>
-          <button class="btn sm" onclick="testProxyUrl()">Probar</button>
-        </div>
-        <div id="proxyStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
+      <!-- Sync card -->
+      <div class="card" id="syncCard" style="display:none;margin-bottom:12px;">
+        <div class="sec-label">Estado de sincronización</div>
+        <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
       </div>
-
-      <!-- Instructions -->
-      <div class="card" style="margin-top:16px;">
-        <div class="sec-label">Cómo crear API Keys de solo lectura</div>
-        <div style="font-size:12px;color:var(--t2);line-height:1.8;">
-          <div style="margin-bottom:8px;"><strong style="color:var(--t1);">Binance:</strong> Perfil → Gestión de API → Crear API → Nombre: "MAUex" → Solo habilitar "Leer información" → Sin IP restrictions</div>
-          <div style="margin-bottom:8px;"><strong style="color:var(--t1);">Bybit:</strong> Perfil → API → Crear nueva key → Nombre: "MAUex" → Permisos: solo "Ver" (sin trading ni retiros)</div>
-          <div><strong style="color:var(--t1);">OKX:</strong> Perfil → API → Crear API Key → Nombre: "MAUex" → Permiso: "Solo lectura" → Creá un Passphrase que recuerdes</div>
+    </div>
         </div>
       </div>
     </div>
@@ -2296,6 +2284,36 @@ const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
   orders:'ordersPage', positions:'posPage', history:'histPage',
   traders:'tradPage', analysis:'analysisPage', settings:'settingsPage',
+};
+
+window.showDashTab = (tab) => {
+  const isResumen = tab === 'resumen';
+  document.getElementById('dashTabResumenContent').style.display = isResumen ? 'block' : 'none';
+  document.getElementById('dashTabHistorialContent').style.display = isResumen ? 'none' : 'block';
+  document.getElementById('dashTabResumen').style.background = isResumen ? 'var(--accent)' : 'none';
+  document.getElementById('dashTabResumen').style.color = isResumen ? '#000' : 'var(--t2)';
+  document.getElementById('dashTabHistorial').style.background = isResumen ? 'none' : 'var(--accent)';
+  document.getElementById('dashTabHistorial').style.color = isResumen ? 'var(--t2)' : '#000';
+  if (!isResumen) {
+    // Render historial content in dashboard
+    const closed = (window.G?.trades()||[]).filter(t=>t.status==='closed');
+    const metrics = document.getElementById('dashMetrics');
+    if (metrics) renderDashMetrics(closed, metrics);
+    renderHistFiltersAndTable('dashHistFilters','dashHistTable');
+  }
+};
+
+window.syncApiModalStatus = () => {
+  // Sync status badges in settings page
+  ['binance','bybit','okx','mexc'].forEach(ex => {
+    const el = document.getElementById(`${ex === 'binance' ? 'bnb' : ex}StatusBadge`);
+    const src = document.getElementById(`${ex === 'binance' ? 'bnb' : ex}Status`);
+    if (el && src) {
+      const txt = src.textContent || '';
+      el.textContent = `${ex.charAt(0).toUpperCase()+ex.slice(1)} ${txt.includes('✅') ? '✅' : txt.includes('❌') ? '❌' : '—'}`;
+      el.style.color = txt.includes('✅') ? 'var(--accent)' : txt.includes('❌') ? 'var(--red)' : 'var(--t3)';
+    }
+  });
 };
 
 window.showPage = page => {
@@ -4695,16 +4713,48 @@ window.saveExchangeKeys = async exchange => {
     mexc:    { key: document.getElementById('mexcKey')?.value.trim(),    secret: document.getElementById('mexcSecret')?.value.trim() },
   };
   const keys = keyMap[exchange];
-
   if(!keys){ toast(`Exchange ${exchange} no reconocido.`,'error'); return; }
   if(!keys.key || !keys.secret){ toast('Completá Key y Secret.','error'); return; }
-
   try {
     const encrypted = await encryptData(JSON.stringify(keys), _masterPass);
     if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, encrypted);
     updateExchangeStatus(exchange, 'saved');
     toast(`${exchange.toUpperCase()} guardado correctamente.`);
   } catch(e){ toast('Error encriptando: '+e.message,'error'); }
+};
+
+// Modal version — reads from modal fields (id suffix '2')
+window.saveExchangeKeys2 = async exchange => {
+  if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
+  const keyMap = {
+    binance: { key: document.getElementById('bnbKey2')?.value.trim(),    secret: document.getElementById('bnbSecret2')?.value.trim() },
+    bybit:   { key: document.getElementById('bybitKey2')?.value.trim(),   secret: document.getElementById('bybitSecret2')?.value.trim() },
+    okx:     { key: document.getElementById('okxKey2')?.value.trim(),     secret: document.getElementById('okxSecret2')?.value.trim(), passphrase: document.getElementById('okxPass2')?.value.trim() },
+    mexc:    { key: document.getElementById('mexcKey2')?.value.trim(),    secret: document.getElementById('mexcSecret2')?.value.trim() },
+  };
+  const keys = keyMap[exchange];
+  if(!keys){ toast(`Exchange ${exchange} no reconocido.`,'error'); return; }
+  if(!keys.key || !keys.secret){ toast('Completá Key y Secret.','error'); return; }
+  try {
+    const encrypted = await encryptData(JSON.stringify(keys), _masterPass);
+    if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, encrypted);
+    updateExchangeStatus(exchange, 'saved');
+    window.syncApiModalStatus?.();
+    toast(`${exchange.toUpperCase()} guardado correctamente.`);
+  } catch(e){ toast('Error encriptando: '+e.message,'error'); }
+};
+
+// Render historial content inside dashboard tab
+window.renderHistFiltersAndTable = (filterId, tableId) => {
+  const filtersEl = document.getElementById(filterId);
+  const tableEl   = document.getElementById(tableId);
+  if (!filtersEl || !tableEl) return;
+  // Reuse histPage filters/table by cloning rendered content
+  const histFilters = document.querySelector('#histPage .card');
+  const histTable   = document.querySelector('#histTbody')?.closest('.card');
+  if (histFilters) filtersEl.innerHTML = histFilters.outerHTML;
+  if (histTable)   tableEl.innerHTML   = histTable.outerHTML;
+  renderHistory();
 };
 
 window.clearExchangeKeys = async exchange => {
