@@ -2890,56 +2890,80 @@ function buildPriceBar(t, currentPrice) {
     return `<div style="position:absolute;left:${l}%;width:${w}%;height:6px;background:${color};opacity:${opacity};border-radius:3px;"></div>`;
   };
 
-  // ── Collision detection for labels ────────────────────────────────────────
-  // Estimate label width in % of bar (approx 8px per char at font-size 9px)
-  const BAR_PX     = 600; // assumed bar width for collision calc
-  const CHAR_PX    = 7;
-  const labelWidthPct = (text) => (text.length * CHAR_PX / BAR_PX * 100);
+  // ── Collision detection — ALL labels including current price ─────────────
+  const BAR_PX  = 500;
+  const CHAR_PX = 7;
+  const labelW  = (text) => text.length * CHAR_PX / BAR_PX * 100;
 
-  // Build label objects with position and estimated width
-  const labelObjs = markers.filter(m => !m.isCur).map(m => {
+  // Build unified label list including current price
+  const allLabels = [];
+
+  // Static markers (SL, Entry, TPs, Liq)
+  markers.filter(m => !m.isCur).forEach(m => {
     const priceStr = `$${fmtPx(m.v)}`;
-    const nameW  = labelWidthPct(m.l);
-    const priceW = labelWidthPct(priceStr);
-    const w = Math.max(nameW, priceW);
-    return { m, left: pctN(m.v), w, topRow: true, priceStr };
+    const w = Math.max(labelW(m.l), labelW(priceStr));
+    allLabels.push({ isCur: false, m, left: pctN(m.v), w, topRow: true, priceStr });
   });
 
-  // Current price label separate
+  // Current price marker
   const curMarker = markers.find(m => m.isCur);
-
-  // Resolve collisions: sort by position, then alternate top/bottom when overlap
-  labelObjs.sort((a, b) => a.left - b.left);
-  for (let i = 1; i < labelObjs.length; i++) {
-    const prev = labelObjs[i - 1];
-    const curr = labelObjs[i];
-    const prevRight = prev.left + prev.w / 2;
-    const currLeft  = curr.left - curr.w / 2;
-    if (currLeft < prevRight + 1) {
-      // Collision — flip current to opposite row of previous
-      curr.topRow = !prev.topRow;
-    }
+  if (curMarker) {
+    const curStr = `▼$${fmtPx(curMarker.v)}`;
+    allLabels.push({ isCur: true, left: pctN(curMarker.v), w: labelW(curStr), topRow: true, curStr });
   }
 
-  const markerHtml = labelObjs.map(({ m, left, topRow, priceStr }) => {
-    const clampedLeft = Math.max(3, Math.min(97, left));
-    const baseStyle = `position:absolute;font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;left:${clampedLeft}%;transform:translateX(-50%);`;
-    const nameDiv  = `<div style="${baseStyle}${topRow ? 'top:-17px' : 'bottom:-32px'};">${m.l}</div>`;
-    const priceDiv = `<div style="${baseStyle}${topRow ? 'top:-28px' : 'bottom:-43px'};">${priceStr}</div>`;
-    // connector line extends further if label is on bottom row
-    const lineH = topRow ? 10 : 10;
-    return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">
-      ${nameDiv}${priceDiv}
-    </div>`;
-  }).join('');
+  // Sort by position
+  allLabels.sort((a, b) => a.left - b.left);
 
-  // Current price label — always top, bold
-  const curHtml = curMarker ? (() => {
-    const left = Math.max(3, Math.min(97, pctN(curMarker.v)));
-    return `<div style="position:absolute;left:${pctN(curMarker.v)}%;top:-2px;bottom:-2px;width:3px;background:#3d9cf0;transform:translateX(-50%);border-radius:1px;">
-      <div style="position:absolute;font-size:9px;font-family:var(--mono);color:#3d9cf0;white-space:nowrap;left:${left}%;transform:translateX(-50%);top:-17px;font-weight:700;">▼ $${fmtPx(curMarker.v)}</div>
-    </div>`;
-  })() : '';
+  // Resolve collisions — alternate top/bottom
+  for (let i = 1; i < allLabels.length; i++) {
+    const prev = allLabels[i - 1];
+    const curr = allLabels[i];
+    const prevRight = prev.left + prev.w / 2;
+    const currLeft  = curr.left - curr.w / 2;
+    if (currLeft < prevRight + 0.5) curr.topRow = !prev.topRow;
+  }
+
+  // Determine first and last positions for edge alignment
+  const firstLeft = allLabels.length ? allLabels[0].left : 50;
+  const lastLeft  = allLabels.length ? allLabels[allLabels.length - 1].left : 50;
+
+  const renderLabel = (obj) => {
+    const { left, topRow, isCur } = obj;
+    const isFirst = left === firstLeft;
+    const isLast  = left === lastLeft;
+
+    // Edge alignment: first label anchors left, last anchors right, rest centered
+    let labelAlign, priceAlign;
+    if (isFirst) {
+      labelAlign = `left:0;`;
+      priceAlign = `left:0;`;
+    } else if (isLast) {
+      labelAlign = `right:0;`;
+      priceAlign = `right:0;`;
+    } else {
+      labelAlign = `left:50%;transform:translateX(-50%);`;
+      priceAlign = `left:50%;transform:translateX(-50%);`;
+    }
+
+    const topName  = topRow ? 'top:-17px'    : 'bottom:-32px';
+    const topPrice = topRow ? 'top:-28px'    : 'bottom:-43px';
+
+    if (isCur) {
+      const color = '#3d9cf0';
+      return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:3px;background:${color};transform:translateX(-50%);border-radius:1px;">
+        <div style="position:absolute;${topName};${labelAlign}font-size:9px;font-family:var(--mono);color:${color};white-space:nowrap;font-weight:700;">${obj.curStr}</div>
+      </div>`;
+    } else {
+      const { m, priceStr } = obj;
+      return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">
+        <div style="position:absolute;${topName};${labelAlign}font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;">${m.l}</div>
+        <div style="position:absolute;${topPrice};${priceAlign}font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;">${priceStr}</div>
+      </div>`;
+    }
+  };
+
+  const allMarkersHtml = allLabels.map(renderLabel).join('');
 
   return `
   <div style="position:relative;margin:36px 4px 50px;">
@@ -2954,9 +2978,8 @@ function buildPriceBar(t, currentPrice) {
       <!-- Green zones (Entry to TPs) -->
       ${greenZones.map(z => zoneDiv(z.from, z.to, 'var(--accent)', z.op)).join('')}
 
-      <!-- Markers with collision detection -->
-      ${markerHtml}
-      ${curHtml}
+      <!-- All markers with unified collision detection -->
+      ${allMarkersHtml}
 
       <!-- No-SL warning emoji -->
       ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-22px;font-size:13px;line-height:1;" title="Sin Stop Loss">⚠️</div>` : ''}
@@ -3169,20 +3192,20 @@ function getPositionAlert(t, price) {
 
   // ── Persistent hit badges (always shown once triggered) ──────────────────
   const hitBadges = [];
-  if (hasAlert(t.id, 'sl'))  hitBadges.push(alertBadge('sl',  'badge-alert-fast'));
-  if (hasAlert(t.id, 'tp1')) hitBadges.push(alertBadge('tp1', 'badge-alert-fast'));
-  if (hasAlert(t.id, 'tp2')) hitBadges.push(alertBadge('tp2', 'badge-alert-fast'));
-  if (hasAlert(t.id, 'tp3')) hitBadges.push(alertBadge('tp3', 'badge-alert-fast'));
+  if (hasAlert(t.id, 'sl'))  hitBadges.push(alertBadge('sl',  ''));
+  if (hasAlert(t.id, 'tp1')) hitBadges.push(alertBadge('tp1', ''));
+  if (hasAlert(t.id, 'tp2')) hitBadges.push(alertBadge('tp2', ''));
+  if (hasAlert(t.id, 'tp3')) hitBadges.push(alertBadge('tp3', ''));
 
   // ── Detect NEW hits from current price ───────────────────────────────────
   if (t.sl && !hasAlert(t.id,'sl')) {
     const hitSL = (t.dir==='short') ? price >= t.sl : price <= t.sl;
-    if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(alertBadge('sl','badge-alert-fast')); }
+    if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(alertBadge('sl','')); }
   }
   ['tp1','tp2','tp3'].forEach(k => {
     if (t[k] && !hasAlert(t.id,k)) {
       const hitTP = (t.dir==='short') ? price <= t[k] : price >= t[k];
-      if (hitTP) { setAlert(t.id,k); hitBadges.push(alertBadge(k,'badge-alert-fast')); }
+      if (hitTP) { setAlert(t.id,k); hitBadges.push(alertBadge(k,'')); }
     }
   });
 
