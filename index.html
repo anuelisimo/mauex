@@ -2815,11 +2815,11 @@ function buildPriceBar(t, currentPrice) {
   const markers = [
     ...(liq ? [{v:liq, c:'var(--amber)', l:'Liq', w:1}] : []),
     ...(sl && !isBreakeven ? [{v:sl, c:'var(--red)', l:'SL', w:2}] : []),
-    {v:entry, c: isBreakeven ? 'var(--red)' : 'var(--t1)', l: isBreakeven ? 'Entry = SL' : 'Entry', w:2},
+    {v:entry, c: isBreakeven ? 'var(--red)' : '#ffffff', l: isBreakeven ? 'Entry = SL' : 'Entry', w:2},
     ...(tp1 ? [{v:tp1, c:'#4ade80', l:'TP1', w:1}] : []),
     ...(tp2 ? [{v:tp2, c:'#22c55e', l:'TP2', w:1}] : []),
     ...(tp3 ? [{v:tp3, c:'#16a34a', l:'TP3', w:1}] : []),
-    ...(cur ? [{v:cur, c:'#3d9cf0', l:'', w:3, isCur:true}] : []),
+    ...(cur ? [{v:cur, c:'#e040fb', l:'', w:3, isCur:true}] : []),
   ];
 
   // ── Color zones ────────────────────────────────────────────────────────────
@@ -2874,8 +2874,8 @@ function buildPriceBar(t, currentPrice) {
   // Current price marker
   const curMarker = markers.find(m => m.isCur);
   if (curMarker) {
-    const curStr = `▼$${fmtPx(curMarker.v)}`;
-    allLabels.push({ isCur: true, left: pctN(curMarker.v), w: labelW(curStr), topRow: true, curStr });
+    const curStr = `$${fmtPx(curMarker.v)}`;
+    allLabels.push({ isCur: true, left: pctN(curMarker.v), w: labelW(curStr), topRow: true, curStr, m: curMarker });
   }
 
   // Sort by position
@@ -2916,11 +2916,14 @@ function buildPriceBar(t, currentPrice) {
     const topPrice = topRow ? 'top:-28px'    : 'bottom:-43px';
 
     if (isCur) {
+      const nameRow = topRow ? 'top:-16px' : 'bottom:-30px';
       return `<div style="position:absolute;left:${left}%;top:50%;transform:translate(-50%,-50%);width:0;height:0;">
-        <div style="position:absolute;${topName};${labelAlign}font-size:9px;font-family:var(--mono);color:#ffffff;white-space:nowrap;font-weight:700;">${obj.curStr}</div>
+        <div style="position:absolute;${nameRow};${labelAlign}font-size:9px;font-family:var(--mono);color:#e040fb;white-space:nowrap;font-weight:700;">${obj.curStr}</div>
       </div>`;
     } else {
       const { m, priceStr } = obj;
+      const nameColor  = m.isCur ? '#e040fb' : m.c;
+      const priceColor = m.c;
       const nameRow  = topRow ? 'top:-16px'  : 'bottom:-30px';
       const priceRow = topRow ? 'top:-27px'  : 'bottom:-41px';
       return `<div style="position:absolute;left:${left}%;top:50%;transform:translate(-50%,-50%);width:0;height:0;">
@@ -2967,8 +2970,8 @@ function buildPriceBar(t, currentPrice) {
   const dots = [
     liq    ? dotHtml(pctN(liq),   '#f59e0b', 10) : '',
     sl&&!isBreakeven ? dotHtml(pctN(sl), '#e05252', 11) : '',
-    cur    ? dotHtml(pctN(cur),   '#ffffff', 14, 'box-shadow:0 0 6px rgba(255,255,255,0.5);') : '',
-    entry  ? dotHtml(pctN(entry), '#3d9cf0', 10, 'opacity:0.8;') : '',
+    cur    ? dotHtml(pctN(cur),   '#e040fb', 14, 'box-shadow:0 0 10px rgba(224,64,251,0.7);') : '',
+    entry  ? dotHtml(pctN(entry), '#ffffff', 11) : '',
     tp1    ? dotHtml(pctN(tp1),   '#4ade80', 10) : '',
     tp2    ? dotHtml(pctN(tp2),   '#22c55e', 10) : '',
     tp3    ? dotHtml(pctN(tp3),   '#16a34a', 10) : '',
