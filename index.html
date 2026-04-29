@@ -362,13 +362,13 @@ textarea{resize:vertical;min-height:70px;}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
       <span>Watch</span>
     </button>
-    <button class="bnav-btn" data-page="positions" onclick="window.showPage('positions')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      <span>Pos.</span>
-    </button>
     <button class="bnav-btn" data-page="orders" onclick="window.showPage('orders')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       <span>Órdenes</span>
+    </button>
+    <button class="bnav-btn" data-page="positions" onclick="window.showPage('positions')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>Pos.</span>
     </button>
     <button class="bnav-btn" data-page="analysis" onclick="window.showPage('analysis')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20 10 10 0 010-20z"/><path d="M12 8v4l3 3"/><path d="M9.5 2.5C9.5 2.5 7 5 7 12s2.5 9.5 2.5 9.5"/><path d="M14.5 2.5S17 5 17 12s-2.5 9.5-2.5 9.5"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
@@ -1883,20 +1883,6 @@ function checkPriceAlerts(sym, price) {
     const dir   = t.dir || 'long';
     const isLong = dir === 'long' || dir === 'spot';
 
-    // ── WATCHLIST: precio se acerca al entry (dentro del 2%) — CRÍTICA ──
-    if (t.status === 'watchlist' && entry) {
-      const dist = Math.abs(price - entry) / entry;
-      const key = _alertKey(t.id, 'near_entry');
-      if (dist <= 0.02) {
-        if (_shouldAlert(key, true)) {
-          _recordAlert(key, true);
-          _notify(`👁 ${t.ticker} Watchlist`, `Precio $${price.toFixed(4)} cerca del entry $${entry} (${(dist*100).toFixed(1)}%)`, true);
-        }
-      } else {
-        _resetAlert(key);
-      }
-    }
-
     // ── ÓRDENES: precio tocó el entry — UNA VEZ ──
     if (t.status === 'pending' && entry) {
       const key = _alertKey(t.id, 'entry_hit');
@@ -1910,31 +1896,13 @@ function checkPriceAlerts(sym, price) {
 
     // ── POSICIONES ──
     if (t.status === 'active' && entry) {
-
-      // Precio en pérdida (bajo entry en long, sobre entry en short) — CRÍTICA
-      const inLoss = isLong ? price < entry : price > entry;
-      const lossKey = _alertKey(t.id, 'in_loss');
-      if (inLoss) {
-        if (_shouldAlert(lossKey, true)) {
-          _recordAlert(lossKey, true);
-          const pct = ((price - entry) / entry * 100).toFixed(2);
-          _notify(`⚠️ ${t.ticker} en pérdida`, `Precio $${price.toFixed(4)} | Entry $${entry} (${pct}%)`, true);
-        }
-      } else {
-        _resetAlert(lossKey);
-      }
-
-      // SL tocado — CRÍTICA
+      // SL tocado — UNA VEZ (no crítica para evitar loop)
       if (sl) {
         const slHit = isLong ? price <= sl : price >= sl;
         const slKey = _alertKey(t.id, 'sl_hit');
-        if (slHit) {
-          if (_shouldAlert(slKey, true)) {
-            _recordAlert(slKey, true);
-            _notify(`🛑 ${t.ticker} SL tocado`, `Precio $${price.toFixed(4)} tocó SL $${sl}`, true);
-          }
-        } else {
-          _resetAlert(slKey);
+        if (slHit && _shouldAlert(slKey, false)) {
+          _recordAlert(slKey, false);
+          _notify(`🛑 ${t.ticker} SL tocado`, `Precio $${price.toFixed(4)} tocó SL $${sl}`, false);
         }
       }
 
@@ -3279,7 +3247,7 @@ function renderPositions() {
     const dirColor = t.dir==='short' ? '#e05252' : '#22c55e';
     const dirBg    = t.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
     const dirBorder= t.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
-    const accentColor = t.status==='zombie' ? '#666' : (t.dir==='short'?'var(--red)':'var(--accent)');
+    const accentColor = t.status==='zombie' ? '#666' : 'var(--accent)';
 
     // Collapse button — circle
     const collapseBtn = `<button onclick="window.toggleCardMin('${t.id}')" title="${isMin?'Expandir':'Colapsar'}"
@@ -6155,89 +6123,106 @@ function renderOrders() {
 
     const isMin = !!cardStates[o.exchangeId];
     const cardId = o.exchangeId;
-    const minBtn = `<button onclick="window.toggleCardMin('${cardId}')" title="${isMin?'Expandir':'Minimizar'}"
-      style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 7px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
+    const dirColor  = o.dir==='short' ? '#e05252' : '#22c55e';
+    const dirBg     = o.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
+    const dirBorder = o.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
+    const rrFor = (tp) => {
+      if (!tp||!sl||!entryPrice) return null;
+      const reward = Math.abs(tp-entryPrice), risk = Math.abs(sl-entryPrice);
+      return risk ? (reward/risk).toFixed(1) : null;
+    };
+
+    const collapseBtn = `<button onclick="window.toggleCardMin('${cardId}')"
+      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
 
     const header = `
-      <div class="pos-card-header" style="margin-bottom:${isMin?'0':'12px'};">
-        <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
-          <div class="status-dot-amber" title="Orden pendiente"></div>
-          <span class="pos-card-ticker">${o.ticker}</span>
-          <span class="badge ${o.dir==='long'?'bl':'bs'}">${o.dir.toUpperCase()}</span>
-          <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener" style="background:${exColor}22;color:${exColor};padding:1px 6px;border-radius:4px;font-size:10px;font-family:var(--mono);text-decoration:none;cursor:pointer;" title="Abrir en ${o.exchange}" onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">${o.exchange} ↗</a>
-          <span style="background:var(--amber-dim);color:var(--amber);padding:1px 6px;border-radius:4px;font-size:9px;font-family:var(--mono);">${o.type==='GROUPED'?'AGRUPADA':'PENDIENTE'}</span>
-          ${o.type==='GROUPED'?`<button onclick="window.ungroupOrder('${o.exchangeId}')" style="background:var(--bg3);border:0.5px solid var(--border2);padding:1px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);color:var(--t2);cursor:pointer;">✕ Desagrupar</button>`:''}
-          ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
-        </div>
-        <div class="fx" style="gap:8px;align-items:center;">
-          <div style="text-align:right;">
-            <div style="font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t1);">$${fmtPx(entryPrice)}</div>
-            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">entry${lev&&o.leverage?` · ${lev}x`:''} · $${fmt(totalSize)}</div>
+      <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;"></div>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${o.ticker}</span>
+            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${(o.dir||'').toUpperCase()}</span>
+            <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} ↗</a>
+            <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);">PENDIENTE</span>
+            ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
           </div>
-          ${minBtn}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div style="text-align:right;">
+            <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--t1);">$${fmtPx(entryPrice)}</div>
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">$${fmt(totalSize)}${lev&&o.leverage?` · x${lev}`:''}</div>
+          </div>
+          ${collapseBtn}
         </div>
       </div>`;
 
     if (isMin) {
-      return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;padding-bottom:${entryPrice&&(sl||tp1)?'18px':'14px'};" id="order-card-${cardId}">
+      return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--amber);margin-bottom:8px;overflow:hidden;" id="order-card-${cardId}">
         ${header}
-        ${entryPrice&&(sl||tp1)?`<div style="padding:0 4px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
+        ${entryPrice&&(sl||tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div class="pos-card" style="border-left:3px solid ${exColor};margin-bottom:10px;" id="order-card-${cardId}">
+    return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--amber);margin-bottom:8px;overflow:hidden;" id="order-card-${cardId}">
       ${header}
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Precio actual</div>
-          <div class="pos-mini-val" style="color:#3d9cf0;" data-px="${o.ticker}" data-dir="${o.dir}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
+
+      ${entryPrice&&(sl||tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
+
+      ${(sl || totalSize) ? `
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
+          ${sl ? `
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
+          ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
         </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Distancia al entry</div>
-          <div class="pos-mini-val" style="color:${distColor};">${dist!=null?fmtP(dist):'—'}</div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(totalSize)}</div>
         </div>
-        ${sl?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Stop Loss</div>
-          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(sl)}</div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">
-            ${slDistPct!=null?slDistPct.toFixed(2)+'% del entry':''}${riskUsd?` · -$${fmt(riskUsd)}`:''}
-          </div>
-        </div>`:''}
-        ${liqApprox?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Liq. aprox.</div>
-          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(liqApprox)}</div>
-        </div>`:''}
-      </div>
-      ${tpList.length?`<div style="display:grid;grid-template-columns:repeat(${tpList.length},1fr);gap:8px;margin-bottom:12px;">
-        ${tpList.map(tp=>{
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Margen aprox.</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${lev>1?'$'+fmt(totalSize/lev):'—'}</div>
+        </div>
+      </div>` : ''}
+
+      ${tpList.length ? `
+      <div style="display:grid;grid-template-columns:${tpList.map(()=>'1fr').join(' ')};border-bottom:0.5px solid var(--border2);">
+        ${tpList.map((tp,i) => {
+          const tpColors = ['#4ade80','#22c55e','#16a34a'];
+          const tpColor  = tpColors[i] || '#4ade80';
+          const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i]||'transparent';
           const distFromEntry = tp.v&&entryPrice ? Math.abs((tp.v-entryPrice)/entryPrice*100) : null;
-          const distFromCur = currentPrice&&tp.v ? (tp.v-currentPrice)/currentPrice*100 : null;
           const tpPnlAmt = totalSize&&entryPrice ? Math.round((totalSize/entryPrice)*(tp.v-entryPrice)*(o.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
-          const tpColor = tp.l==='TP1'?'#4ade80':tp.l==='TP2'?'#22c55e':'#16a34a';
-          return `<div class="pos-mini-metric">
-            <div class="pos-mini-lbl">${tp.l} <span style="color:var(--t3);">(${tp.pct}%)</span></div>
-            <div class="pos-mini-val" style="color:${tpColor};">$${fmtPx(tp.v)}</div>
-            <div style="font-size:9px;font-family:var(--mono);">
-              ${distFromEntry!=null?`<span style="color:var(--t3);">${distFromEntry.toFixed(2)}%</span>`:''}
-              ${tpPnlAmt!=null?`<span style="color:${tpColor};margin-left:4px;">+$${fmt(tpPnlAmt)}</span>`:''}
+          const rr = rrFor(tp.v);
+          return `<div style="padding:10px 14px;${i<tpList.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%</span>
+              ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
             </div>
-            ${distFromCur!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(distFromCur)} desde precio</div>`:''}
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
+              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
+            </div>
           </div>`;
         }).join('')}
-      </div>`:''}
-      ${!sl?`<div style="background:var(--red-dim);border:0.5px solid var(--red);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--red);margin-bottom:10px;">⚠️ Sin Stop Loss — posición de riesgo ilimitado si se ejecuta</div>`:''}
-      ${entryPrice&&(sl||tp1||liqApprox)?`<div style="padding:0 4px;margin-bottom:10px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
+      </div>` : ''}
+
       ${o._manual ? `
-      <div style="display:flex;align-items:center;gap:6px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);">
-        <select onchange="window.moveCardToStatus('${o.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
+      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+        <select onchange="window.moveCardToStatus('${o.id}', this.value)"
+          style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist">👁 Watchlist</option>
           <option value="pending" selected>⏳ Órdenes</option>
           <option value="active">🟢 Posición</option>
         </select>
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <button onclick="openEditTrade('${o.id}')" style="padding:5px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-size:11px;cursor:pointer;">✎</button>
-          <button onclick="window.deletePendingOrder('${o.id}')" style="padding:5px 8px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);font-size:11px;cursor:pointer;">✕</button>
-        </div>
+        <button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openEditTrade('${o.id}')">Editar</button>
+        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${o.id}')">✎</button>
+        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="window.deletePendingOrder('${o.id}')">✕</button>
       </div>` : ''}
     </div>`;
   }).join('');
