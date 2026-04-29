@@ -2916,40 +2916,74 @@ function buildPriceBar(t, currentPrice) {
     const topPrice = topRow ? 'top:-28px'    : 'bottom:-43px';
 
     if (isCur) {
-      const color = '#3d9cf0';
-      return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:3px;background:${color};transform:translateX(-50%);border-radius:1px;">
-        <div style="position:absolute;${topName};${labelAlign}font-size:9px;font-family:var(--mono);color:${color};white-space:nowrap;font-weight:700;">${obj.curStr}</div>
+      return `<div style="position:absolute;left:${left}%;top:50%;transform:translate(-50%,-50%);width:0;height:0;">
+        <div style="position:absolute;${topName};${labelAlign}font-size:9px;font-family:var(--mono);color:#ffffff;white-space:nowrap;font-weight:700;">${obj.curStr}</div>
       </div>`;
     } else {
       const { m, priceStr } = obj;
-      return `<div style="position:absolute;left:${left}%;top:-2px;bottom:-2px;width:${m.w||1}px;background:${m.c};transform:translateX(-50%);border-radius:1px;">
-        <div style="position:absolute;${topName};${labelAlign}font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;">${m.l}</div>
-        <div style="position:absolute;${topPrice};${priceAlign}font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;">${priceStr}</div>
+      const nameRow  = topRow ? 'top:-16px'  : 'bottom:-30px';
+      const priceRow = topRow ? 'top:-27px'  : 'bottom:-41px';
+      return `<div style="position:absolute;left:${left}%;top:50%;transform:translate(-50%,-50%);width:0;height:0;">
+        <div style="position:absolute;${nameRow};${labelAlign}font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;">${m.l}</div>
+        <div style="position:absolute;${priceRow};${priceAlign}font-size:9px;font-family:var(--mono);color:${m.c};white-space:nowrap;">${priceStr}</div>
       </div>`;
     }
   };
 
+  // ── Build dot+gradient meter ─────────────────────────────────────────────
+  // Zones as gradients
+  const zones = [];
+
+  // Liq → SL: amber gradient
+  if (liq && sl && !isBreakeven) {
+    const l = Math.min(pctN(liq), pctN(sl));
+    const r = Math.max(pctN(liq), pctN(sl));
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(245,158,11,0.15),rgba(245,158,11,0.55));border-radius:inherit;"></div>`);
+  }
+  // Liq → Entry: amber (no SL)
+  if (liq && (!sl || isBreakeven)) {
+    const l = Math.min(pctN(liq), pctN(entry));
+    const r = Math.max(pctN(liq), pctN(entry));
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(90deg,rgba(245,158,11,0.1),rgba(245,158,11,0.45));border-radius:inherit;"></div>`);
+  }
+  // SL → Entry: red gradient
+  if (sl && !isBreakeven) {
+    const l = Math.min(pctN(sl), pctN(entry));
+    const r = Math.max(pctN(sl), pctN(entry));
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(224,82,82,0.2),rgba(224,82,82,0.55));border-radius:inherit;"></div>`);
+  }
+  // Entry → TPs: green gradient
+  const lastTp = tp3||tp2||tp1;
+  if (lastTp) {
+    const l = Math.min(pctN(entry), pctN(lastTp));
+    const r = Math.max(pctN(entry), pctN(lastTp));
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(74,222,128,0.1),rgba(22,163,74,0.55));border-radius:inherit;"></div>`);
+  }
+
+  // Dots
+  const dotHtml = (leftPct, color, size, glow='') =>
+    `<div style="position:absolute;left:${leftPct}%;top:50%;transform:translate(-50%,-50%);width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid var(--bg2);${glow}flex-shrink:0;"></div>`;
+
+  const dots = [
+    liq    ? dotHtml(pctN(liq),   '#f59e0b', 10) : '',
+    sl&&!isBreakeven ? dotHtml(pctN(sl), '#e05252', 11) : '',
+    cur    ? dotHtml(pctN(cur),   '#ffffff', 14, 'box-shadow:0 0 6px rgba(255,255,255,0.5);') : '',
+    entry  ? dotHtml(pctN(entry), '#3d9cf0', 10, 'opacity:0.8;') : '',
+    tp1    ? dotHtml(pctN(tp1),   '#4ade80', 10) : '',
+    tp2    ? dotHtml(pctN(tp2),   '#22c55e', 10) : '',
+    tp3    ? dotHtml(pctN(tp3),   '#16a34a', 10) : '',
+  ].join('');
+
+  // Labels with collision detection
   const allMarkersHtml = allLabels.map(renderLabel).join('');
 
   return `
-  <div style="position:relative;margin:36px 4px 50px;">
-    <div style="position:relative;height:6px;background:var(--bg4);border-radius:3px;">
-
-      <!-- Amber zone (Liq risk) -->
-      ${hasAmberZone ? zoneDiv(amberFrom, amberTo, 'var(--amber)', 0.45) : ''}
-
-      <!-- Red zone (Entry to SL) -->
-      ${hasRedZone ? zoneDiv(redFrom, redTo, 'var(--red)', 0.55) : ''}
-
-      <!-- Green zones (Entry to TPs) -->
-      ${greenZones.map(z => zoneDiv(z.from, z.to, 'var(--accent)', z.op)).join('')}
-
-      <!-- All markers with unified collision detection -->
+  <div style="position:relative;margin:20px 0 28px;">
+    <div style="position:relative;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:visible;">
+      ${zones.join('')}
+      ${dots}
       ${allMarkersHtml}
-
-      <!-- No-SL warning emoji -->
       ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-22px;font-size:13px;line-height:1;" title="Sin Stop Loss">⚠️</div>` : ''}
-
     </div>
   </div>`;
 }
@@ -3039,93 +3073,106 @@ function renderWatchlist() {
     const wLiq = t.liquidation || (lev>1&&t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrW) : t.entry/(1+1/lev-mmrW)) : null);
     const fakeT = {...t, liquidation: t.liquidation||wLiq};
     const isMin = !!cardStates[t.id];
+    const dirColor  = t.dir==='short' ? '#e05252' : '#22c55e';
+    const dirBg     = t.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
+    const dirBorder = t.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
+    const rrFor = (tp) => {
+      if (!tp||!t.sl||!t.entry) return null;
+      const reward = Math.abs(tp-t.entry), risk = Math.abs(t.sl-t.entry);
+      return risk ? (reward/risk).toFixed(1) : null;
+    };
 
-    const minBtn = `<button onclick="window.toggleCardMin('${t.id}')" title="${isMin?'Expandir':'Minimizar'}"
-      style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 7px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
+    const collapseBtn = `<button onclick="window.toggleCardMin('${t.id}')"
+      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
 
     const header = `
-      <div class="pos-card-header" style="margin-bottom:${isMin?'0':'12px'};">
-        <div class="pos-card-left" style="flex-wrap:wrap;gap:6px;">
-          <div class="status-dot-red" title="Watchlist"></div>
-          <span class="pos-card-ticker">${t.ticker||'—'}</span>
-          <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
-          ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener" style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;cursor:pointer;" title="Abrir en ${t.exchange}" onmouseover="this.style.color='var(--t1)'" onmouseout="this.style.color='var(--t2)'">${t.exchange} ↗</a>`:''}
-          ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
-          ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry!=null?(distToEntry>=0?'▲ ':'▼ ')+Math.abs(distToEntry).toFixed(2)+'% al entry':''}</span>`:''}
-        </div>
-        <div class="fx" style="gap:8px;align-items:center;">
-          <div style="text-align:right;">
-            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">Riesgo $${fmt(riskUsd||0)} · Margen $${fmt(margin)}</div>
-            <div style="font-size:10px;color:${rr>=2?'var(--accent)':'var(--red)'};font-family:var(--mono);font-weight:600;">R:R ${rr?rr.toFixed(2)+':1':'—'}</div>
+      <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;"></div>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
+            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${(t.dir||'').toUpperCase()}</span>
+            ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
+            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+            ${currentPrice&&distToEntry!=null?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry>=0?'▲':'▼'} ${Math.abs(distToEntry).toFixed(2)}% al entry</span>`:''}
           </div>
-          ${minBtn}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div style="text-align:right;">
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--t1);" data-watchpx="${sym}" data-watchdir="${t.dir}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">precio actual</div>
+          </div>
+          ${collapseBtn}
         </div>
       </div>`;
 
     if (isMin) {
-      return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);padding-bottom:${fakeT.entry&&(fakeT.sl||fakeT.tp1)?'18px':'14px'};">
+      return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
         ${header}
-        ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 4px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
+        ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div class="pos-card" style="margin-bottom:12px;border-left:3px solid var(--red);">
+    return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
       ${header}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Entry</div>
-          <div class="pos-mini-val" style="color:var(--t1);">$${fmtPx(t.entry)}</div>
-          <div style="font-size:9px;color:#3d9cf0;font-family:var(--mono);"
-            data-watchpx="${sym}" data-watchdir="${t.dir}">
-            ${currentPrice?'▶ $'+fmtPx(currentPrice):'— precio en vivo'}
-          </div>
+
+      ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
+
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
+          ${t.sl ? `
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDist?slDist.toFixed(1)+'% entry':''}</div>
+          ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
         </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Stop Loss</div>
-          <div class="pos-mini-val" style="color:var(--red);">${t.sl?'$'+fmtPx(t.sl):'—'}</div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);">
-            ${slDist?slDist.toFixed(2)+'% del entry':''}${riskUsd?` · -$${fmt(riskUsd)}`:''}
-          </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Margen</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(margin)}</div>
         </div>
-        ${wLiq?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Liquidación</div>
-          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(wLiq)}</div>
-        </div>`:''}
-        ${margin?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Margen</div>
-          <div class="pos-mini-val" style="color:#a78bfa;">$${fmt(margin)}</div>
-        </div>`:''}
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
+        </div>
       </div>
-      ${tps.length?`<div style="display:grid;grid-template-columns:repeat(${tps.length},1fr);gap:8px;margin-bottom:12px;">
-        ${tps.map(tp=>{
+
+      ${tps.length ? `
+      <div style="display:grid;grid-template-columns:${tps.map(()=>'1fr').join(' ')};border-bottom:0.5px solid var(--border2);">
+        ${tps.map((tp,i) => {
+          const tpColors = ['#4ade80','#22c55e','#16a34a'];
+          const tpColor  = tpColors[i]||'#4ade80';
+          const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i]||'transparent';
           const p = tpPnlCalc(tp.v, tp.pct);
           const dist = t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
-          const distFromCur = currentPrice&&tp.v ? (tp.v-currentPrice)/currentPrice*100 : null;
-          const tpColor = tp.l==='TP1'?'#4ade80':tp.l==='TP2'?'#22c55e':'#16a34a';
-          return `<div class="pos-mini-metric">
-            <div class="pos-mini-lbl">${tp.l} <span style="color:var(--t3);">(${tp.pct}%)</span></div>
-            <div class="pos-mini-val" style="color:${tpColor};">$${fmtPx(tp.v)}</div>
-            <div style="font-size:9px;font-family:var(--mono);">
-              ${dist!=null?`<span style="color:var(--t3);">${dist.toFixed(2)}%</span>`:''}
-              ${p!=null?`<span style="color:${tpColor};margin-left:4px;">+$${fmt(p)}</span>`:''}
+          const rr = rrFor(tp.v);
+          return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%</span>
+              ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
             </div>
-            ${distFromCur!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(distFromCur)} desde precio</div>`:''}
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
+              ${dist!=null?`+${dist.toFixed(1)}%`:''} ${p!=null?`· +$${fmt(p)}`:''}
+            </div>
           </div>`;
         }).join('')}
-      </div>`:''}
-      <div style="padding:0 4px;margin-bottom:12px;">${buildPriceBar(fakeT, currentPrice||0)}</div>
-      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:10px;">${t.notes}</div>`:''}
-      <div style="display:flex;align-items:center;gap:6px;">
-        <select onchange="window.moveCardToStatus('${t.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
+      </div>` : ''}
+
+      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${t.notes}</div>`:''}
+
+      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+        <select onchange="window.moveCardToStatus('${t.id}', this.value)"
+          style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist" selected>👁 Watchlist</option>
           <option value="pending">⏳ Órdenes</option>
           <option value="active">🟢 Posición</option>
         </select>
-        <button class="btn acc sm" onclick="openTradeInAnalysis('${t.id}')">📊</button>
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
-          <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
-        </div>
+        <button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openTradeInAnalysis('${t.id}')">📊 Analizar</button>
+        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
+        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
       </div>
     </div>`;
   }).join('');
