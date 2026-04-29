@@ -2290,16 +2290,14 @@ window.showDashTab = (tab) => {
   const isResumen = tab === 'resumen';
   document.getElementById('dashTabResumenContent').style.display = isResumen ? 'block' : 'none';
   document.getElementById('dashTabHistorialContent').style.display = isResumen ? 'none' : 'block';
-  document.getElementById('dashTabResumen').style.background = isResumen ? 'var(--accent)' : 'none';
-  document.getElementById('dashTabResumen').style.color = isResumen ? '#000' : 'var(--t2)';
-  document.getElementById('dashTabHistorial').style.background = isResumen ? 'none' : 'var(--accent)';
-  document.getElementById('dashTabHistorial').style.color = isResumen ? 'var(--t2)' : '#000';
+  document.getElementById('dashTabResumen').style.cssText = isResumen
+    ? 'flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:var(--accent);color:#000;font-weight:600;'
+    : 'flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:none;color:var(--t2);';
+  document.getElementById('dashTabHistorial').style.cssText = isResumen
+    ? 'flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:none;color:var(--t2);'
+    : 'flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:var(--accent);color:#000;font-weight:600;';
   if (!isResumen) {
-    // Render historial content in dashboard
-    const closed = (window.G?.trades()||[]).filter(t=>t.status==='closed');
-    const metrics = document.getElementById('dashMetrics');
-    if (metrics) renderDashMetrics(closed, metrics);
-    renderHistFiltersAndTable('dashHistFilters','dashHistTable');
+    window.renderHistFiltersAndTable('dashHistFilters', 'dashHistTable');
   }
 };
 
@@ -3188,16 +3186,14 @@ function alertBadge(level, blinkClass) {
 // Get proximity/hit alert info for a position
 function getPositionAlert(t, price) {
   if (!price || !t.entry) return { cardClass:'', badges:'' };
-  const THRESHOLD = 0.02; // 2%
 
-  // ── Persistent hit badges (always shown once triggered) ──────────────────
   const hitBadges = [];
   if (hasAlert(t.id, 'sl'))  hitBadges.push(alertBadge('sl',  ''));
   if (hasAlert(t.id, 'tp1')) hitBadges.push(alertBadge('tp1', ''));
   if (hasAlert(t.id, 'tp2')) hitBadges.push(alertBadge('tp2', ''));
   if (hasAlert(t.id, 'tp3')) hitBadges.push(alertBadge('tp3', ''));
 
-  // ── Detect NEW hits from current price ───────────────────────────────────
+  // Detect new hits
   if (t.sl && !hasAlert(t.id,'sl')) {
     const hitSL = (t.dir==='short') ? price >= t.sl : price <= t.sl;
     if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(alertBadge('sl','')); }
@@ -3209,41 +3205,8 @@ function getPositionAlert(t, price) {
     }
   });
 
-  // ── Proximity alert — only for NEXT untouched level ──────────────────────
-  let proximityBadge = '';
-  let proximityClass = '';
-
-  // SL proximity (only if not already hit)
-  if (t.sl && !hasAlert(t.id,'sl')) {
-    const dist = Math.abs(price - t.sl) / price;
-    const nearSL = (t.dir==='short') ? price >= t.sl * (1-THRESHOLD) : price <= t.sl * (1+THRESHOLD);
-    if (dist < THRESHOLD && nearSL) {
-      const pct = (dist*100).toFixed(1);
-      proximityBadge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#e0525222;color:#e05252;">${pct}% al SL</span>`;
-      proximityClass = 'alert-sl';
-    }
-  }
-
-  // Next TP proximity (skip already-hit TPs)
-  if (!proximityBadge) {
-    const nextTP = ['tp1','tp2','tp3'].find(k => t[k] && !hasAlert(t.id,k));
-    if (nextTP && t[nextTP]) {
-      const dist = Math.abs(price - t[nextTP]) / price;
-      const nearTP = (t.dir==='short') ? price <= t[nextTP] * (1+THRESHOLD) : price >= t[nextTP] * (1-THRESHOLD);
-      if (dist < THRESHOLD && nearTP) {
-        const pct = (dist*100).toFixed(1);
-        const label = nextTP.toUpperCase();
-        proximityBadge = `<span class="badge-alert-slow" style="display:inline-flex;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:#4ade8022;color:#4ade80;">${pct}% al ${label}</span>`;
-        proximityClass = 'alert-tp';
-      }
-    }
-  }
-
-  // Combine: hit badges (persistent) + proximity badge (contextual)
-  const allBadges = [...hitBadges, ...(proximityBadge ? [proximityBadge] : [])].join('');
-  const cardClass = proximityClass || (hasAlert(t.id,'sl') ? 'hit-sl' : hitBadges.length ? 'hit-tp' : '');
-
-  return { cardClass, badges: allBadges };
+  const cardClass = hasAlert(t.id,'sl') ? 'hit-sl' : hitBadges.length ? 'hit-tp' : '';
+  return { cardClass, badges: hitBadges.join('') };
 }
 
 function renderPositions() {
@@ -3313,105 +3276,120 @@ function renderPositions() {
     const priceChg  = price&&t.entry ? (price-t.entry)/t.entry*100*sign : null;
     const isMin = !!cardStates[t.id];
     const alert = getPositionAlert(t, price);
+    const dirColor = t.dir==='short' ? '#e05252' : '#22c55e';
+    const dirBg    = t.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
+    const dirBorder= t.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
+    const accentColor = t.status==='zombie' ? '#666' : (t.dir==='short'?'var(--red)':'var(--accent)');
 
-    const minBtn = `<button onclick="window.toggleCardMin('${t.id}')" title="${isMin?'Expandir':'Minimizar'}"
-      style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 7px;cursor:pointer;color:var(--t3);font-size:11px;line-height:1;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
+    // Collapse button — circle
+    const collapseBtn = `<button onclick="window.toggleCardMin('${t.id}')" title="${isMin?'Expandir':'Colapsar'}"
+      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
 
+    // R:R calculator
+    const rrFor = (tp) => {
+      if (!tp || !t.sl || !t.entry) return null;
+      const reward = Math.abs(tp - t.entry);
+      const risk   = Math.abs(t.sl - t.entry);
+      if (!risk) return null;
+      return (reward/risk).toFixed(1);
+    };
+
+    // Header — same for min and expanded
     const header = `
-      <div class="pos-card-header" style="margin-bottom:${isMin?'0':'10px'};">
-        <div class="pos-card-left">
-          <div class="status-dot-green" title="Posición abierta"></div>
-          <span class="pos-card-ticker">${t.ticker||'—'}</span>
-          <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${lev>1?' x'+lev:''}</span>
-          ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener" style="font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;cursor:pointer;" title="Abrir en ${t.exchange}" onmouseover="this.style.color='var(--t1)'" onmouseout="this.style.color='var(--t2)'">${t.exchange} ↗</a>`:''}
-          ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
-          ${alert.badges ? `<span style="display:inline-flex;gap:4px;">${alert.badges}</span>` : ''}
-        </div>
-        <div class="fx" style="gap:8px;align-items:center;">
-          <div class="fx" style="gap:4px;align-items:baseline;">
-            <div class="pos-card-pnl ${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
-              data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
-              ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
-            </div>
-            ${pnlPct!=null?`<span style="font-size:11px;color:var(--t2);font-family:var(--mono);">(${fmtP(pnlPct)})</span>`:''}
+      <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="width:8px;height:8px;border-radius:50%;background:${t.status==='zombie'?'#666':'#22c55e'};flex-shrink:0;"></div>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
+            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${(t.dir||'').toUpperCase()}</span>
+            ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
+            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+            ${alert.badges?`<span style="display:inline-flex;gap:4px;">${alert.badges}</span>`:''}
           </div>
-          ${minBtn}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div style="font-size:20px;font-weight:700;font-family:var(--mono);" class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
+            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
+            ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
+          </div>
+          ${collapseBtn}
         </div>
       </div>`;
 
+    // Minimized
     if (isMin) {
-      return `<div class="pos-card ${alert.cardClass}" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}padding-bottom:${t.entry&&(t.sl||t.tp1)?'18px':'14px'};">
+      const barHtml = t.entry&&(t.sl||t.tp1) ? buildPriceBar(fakeT, price||0) : '';
+      return `<div class="pos-card ${alert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${accentColor};margin-bottom:8px;overflow:hidden;${t.status==='zombie'?'opacity:0.6;':''}">
         ${header}
-        ${t.entry&&(t.sl||t.tp1)?`<div style="padding:0 4px;">${buildPriceBar(fakeT, price||0)}</div>`:''}
+        ${barHtml?`<div style="padding:0 16px 14px;">${barHtml}</div>`:''}
       </div>`;
     }
 
-    return `<div class="pos-card ${alert.cardClass}" style="border-left:3px solid ${t.status==='zombie'?'#666':'var(--accent)'};${t.status==='zombie'?'opacity:0.6;':''}">
+    // Expanded — new design
+    return `<div class="pos-card ${alert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${accentColor};margin-bottom:8px;overflow:hidden;${t.status==='zombie'?'opacity:0.6;':''}">
       ${header}
-      <div class="pos-card-body">
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Entry</div>
-          <div class="pos-mini-val" style="color:var(--t1);">$${fmtPx(t.entry)}</div>
+
+      ${t.entry&&(t.sl||t.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, price||0)}</div>` : ''}
+
+      ${(t.sl || margin || t.posSize) ? `
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
+          ${t.sl ? `
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
+          ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
         </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Precio actual</div>
-          <div class="pos-mini-val" style="color:#3d9cf0;" data-px="${sym}" data-dir="${t.dir}">${price!=null?'$'+fmtPx(price):'—'}</div>
-          ${priceChg!=null?`<div style="font-size:8px;color:#3d9cf0;font-family:var(--mono);">${priceChg>=0?'+':''}${priceChg.toFixed(2)}%</div>`:''}
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Margen</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(margin)}</div>
         </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Margen</div>
-          <div class="pos-mini-val" style="color:#a78bfa;">$${fmt(margin)}</div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize)}</div>
         </div>
-        <div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Posición</div>
-          <div class="pos-mini-val">$${fmt(t.posSize)}</div>
-        </div>
-        ${t.sl?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Stop Loss</div>
-          <div class="pos-mini-val" style="color:var(--red);">$${fmtPx(t.sl)}</div>
-          <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">
-            ${slDistPct!=null?slDistPct.toFixed(2)+'% del entry':''}${riskUsd?` · -$${fmt(riskUsd)}`:''}
-          </div>
-        </div>`:''}
-        ${liq?`<div class="pos-mini-metric">
-          <div class="pos-mini-lbl">Liquidación</div>
-          <div class="pos-mini-val" style="color:var(--amber);">$${fmtPx(liq)}</div>
-        </div>`:''}
-      </div>
-      ${tps.length?`<div class="pos-tps">
-        ${tps.map(tp=>{
-          const distFromCur = price&&tp.v ? (tp.v-price)/price*100 : null;
-          const tpPnlAmt = t.posSize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
+      </div>` : ''}
+
+      ${tps.length ? `
+      <div style="display:grid;grid-template-columns:${tps.map(()=>'1fr').join(' ')};border-bottom:0.5px solid var(--border2);">
+        ${tps.map((tp,i) => {
+          const tpColors = ['#4ade80','#22c55e','#16a34a'];
+          const tpColor  = tpColors[i] || '#4ade80';
+          const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i] || 'transparent';
           const distFromEntry = tp.v&&t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
-          const tpColor = tp.l==='TP1'?'#4ade80':tp.l==='TP2'?'#22c55e':'#16a34a';
-          return `<button class="pos-tp-btn" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})" style="border-color:${tpColor}33;">
-            <div class="pos-tp-label">${tp.l} <span style="color:var(--t3);">(${tp.pct}%)</span></div>
-            <div class="pos-tp-price" style="color:${tpColor};">$${fmtPx(tp.v)}</div>
-            <div class="pos-tp-dist">
-              ${distFromEntry!=null?`<span style="color:var(--t3);">${distFromEntry.toFixed(2)}%</span>`:''}
-              ${tpPnlAmt!=null?`<span style="color:${tpColor};"> +$${fmt(tpPnlAmt)}</span>`:''}
+          const tpPnlAmt = t.posSize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
+          const rr = rrFor(tp.v);
+          return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};cursor:pointer;" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%</span>
+              ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
             </div>
-            ${distFromCur!=null?`<div style="font-size:8px;color:var(--t3);font-family:var(--mono);">${fmtP(distFromCur)} desde precio</div>`:''}
-          </button>`;
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
+              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
+            </div>
+          </div>`;
         }).join('')}
-      </div>`:''}
-      ${t.entry&&(t.sl||t.tp1)?`<div style="padding:0 4px;margin-bottom:12px;">${buildPriceBar(fakeT, price||0)}</div>`:''}
-      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);margin-bottom:8px;">${t.notes}</div>`:''}
-      <div class="pos-card-footer">
-        <select onchange="window.moveCardToStatus('${t.id}', this.value)" style="font-family:var(--mono);font-size:10px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--t2);border-radius:6px;padding:3px 6px;cursor:pointer;">
+      </div>` : ''}
+
+      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${t.notes}</div>`:''}
+
+      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+        <select onchange="window.moveCardToStatus('${t.id}', this.value)"
+          style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist">👁 Watchlist</option>
           <option value="pending">⏳ Órdenes</option>
-          <option value="active" selected>🟢 Posición</option>
+          <option value="active" ${t.status==='active'?'selected':''}>🟢 Posición</option>
         </select>
-        ${t.status!=='zombie'?`
-          <button class="btn sm" style="background:var(--amber-dim);color:var(--amber);border-color:var(--amber);" onclick="openPartialClose('${t.id}')">Parcial</button>
-          <button class="btn acc sm" onclick="openCloseTrade('${t.id}')">Cerrar</button>
-          <button class="btn sm" style="font-size:11px;" onclick="window.toggleZombie('${t.id}',true)" title="Archivar como zombie">🧟</button>
-        `:`<button class="btn sm" style="font-size:10px;" onclick="window.toggleZombie('${t.id}',false)">↩ Restaurar</button>`}
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
-          <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
-        </div>
+        ${t.status!=='zombie'
+          ? `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openCloseTrade('${t.id}')">Cerrar</button>`
+          : `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:11px;cursor:pointer;" onclick="window.toggleZombie('${t.id}',false)">↩ Restaurar</button>`
+        }
+        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
+        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
       </div>
     </div>`;
   }).join('');
