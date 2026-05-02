@@ -1285,6 +1285,7 @@ onAuthStateChanged(auth, async user => {
     await loadPrefs();
     await loadExchangeKeys();
     await loadAll();
+    setTimeout(() => window.checkMissedTradeLevels?.(), 1200);
     showPage('positions');
     startLivePrices();
     // Show master password modal if keys are configured
@@ -2011,7 +2012,8 @@ function checkPriceAlerts(sym, price) {
         const slKey = _alertKey(t.id, 'sl_hit');
         if (slHit && _shouldAlert(slKey, false)) {
           _recordAlert(slKey, false);
-          _notify(`🛑 ${t.ticker} SL tocado`, `Precio $${price.toFixed(4)} tocó SL $${sl}`, false);
+          window.setAlert?.(t.id, 'sl', { price, source:'live' });
+          _notify(`🛑 ${t.ticker} SL tocado`, `Precio ${price.toFixed(4)} tocó SL ${sl}`, false);
         }
       }
 
@@ -2021,7 +2023,8 @@ function checkPriceAlerts(sym, price) {
         const tp1Key = _alertKey(t.id, 'tp1_hit');
         if (tp1Hit && _shouldAlert(tp1Key, false)) {
           _recordAlert(tp1Key, false);
-          _notify(`🎯 ${t.ticker} TP1 alcanzado`, `Precio $${price.toFixed(4)} tocó TP1 $${tp1}`, false);
+          window.setAlert?.(t.id, 'tp1', { price, source:'live' });
+          _notify(`🎯 ${t.ticker} TP1 alcanzado`, `Precio ${price.toFixed(4)} tocó TP1 ${tp1}`, false);
         }
       }
 
@@ -2031,7 +2034,8 @@ function checkPriceAlerts(sym, price) {
         const tp2Key = _alertKey(t.id, 'tp2_hit');
         if (tp2Hit && _shouldAlert(tp2Key, false)) {
           _recordAlert(tp2Key, false);
-          _notify(`🎯 ${t.ticker} TP2 alcanzado`, `Precio $${price.toFixed(4)} tocó TP2 $${tp2}`, false);
+          window.setAlert?.(t.id, 'tp2', { price, source:'live' });
+          _notify(`🎯 ${t.ticker} TP2 alcanzado`, `Precio ${price.toFixed(4)} tocó TP2 ${tp2}`, false);
         }
       }
 
@@ -2041,7 +2045,8 @@ function checkPriceAlerts(sym, price) {
         const tp3Key = _alertKey(t.id, 'tp3_hit');
         if (tp3Hit && _shouldAlert(tp3Key, false)) {
           _recordAlert(tp3Key, false);
-          _notify(`🎯 ${t.ticker} TP3 alcanzado`, `Precio $${price.toFixed(4)} tocó TP3 $${tp3}`, false);
+          window.setAlert?.(t.id, 'tp3', { price, source:'live' });
+          _notify(`🎯 ${t.ticker} TP3 alcanzado`, `Precio ${price.toFixed(4)} tocó TP3 ${tp3}`, false);
         }
       }
     }
@@ -3308,9 +3313,56 @@ function renderWatchlist() {
 // ── Alert state (persists in localStorage) ──────────────────────────────────
 const ALERT_KEY = 'mauex_alerts';
 function getAlerts() { try { return JSON.parse(localStorage.getItem(ALERT_KEY)||'{}'); } catch(e) { return {}; } }
-function setAlert(id, level) { const a=getAlerts(); a[id]=a[id]||{}; if(!a[id][level]) { a[id][level]=Date.now(); localStorage.setItem(ALERT_KEY, JSON.stringify(a)); } }
+function tradeForAlert(id) { return (window.G?.trades?.()||[]).find(x=>x.id===id); }
+function cloudAlertOf(id, level) { return tradeForAlert(id)?.levelAlerts?.[level] || null; }
+function alertPayload(level, meta={}) {
+  return {
+    level,
+    hitAt: meta.hitAt || new Date().toISOString(),
+    price: Number(meta.price || 0) || null,
+    source: meta.source || 'live',
+    confirmed: false,
+  };
+}
+function rememberLocalAlert(id, level, payload) {
+  const a = getAlerts();
+  a[id] = a[id] || {};
+  a[id][level] = payload?.hitAt || Date.now();
+  localStorage.setItem(ALERT_KEY, JSON.stringify(a));
+}
+async function persistCloudAlert(id, level, payload) {
+  try {
+    const t = tradeForAlert(id);
+    if (!t || !window._fb?.updateDoc || !window._getCU?.()) return;
+    t.levelAlerts = { ...(t.levelAlerts||{}), [level]: payload };
+    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+      ['levelAlerts.'+level]: payload,
+      levelAlertCheckedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch(e) { console.warn('No pude guardar alerta en Firebase:', e.message); }
+}
+function setAlert(id, level, meta={}) {
+  const existing = cloudAlertOf(id, level) || getAlerts()[id]?.[level];
+  if (existing) return;
+  const payload = alertPayload(level, meta);
+  rememberLocalAlert(id, level, payload);
+  persistCloudAlert(id, level, payload);
+}
+window.setAlert = setAlert;
 function clearAlerts(id) { const a=getAlerts(); delete a[id]; localStorage.setItem(ALERT_KEY, JSON.stringify(a)); }
-function hasAlert(id, level) { return !!getAlerts()[id]?.[level]; }
+function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
+async function syncLocalAlertsToCloud() {
+  const local = getAlerts();
+  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active');
+  for (const t of active) {
+    for (const level of ['sl','tp1','tp2','tp3']) {
+      if (!local[t.id]?.[level] || cloudAlertOf(t.id, level)) continue;
+      const payload = alertPayload(level, { hitAt: typeof local[t.id][level] === 'string' ? local[t.id][level] : new Date().toISOString(), source:'local_migration' });
+      await persistCloudAlert(t.id, level, payload);
+    }
+  }
+}
 
 // Build alert badge (icon + label)
 function alertBadge(level, blinkClass) {
@@ -3350,6 +3402,80 @@ function getPositionAlert(t, price) {
   const cardClass = hasAlert(t.id,'sl') ? 'hit-sl' : hitBadges.length ? 'hit-tp' : '';
   return { cardClass, badges: hitBadges.join('') };
 }
+
+function getLevelCheckWindow(t) {
+  const now = Date.now();
+  const last = Date.parse(t.levelAlertCheckedAt || '') || 0;
+  const opened = Date.parse(t.createdAt || '') || 0;
+  const fallback = now - 14 * 24 * 60 * 60 * 1000;
+  const start = Math.max(opened || fallback, last || fallback, now - 60 * 24 * 60 * 60 * 1000);
+  return { start, end: now };
+}
+function klineIntervalFor(ms) {
+  const day = 24 * 60 * 60 * 1000;
+  if (ms <= 2 * day) return '5m';
+  if (ms <= 7 * day) return '15m';
+  if (ms <= 30 * day) return '1h';
+  return '4h';
+}
+async function fetchLevelCandles(t, start, end) {
+  const sym = (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+  if (!sym) return [];
+  const interval = klineIntervalFor(end - start);
+  const symbol = sym + 'USDT';
+  const isFutures = (t.dir||'long') !== 'spot';
+  const base = isFutures ? 'https://fapi.binance.com/fapi/v1/klines' : 'https://api.binance.com/api/v3/klines';
+  const url = base + '?symbol=' + symbol + '&interval=' + interval + '&startTime=' + Math.floor(start) + '&endTime=' + Math.floor(end) + '&limit=1000';
+  const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  const data = await r.json();
+  if (!Array.isArray(data)) return [];
+  return data.map(k=>({ time:k[0], high:Number(k[2]), low:Number(k[3]) })).filter(c=>c.high>0&&c.low>0);
+}
+function candleHitForLevel(t, level, value, candles) {
+  const isLong = (t.dir||'long') !== 'short';
+  for (const c of candles) {
+    if (level === 'sl') {
+      if (isLong ? c.low <= value : c.high >= value) return { hitAt:new Date(c.time).toISOString(), price:value };
+    } else if (isLong ? c.high >= value : c.low <= value) {
+      return { hitAt:new Date(c.time).toISOString(), price:value };
+    }
+  }
+  return null;
+}
+window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
+  await syncLocalAlertsToCloud();
+  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active' && t.entry && (t.sl || t.tp1 || t.tp2 || t.tp3));
+  if (!active.length || !window._fb?.updateDoc) return;
+  let touched = 0;
+  for (const t of active) {
+    const {start, end} = getLevelCheckWindow(t);
+    if (end - start < 60 * 1000) continue;
+    const pendingLevels = [['sl', t.sl], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3]].filter(([level,value]) => value && !hasAlert(t.id, level));
+    if (!pendingLevels.length) continue;
+    try {
+      const candles = await fetchLevelCandles(t, start, end);
+      const updates = { levelAlertCheckedAt: new Date().toISOString() };
+      for (const [level, value] of pendingLevels) {
+        const hit = candleHitForLevel(t, level, Number(value), candles);
+        if (!hit) continue;
+        const payload = alertPayload(level, { ...hit, source:'historical' });
+        t.levelAlerts = { ...(t.levelAlerts||{}), [level]: payload };
+        rememberLocalAlert(t.id, level, payload);
+        updates['levelAlerts.'+level] = payload;
+        touched++;
+      }
+      if (Object.keys(updates).length > 1) updates.updatedAt = new Date().toISOString();
+      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',t.id), updates);
+    } catch(e) {
+      console.warn('Revision historica de niveles fallida:', t.ticker, e.message);
+    }
+  }
+  if (touched) {
+    renderPositions?.();
+    toast('Detecte '+touched+' nivel(es) tocados mientras no estabas.', 'warning');
+  }
+};
 
 function renderPositions() {
   const G = window.G; if(!G) return;
