@@ -421,6 +421,13 @@ textarea{resize:vertical;min-height:70px;}
       <!-- Historial tab -->
       <div id="dashTabHistorialContent" style="display:none;" id="dashHistContent">
         <div id="dashMetrics" class="g4" style="margin-bottom:20px;"></div>
+        <div class="fxb" style="margin-bottom:16px;gap:10px;flex-wrap:wrap;">
+          <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="dashHistStats"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="btn sm" onclick="window.exportHistoryForChatGPT('dashboard')">Exportar para ChatGPT</button>
+            <button class="btn acc sm" onclick="window.openDirectTradeModal()">+ Agregar trade</button>
+          </div>
+        </div>
         <div id="dashHistFilters"></div>
         <div id="dashHistTable"></div>
       </div>
@@ -545,8 +552,9 @@ textarea{resize:vertical;min-height:70px;}
     <div id="histPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Historial</div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
           <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="histStats"></div>
+          <button class="btn sm" onclick="window.exportHistoryForChatGPT('history')">Exportar para ChatGPT</button>
           <button class="btn acc sm" onclick="window.openDirectTradeModal()">+ Agregar trade</button>
         </div>
       </div>
@@ -3448,12 +3456,69 @@ function checkPendingReviews() {
 }
 
 // ── History sort state
-let _histSort = { col: 'closeDate', dir: -1 };
+let _histSort = { col: 'fcierre', dir: -1 };
+let _dashHistSort = { col: 'fcierre', dir: -1 };
 window.sortHistory = function(col) {
   if (_histSort.col === col) _histSort.dir *= -1;
   else { _histSort.col = col; _histSort.dir = -1; }
   renderHistory();
 };
+window.sortDashHistory = function(col) {
+  if (_dashHistSort.col === col) _dashHistSort.dir *= -1;
+  else { _dashHistSort.col = col; _dashHistSort.dir = -1; }
+  renderDashHistory();
+};
+
+const historyCloseDateOf = t => t.closeDate || t.closedAt || t.updatedAt || '';
+const historyNotesOf = t => [t.notes, t.closeNotes].filter(Boolean).join(' · ');
+const historyColValue = (t, col) => {
+  const valueMap = {
+    ticker: t.ticker,
+    dir: t.dir,
+    exchange: t.exchange,
+    trader: t.traderName,
+    entry: t.entry,
+    exit: t.closePrice || t.exitPrice || t.exit,
+    pnl: t.pnl,
+    pnlpct: t.pnlPct,
+    fentrada: t.createdAt,
+    fcierre: historyCloseDateOf(t),
+    result: (t.pnl || 0) >= 0 ? 'win' : 'loss',
+    notes: historyNotesOf(t),
+  };
+  return valueMap[col] ?? '';
+};
+function sortHistoryRows(rows, sortState) {
+  const numericCols = new Set(['entry','exit','pnl','pnlpct']);
+  const dateCols = new Set(['fentrada','fcierre','closeDate']);
+  const col = sortState.col === 'closeDate' ? 'fcierre' : sortState.col;
+  return [...rows].sort((a,b) => {
+    const av = historyColValue(a, col);
+    const bv = historyColValue(b, col);
+    if (numericCols.has(col)) return ((Number(av)||0) - (Number(bv)||0)) * sortState.dir;
+    if (dateCols.has(col)) return ((new Date(av||0).getTime()||0) - (new Date(bv||0).getTime()||0)) * sortState.dir;
+    return String(av||'').localeCompare(String(bv||''), 'es', {numeric:true, sensitivity:'base'}) * sortState.dir;
+  });
+}
+function getFilteredHistoryRows(context='history') {
+  const G = window.G; if(!G) return [];
+  const prefix = context === 'dashboard' ? 'dash' : '';
+  const tickerId = prefix ? 'dashFiltTicker' : 'filtTicker';
+  const dirId = prefix ? 'dashFiltDir' : 'filtDir';
+  const traderId = prefix ? 'dashFiltTrader' : 'filtTrader';
+  const resultId = prefix ? 'dashFiltResult' : 'filtResult';
+  const ticker = (document.getElementById(tickerId)?.value || '').trim().toLowerCase();
+  const dir = document.getElementById(dirId)?.value || '';
+  const trader = document.getElementById(traderId)?.value || '';
+  const result = document.getElementById(resultId)?.value || '';
+  let rows = G.trades().filter(t => t.status === 'closed');
+  if(ticker) rows = rows.filter(t => (t.ticker||'').toLowerCase().includes(ticker));
+  if(dir) rows = rows.filter(t => t.dir === dir);
+  if(trader) rows = rows.filter(t => t.traderName === trader);
+  if(result === 'win') rows = rows.filter(t => (t.pnl||0) > 0);
+  if(result === 'loss') rows = rows.filter(t => (t.pnl||0) <= 0);
+  return sortHistoryRows(rows, context === 'dashboard' ? _dashHistSort : _histSort);
+}
 
 function renderHistCharts(trades) {
   const el = document.getElementById('histCharts');
@@ -3761,27 +3826,7 @@ window._drawCapitalPie = () => {
 function renderHistory() {
   const G = window.G; if(!G) return;
   const closed = G.trades().filter(t=>t.status==='closed');
-  const filtTicker = (document.getElementById('filtTicker')?.value||'').toLowerCase();
-  const filtDir    = document.getElementById('filtDir')?.value||'';
-  const filtTrader = document.getElementById('filtTrader')?.value||'';
-  const filtResult = document.getElementById('filtResult')?.value||'';
-  let filtered = closed.filter(t=>{
-    if(filtTicker&&!t.ticker?.toLowerCase().includes(filtTicker)) return false;
-    if(filtDir&&t.dir!==filtDir) return false;
-    if(filtTrader&&t.traderName!==filtTrader) return false;
-    if(filtResult==='win'&&(t.pnl||0)<=0) return false;
-    if(filtResult==='loss'&&(t.pnl||0)>=0) return false;
-    return true;
-  });
-  // Sort
-  const colMap = {ticker:'ticker',dir:'dir',exchange:'exchange',trader:'traderName',entry:'entry',exit:'closePrice',pnl:'pnl',pnlpct:'pnlPct',fentrada:'createdAt',fcierre:'closeDate'};
-  const sortKey = colMap[_histSort.col] || 'closeDate';
-  filtered = [...filtered].sort((a,b)=>{
-    const av = a[sortKey] || '';
-    const bv = b[sortKey] || '';
-    if (typeof av === 'number' || typeof bv === 'number') return ((Number(av)||0)-(Number(bv)||0))*_histSort.dir;
-    return String(av).localeCompare(String(bv))*_histSort.dir;
-  });
+  let filtered = getFilteredHistoryRows('history');
   // Charts use all closed trades
   renderHistCharts(closed);
   const wins = filtered.filter(t=>(t.pnl||0)>0).length;
@@ -3796,7 +3841,7 @@ function renderHistory() {
   // Sortable headers
   const si = col => _histSort.col===col?(_histSort.dir===1?'↑':'↓'):'';
   const thead = tbody.closest('table')?.querySelector('thead tr');
-  if(thead) thead.innerHTML=[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry px'],['exit','Exit px'],['pnl','PnL'],['pnlpct','PnL%'],['fentrada','F.Entrada'],['fcierre','F.Cierre'],['','Resultado'],['','Notas'],['','']].map(([col,lbl])=>col?`<th style="cursor:pointer;user-select:none;" onclick="sortHistory('${col}')">${lbl} ${si(col)}</th>`:`<th>${lbl}</th>`).join('');
+  if(thead) thead.innerHTML=[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry px'],['exit','Exit px'],['pnl','PnL'],['pnlpct','PnL%'],['fentrada','F.Entrada'],['fcierre','F.Cierre'],['result','Resultado'],['notes','Notas'],['','']].map(([col,lbl])=>col?`<th style="cursor:pointer;user-select:none;" onclick="sortHistory('${col}')" title="Ordenar por ${lbl}">${lbl} ${si(col)}</th>`:`<th>${lbl}</th>`).join('');
   tbody.innerHTML = filtered.map(t=>{
     const allNotes=[t.notes,t.closeNotes].filter(Boolean).join(' · ');
     const pnlCls=(t.pnl||0)>=0?'pnl-pos':'pnl-neg';
@@ -4810,29 +4855,24 @@ window.renderDashHistory = () => {
   if (!tableEl) return;
   const G = window.G; if (!G) return;
 
-  const ticker  = document.getElementById('dashFiltTicker')?.value.trim().toLowerCase() || '';
-  const dir     = document.getElementById('dashFiltDir')?.value || '';
-  const trader  = document.getElementById('dashFiltTrader')?.value || '';
-  const result  = document.getElementById('dashFiltResult')?.value || '';
-
-  let trades = G.trades().filter(t => t.status === 'closed');
-  if (ticker)  trades = trades.filter(t => (t.ticker||'').toLowerCase().includes(ticker));
-  if (dir)     trades = trades.filter(t => t.dir === dir);
-  if (trader)  trades = trades.filter(t => t.traderName === trader);
-  if (result === 'win')  trades = trades.filter(t => (t.pnl||0) > 0);
-  if (result === 'loss') trades = trades.filter(t => (t.pnl||0) <= 0);
-  const closeDateOf = t => t.closeDate || t.closedAt || t.updatedAt || '';
-  trades.sort((a,b) => new Date(closeDateOf(b)||0) - new Date(closeDateOf(a)||0));
+  let trades = getFilteredHistoryRows('dashboard');
+  const dashStats = document.getElementById('dashHistStats');
+  if(dashStats) {
+    const wins = trades.filter(t=>(t.pnl||0)>0).length;
+    const totPnl = trades.reduce((s,t)=>s+(t.pnl||0),0);
+    dashStats.textContent = trades.length+' trades · WR: '+(trades.length?Math.round(wins/trades.length*100):0)+'% · PnL: '+(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl));
+  }
 
   if (!trades.length) {
     tableEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--t3);font-family:var(--mono);font-size:12px;">Sin trades cerrados</div>`;
     return;
   }
 
+  const si = col => _dashHistSort.col===col?(_dashHistSort.dir===1?'↑':'↓'):'';
   tableEl.innerHTML = `<div class="card" style="padding:0;overflow:hidden;">
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
     <table class="tbl" style="min-width:600px;">
-      <thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry</th><th>Exit</th><th>PnL</th><th>PnL%</th><th>Fecha cierre</th></tr></thead>
+      <thead><tr>${[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry'],['exit','Exit'],['pnl','PnL'],['pnlpct','PnL%'],['fcierre','Fecha cierre']].map(([col,lbl])=>`<th style="cursor:pointer;user-select:none;" onclick="sortDashHistory('${col}')" title="Ordenar por ${lbl}">${lbl} ${si(col)}</th>`).join('')}</tr></thead>
       <tbody>${trades.map(t => {
         const pnl = t.pnl || 0;
         const cls = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
@@ -4845,7 +4885,7 @@ window.renderDashHistory = () => {
           <td style="font-family:var(--mono);">$${t.closePrice||t.exitPrice||t.exit||'—'}</td>
           <td class="${cls}" style="font-family:var(--mono);">${pnl>=0?'+':''}$${Math.abs(pnl).toFixed(0)}</td>
           <td class="${cls}" style="font-family:var(--mono);">${t.pnlPct!=null?(t.pnlPct>=0?'+':'')+t.pnlPct.toFixed(1)+'%':'—'}</td>
-          <td style="font-size:11px;color:var(--t2);">${fmtD(closeDateOf(t))}</td>
+          <td style="font-size:11px;color:var(--t2);">${fmtD(historyCloseDateOf(t))}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div></div>`;
@@ -5682,6 +5722,64 @@ window.exportAllData = () => {
 };
 
 // ── Delete exchange-imported trades only ─────────────────────────────────
+window.exportHistoryForChatGPT = (context='history') => {
+  const rows = getFilteredHistoryRows(context);
+  if(!rows.length) { toast('No hay trades para exportar.','error'); return; }
+
+  const esc = v => {
+    const s = String(v ?? '').replace(/\r?\n/g, ' ').trim();
+    return /[",]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const dateOnly = v => {
+    if(!v) return '';
+    const s = String(v);
+    return s.includes('T') ? s.split('T')[0] : s;
+  };
+  const headers = [
+    'ticker','direction','exchange','trader','entry_price','exit_price',
+    'pnl_usd','pnl_pct','open_date','close_date','days_open','result','notes'
+  ];
+  const csvRows = rows.map(t => [
+    t.ticker || '',
+    t.dir || '',
+    t.exchange || '',
+    t.traderName || '',
+    t.entry ?? '',
+    t.closePrice || t.exitPrice || t.exit || '',
+    t.pnl ?? '',
+    t.pnlPct ?? '',
+    dateOnly(t.createdAt),
+    dateOnly(historyCloseDateOf(t)),
+    t.daysOpen ?? '',
+    (t.pnl || 0) >= 0 ? 'win' : 'loss',
+    historyNotesOf(t),
+  ].map(esc).join(','));
+
+  const wins = rows.filter(t => (t.pnl||0) > 0).length;
+  const losses = rows.filter(t => (t.pnl||0) < 0).length;
+  const totPnl = rows.reduce((s,t)=>s+(t.pnl||0),0);
+  const avgWin = wins ? rows.filter(t=>(t.pnl||0)>0).reduce((s,t)=>s+(t.pnl||0),0)/wins : 0;
+  const avgLoss = losses ? rows.filter(t=>(t.pnl||0)<0).reduce((s,t)=>s+(t.pnl||0),0)/losses : 0;
+  const exportText = [
+    'Analiza este historial de trades de MAUex.',
+    '',
+    'Quiero conclusiones practicas sobre performance, patrones, errores repetidos, mejores y peores traders/tickers, win rate, expectancy, drawdowns y recomendaciones concretas para mejorar.',
+    '',
+    `Resumen: ${rows.length} trades | WR: ${Math.round(wins/rows.length*100)}% | PnL total: ${totPnl.toFixed(2)} | Avg win: ${avgWin.toFixed(2)} | Avg loss: ${avgLoss.toFixed(2)}`,
+    '',
+    headers.join(','),
+    ...csvRows,
+  ].join('\n');
+
+  const blob = new Blob([exportText], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `mauex_historial_chatgpt_${new Date().toISOString().split('T')[0]}.txt`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  toast('Historial exportado para ChatGPT.');
+};
+
 window.deleteExchangeTrades = async () => {
   if(!confirm('¿Borrar todos los trades importados automáticamente del exchange? Los trades manuales y del watchlist se mantienen.')) return;
   const G = window.G; if(!G) return;
