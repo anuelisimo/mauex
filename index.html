@@ -2204,7 +2204,19 @@ const fmtPx = n => {
   return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
 };
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
-const fmtD = d => { try{return new Date(d).toLocaleDateString('es',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(e){return d||'—';} };
+const fmtD = d => {
+  if (!d) return '—';
+  const s = String(d);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // IMPORTANT: manual dates are stored as YYYY-MM-DD or YYYY-MM-DDT00:00:00.000Z.
+  // Do not pass them through new Date(), because Argentina timezone can display the previous day.
+  if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
+  try {
+    return new Date(d).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  } catch(e) {
+    return s || '—';
+  }
+};
 
 window.toast = (msg, type='success') => {
   const el = document.createElement('div');
