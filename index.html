@@ -977,14 +977,20 @@ textarea{resize:vertical;min-height:70px;}
 </div>
 
 <div class="modal-overlay" id="closeTradeModal">
-  <div class="modal" style="width:380px;">
-    <div class="modal-hdr"><div class="modal-title">Cerrar posición</div><button class="modal-close" onclick="closeModal('closeTradeModal')">✕</button></div>
+  <div class="modal" style="width:460px;max-height:90vh;overflow-y:auto;">
+    <div class="modal-hdr"><div class="modal-title">Cerrar posicion</div><button class="modal-close" onclick="closeModal('closeTradeModal')">x</button></div>
     <div class="modal-body">
+      <div id="closeSummary" style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--t2);font-family:var(--mono);line-height:1.6;"></div>
+      <div id="closeQuickActions" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div><label class="lbl">% del restante</label><input type="number" id="closePct" min="1" max="100" value="100"></div>
+        <div><label class="lbl">Motivo</label><select id="closeReason"><option value="manual">Manual</option><option value="tp">Take profit</option><option value="sl">Stop loss</option></select></div>
+      </div>
       <div style="margin-bottom:12px;"><label class="lbl">Precio de salida</label><input type="number" id="closePrice" placeholder="68000"></div>
       <div style="margin-bottom:12px;"><label class="lbl">Fecha</label><input type="text" id="closeDate"></div>
-      <div><label class="lbl">Notas</label><textarea id="closeNotes" placeholder="¿Por qué cerraste?"></textarea></div>
+      <div><label class="lbl">Notas</label><textarea id="closeNotes" placeholder="Por que cerraste?"></textarea></div>
     </div>
-    <div class="modal-footer"><button class="btn" onclick="closeModal('closeTradeModal')">Cancelar</button><button class="btn acc" onclick="confirmClose()">Cerrar total</button></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('closeTradeModal')">Cancelar</button><button class="btn acc" id="closeConfirmBtn" onclick="confirmClose()">Registrar cierre</button></div>
   </div>
 </div>
 
@@ -1562,105 +1568,193 @@ window.saveDirectTrade = async (editId) => {
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
+function getTradeById(id) {
+  return (window.G?.trades()||trades||[]).find(x => x.id === id);
+}
+function closedPartsForPosition(id) {
+  return (window.G?.trades()||trades||[]).filter(x => x.partialClose && x.originalId === id && x.status === 'closed');
+}
+function positionOriginalSize(t) {
+  const closed = closedPartsForPosition(t.id).reduce((s,x)=>s+(Number(x.posSize)||0),0);
+  return Number(t.originalPosSize || t.initialPosSize || 0) || Math.round(((Number(t.posSize)||0) + closed)*100)/100;
+}
+function riskForSize(t, size) {
+  const slDist = t.sl && t.entry ? Math.abs(t.sl - t.entry) / t.entry : 0;
+  return slDist && size ? Math.round(size * slDist * 100) / 100 : 0;
+}
+function pnlForClose(t, closeSize, closePrice) {
+  const sign = (t.dir === 'short') ? -1 : 1;
+  return Math.round((closeSize / t.entry) * (closePrice - t.entry) * sign * 100) / 100;
+}
+
 window.openPartialClose = id => {
-  window._closeId = id;
-  document.getElementById('partialDate').value  = new Date().toISOString().split('T')[0];
-  document.getElementById('partialPrice').value = '';
-  document.getElementById('partialPct').value   = '50';
-  document.getElementById('partialNotes').value = '';
-  openModal('partialCloseModal');
+  window.openCloseTrade(id);
+  document.getElementById('closePct').value = '50';
+  document.getElementById('closeReason').value = 'manual';
+  document.getElementById('closeNotes').value = 'Cierre parcial manual';
+};
+
+window.setCloseAction = key => {
+  const action = window._closeChoices?.[key];
+  if(!action) return;
+  window._closeAction = action;
+  document.getElementById('closePrice').value = action.price || '';
+  document.getElementById('closePct').value = action.pctRemaining;
+  document.getElementById('closeReason').value = action.reason || 'manual';
+  document.getElementById('closeNotes').value = action.notes || '';
+  const btn = document.getElementById('closeConfirmBtn');
+  if(btn) btn.textContent = action.button || 'Registrar cierre';
 };
 
 window.closeAtTP = (id, tpKey, tpPrice) => {
-  // Pre-fill close modal with TP price
+  window.openCloseTrade(id);
+  setTimeout(() => window.setCloseAction(tpKey), 0);
+};
+
+window.openCloseTrade = id => {
+  const t = getTradeById(id);
+  if(!t){ toast('Trade no encontrado','error'); return; }
+  const originalSize = positionOriginalSize(t);
+  const closedParts = closedPartsForPosition(id);
+  const closedSize = closedParts.reduce((s,x)=>s+(Number(x.posSize)||0),0);
+  const realizedPnl = closedParts.reduce((s,x)=>s+(Number(x.pnl)||0),0);
+  const remainingPct = originalSize ? Math.round((t.posSize/originalSize)*10000)/100 : 100;
+  const price = window.G?.getPrice(t.ticker, t.dir) || '';
   window._closeId = id;
+  window._closeChoices = {};
+  window._closeAction = null;
+
   document.getElementById('closeDate').value  = new Date().toISOString().split('T')[0];
-  document.getElementById('closePrice').value = tpPrice;
-  document.getElementById('closeNotes').value = tpKey.toUpperCase() + ' alcanzado';
+  document.getElementById('closePrice').value = price || '';
+  document.getElementById('closePct').value = '100';
+  document.getElementById('closeReason').value = 'manual';
+  document.getElementById('closeNotes').value = '';
+  const btn = document.getElementById('closeConfirmBtn');
+  if(btn) btn.textContent = 'Cerrar restante';
+
+  const summary = document.getElementById('closeSummary');
+  if(summary) summary.innerHTML = [
+    '<strong>'+ (t.ticker||'') +' '+ String(t.dir||'').toUpperCase() +'</strong>',
+    'Original: $'+fmt(originalSize),
+    'Cerrado: $'+fmt(closedSize)+' ('+fmtP(originalSize ? closedSize/originalSize*100 : 0)+')',
+    'Abierto: $'+fmt(t.posSize||0)+' ('+fmtP(remainingPct)+')',
+    'PnL realizado: '+(realizedPnl>=0?'+':'-')+'$'+fmt(Math.abs(realizedPnl)),
+    t.sl ? 'SL actual: $'+fmtPx(t.sl) : 'Sin SL actual',
+  ].join('<br>');
+
+  const makeAction = (key, label, opts) => {
+    const closeSize = Math.min(Math.max(Number(opts.closeSize)||0, 0), Number(t.posSize)||0);
+    const pctRemaining = t.posSize ? Math.round(closeSize / t.posSize * 10000) / 100 : 0;
+    window._closeChoices[key] = {...opts, key, closeSize, pctRemaining};
+    return `<button class="btn sm" style="text-align:left;padding:9px 10px;" onclick="window.setCloseAction('${key}')">${label}<br><span style="font-size:10px;color:var(--t3);">${pctRemaining}% del restante</span></button>`;
+  };
+
+  const closedLevels = new Set(closedParts.map(x=>x.closeLevel).filter(Boolean));
+  const actions = [];
+  [{k:'tp1',l:'TP1',v:t.tp1,p:t.tp1pct||33},{k:'tp2',l:'TP2',v:t.tp2,p:t.tp2pct||33},{k:'tp3',l:'TP3',v:t.tp3,p:t.tp3pct||34}]
+    .filter(tp => tp.v && !closedLevels.has(tp.k))
+    .forEach(tp => {
+      const closeSize = originalSize * tp.p / 100;
+      if(closeSize > 0 && t.posSize > 0) actions.push(makeAction(tp.k, 'Cerrar '+tp.l+' · '+tp.p+'%', {
+        price: tp.v, reason:'tp', level:tp.k, closeLevel:tp.k, closeSize,
+        notes: tp.l+' cerrado', button:'Cerrar '+tp.l,
+      }));
+    });
+  if(t.sl) actions.push(makeAction('sl', 'Cerrar por SL actual', {
+    price:t.sl, reason:'sl', level:'sl', closeLevel:'sl', closeSize:t.posSize,
+    notes:'Cierre por SL actual', button:'Cerrar por SL',
+  }));
+  actions.push(makeAction('remaining', 'Cerrar todo lo restante', {
+    price:price || '', reason:'manual', level:'manual', closeLevel:'manual', closeSize:t.posSize,
+    notes:'Cierre del restante', button:'Cerrar restante',
+  }));
+  actions.push(`<button class="btn sm" style="text-align:left;padding:9px 10px;" onclick="window._closeAction=null;document.getElementById('closePct').value='50';document.getElementById('closeReason').value='manual';document.getElementById('closeNotes').value='Cierre parcial manual';document.getElementById('closeConfirmBtn').textContent='Cerrar parcial';">Cierre parcial manual<br><span style="font-size:10px;color:var(--t3);">Elegis % y precio</span></button>`);
+
+  const quick = document.getElementById('closeQuickActions');
+  if(quick) quick.innerHTML = actions.join('');
   openModal('closeTradeModal');
 };
 
 window.confirmPartialClose = async () => {
-  const id         = window._closeId;
-  const closePrice = parseFloat(document.getElementById('partialPrice').value) || 0;
-  const closePct   = parseFloat(document.getElementById('partialPct').value) || 50;
-  const closeDate  = document.getElementById('partialDate').value;
-  const closeNotes = document.getElementById('partialNotes').value;
-  if (!closePrice) { toast('Ingresá el precio de salida.','error'); return; }
-  if (closePct <= 0 || closePct >= 100) { toast('El % debe ser entre 1 y 99.','error'); return; }
-
-  const t = trades.find(x => x.id === id);
-  if (!t) return;
-
-  const fraction   = closePct / 100;
-  const closedSize = Math.round(t.posSize * fraction * 100) / 100;
-  const remainSize = Math.round(t.posSize * (1 - fraction) * 100) / 100;
-  const sign       = (t.dir==='short') ? -1 : 1;
-  const pnl        = Math.round((closedSize/t.entry) * (closePrice-t.entry) * sign * 100) / 100;
-  const margin     = t.dir==='spot' ? closedSize : closedSize/(t.leverage||1);
-  const days       = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
-
-  try {
-    const {addDoc, collection, updateDoc, doc, db} = window._fb;
-    // Save partial close to history
-    await addDoc(collection(db,'trades'), {
-      userId: CU.uid,
-      ticker: t.ticker, dir: t.dir, exchange: t.exchange,
-      leverage: t.leverage, traderId: t.traderId, traderName: t.traderName,
-      entry: t.entry, sl: t.sl, tp1: t.tp1, tp2: t.tp2, tp3: t.tp3,
-      posSize: closedSize, risk: Math.round(t.risk * fraction * 100) / 100,
-      status: 'closed',
-      closePrice, closeDate, closeNotes: closeNotes || `Cierre parcial ${closePct}%`,
-      pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
-      daysOpen: days,
-      createdAt: t.createdAt, updatedAt: new Date().toISOString(),
-      partialClose: true, originalId: id,
-    });
-    // Update original position with reduced size
-    await updateDoc(doc(db,'trades',id), {
-      posSize: remainSize,
-      risk: Math.round(t.risk * (1-fraction) * 100) / 100,
-      updatedAt: new Date().toISOString(),
-      notes: (t.notes ? t.notes + ' · ' : '') + `Cierre parcial ${closePct}% a $${closePrice}`,
-    });
-    await loadTrades();
-    closeModal('partialCloseModal');
-    toast(`Cierre parcial. PnL: ${pnl>=0?'+':''}$${Math.abs(pnl).toFixed(0)}`, pnl>=0?'success':'error');
-    renderPositions();
-  } catch(e) { toast('Error: '+e.message,'error'); }
-};
-
-window.openCloseTrade = id => {
-  window._closeId = id;
-  document.getElementById('closeDate').value  = new Date().toISOString().split('T')[0];
-  document.getElementById('closePrice').value = '';
-  document.getElementById('closeNotes').value = '';
-  openModal('closeTradeModal');
+  document.getElementById('closePrice').value = document.getElementById('partialPrice').value;
+  document.getElementById('closePct').value = document.getElementById('partialPct').value;
+  document.getElementById('closeDate').value = document.getElementById('partialDate').value;
+  document.getElementById('closeNotes').value = document.getElementById('partialNotes').value || 'Cierre parcial manual';
+  window._closeAction = null;
+  await window.confirmClose();
+  closeModal('partialCloseModal');
 };
 
 window.confirmClose = async () => {
   const id         = window._closeId;
   const closePrice = parseFloat(document.getElementById('closePrice').value) || 0;
+  const closePct   = parseFloat(document.getElementById('closePct').value) || 100;
   const closeDate  = document.getElementById('closeDate').value;
+  const closeReason = document.getElementById('closeReason').value || 'manual';
   const closeNotes = document.getElementById('closeNotes').value;
-  if (!closePrice) { toast('Ingresá el precio de salida.','error'); return; }
-  const t = trades.find(x => x.id === id);
+  if (!closePrice) { toast('Ingresa el precio de salida.','error'); return; }
+  if (closePct <= 0 || closePct > 100) { toast('El % debe ser entre 1 y 100.','error'); return; }
+  const t = getTradeById(id);
   if (!t) return;
-  const sign   = (t.dir==='short') ? -1 : 1;
-  const pnl    = Math.round((t.posSize/t.entry) * (closePrice-t.entry) * sign * 100) / 100;
-  const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
-  const days   = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
+
+  const originalSize = positionOriginalSize(t);
+  const action = window._closeAction;
+  let closeSize = action?.closeSize ? Number(action.closeSize) : Math.round((Number(t.posSize)||0) * closePct) / 100;
+  closeSize = Math.min(Math.max(closeSize, 0), Number(t.posSize)||0);
+  if(!closeSize){ toast('No hay tamaño abierto para cerrar.','error'); return; }
+
+  const remainSize = Math.max(0, Math.round(((Number(t.posSize)||0) - closeSize) * 100) / 100);
+  const isFullClose = remainSize <= Math.max(0.01, (originalSize||0) * 0.0001);
+  const pnl = pnlForClose(t, closeSize, closePrice);
+  const margin = t.dir==='spot' ? closeSize : closeSize/(t.leverage||1);
+  const days = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
+  const closeLevel = action?.closeLevel || (closeReason === 'sl' ? 'sl' : closeReason === 'tp' ? 'tp' : 'manual');
+  const pctOriginal = originalSize ? Math.round(closeSize/originalSize*10000)/100 : closePct;
+  const note = closeNotes || (closeReason === 'tp' ? 'Take profit' : closeReason === 'sl' ? 'Stop loss' : (isFullClose ? 'Cierre del restante' : 'Cierre parcial manual'));
+
   try {
-    await updateDoc(doc(db,'trades',id), {
-      status:'closed', closePrice, closeDate, closeNotes,
-      pnl, pnlPct: Math.round(pnl/(margin||t.risk)*10000)/100,
-      daysOpen: days, updatedAt: new Date().toISOString(),
-    });
+    const {addDoc, collection, updateDoc, doc, db} = window._fb;
+    const closeData = {
+      ticker: t.ticker, dir: t.dir, exchange: t.exchange,
+      leverage: t.leverage, traderId: t.traderId, traderName: t.traderName,
+      entry: t.entry, sl: t.sl, tp1: t.tp1, tp1pct: t.tp1pct, tp2: t.tp2, tp2pct: t.tp2pct, tp3: t.tp3, tp3pct: t.tp3pct,
+      posSize: closeSize, originalPosSize: originalSize, risk: riskForSize(t, closeSize),
+      status: 'closed', closePrice, closeDate, closeNotes: note,
+      closeReason, closeLevel, closePctOriginal: pctOriginal,
+      pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
+      daysOpen: days, createdAt: t.createdAt, updatedAt: new Date().toISOString(),
+    };
+
+    if (isFullClose && !closedPartsForPosition(id).length) {
+      await updateDoc(doc(db,'trades',id), {
+        ...closeData,
+        status:'closed',
+        posSize: closeSize,
+        updatedAt: new Date().toISOString(),
+      });
+    } else if (isFullClose) {
+      await addDoc(collection(db,'trades'), { ...closeData, userId: CU.uid, partialClose: true, originalId: id });
+      await updateDoc(doc(db,'trades',id), {
+        status:'closed_parent', posSize: 0, risk: 0, originalPosSize: originalSize,
+        closePrice, closeDate, closeNotes:'Posicion cerrada por parciales',
+        closeReason:'partial_sequence', updatedAt: new Date().toISOString(),
+      });
+    } else {
+      await addDoc(collection(db,'trades'), { ...closeData, userId: CU.uid, partialClose: true, originalId: id });
+      await updateDoc(doc(db,'trades',id), {
+        posSize: remainSize, risk: riskForSize(t, remainSize), originalPosSize: originalSize,
+        realizedPnl: Math.round(((Number(t.realizedPnl)||0) + pnl)*100)/100,
+        updatedAt: new Date().toISOString(),
+        notes: (t.notes ? t.notes + ' · ' : '') + note + ' (' + pctOriginal + '% original) a $' + closePrice,
+      });
+    }
+
     await loadTrades();
     closeModal('closeTradeModal');
-    toast(`Cerrado. PnL: ${pnl>=0?'+':''}$${Math.abs(pnl).toFixed(0)}`, pnl>=0?'success':'error');
+    toast('Cierre registrado. PnL: '+(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)), pnl>=0?'success':'error');
     renderPositions();
-  } catch(e) { toast('Error: '+e.message,'error'); }
+    renderHistory();
+  } catch(e) { toast('Error: '+e.message,'error'); console.error(e); }
 };
 
 window.deleteTrade = async id => {
@@ -2439,19 +2533,19 @@ window.syncEditFields = (changed) => {
   const slDist = Math.abs(sl-entry)/entry;
   if (slDist <= 0) return;
 
+  const editing = (window.G?.trades()||[]).find(t=>t.id===window._editTradeId);
+  const isOpenPosition = editing && ['active','zombie'].includes(editing.status);
+
   if (changed === 'size' && size) {
-    // Size changed → recalculate Risk
     document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
-  } else if (changed === 'risk' && risk) {
-    // Risk changed → recalculate Size
+  } else if (changed === 'risk' && risk && !isOpenPosition) {
     document.getElementById('eSize').value = Math.round(risk / slDist * 100)/100;
   } else if (changed === 'entry' || changed === 'sl') {
-    // Entry or SL changed → recalculate whichever of Size/Risk is missing
-    if (risk) {
-      // Risk is the source of truth → update Size
+    if (isOpenPosition && size) {
+      document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
+    } else if (risk) {
       document.getElementById('eSize').value = Math.round(risk / slDist * 100)/100;
     } else if (size) {
-      // Size is the source of truth → update Risk
       document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
     }
   }
@@ -3300,6 +3394,12 @@ function renderPositions() {
     const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps    = [{l:'TP1',v:t.tp1,k:'tp1',pct:t.tp1pct||33},{l:'TP2',v:t.tp2,k:'tp2',pct:t.tp2pct||33},{l:'TP3',v:t.tp3,k:'tp3',pct:t.tp3pct||34}].filter(x=>x.v);
+    const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
+    const originalSize = typeof positionOriginalSize === 'function' ? positionOriginalSize(t) : (t.posSize||0);
+    const closedSize = closedParts.reduce((s,x)=>s+(Number(x.posSize)||0),0);
+    const realizedPnl = closedParts.length ? closedParts.reduce((s,x)=>s+(Number(x.pnl)||0),0) : (Number(t.realizedPnl)||0);
+    const openPct = originalSize ? Math.round((t.posSize/originalSize)*10000)/100 : 100;
+    const closedPct = originalSize ? Math.round((closedSize/originalSize)*10000)/100 : 0;
     const mmrPos = 0.005;
     const lev    = t.leverage||1;
     const liq    = lev > 1 && t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrPos) : t.entry/(1+1/lev-mmrPos)) : null;
@@ -3406,6 +3506,16 @@ function renderPositions() {
             </div>
           </div>`;
         }).join('')}
+      </div>` : ''}
+
+      ${closedParts.length ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:0.5px solid var(--border2);background:rgba(0,0,0,0.10);">
+        <div style="padding:8px 14px;"><div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Cerrado</div><div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--t2);">${closedPct}%</div></div>
+        <div style="padding:8px 14px;border-left:0.5px solid var(--border2);border-right:0.5px solid var(--border2);"><div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Abierto</div><div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--accent);">${openPct}%</div></div>
+        <div style="padding:8px 14px;"><div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">PnL realizado</div><div style="font-size:13px;font-weight:600;font-family:var(--mono);" class="${realizedPnl>=0?'pnl-pos':'pnl-neg'}">${realizedPnl>=0?'+':'-'}$${fmt(Math.abs(realizedPnl))}</div></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;border-bottom:0.5px solid var(--border2);">
+        ${closedParts.map(p=>`<span class="badge ${p.pnl>=0?'bl':'bs'}">${String(p.closeLevel||p.closeReason||'parcial').toUpperCase()} · ${p.closePctOriginal?fmtP(p.closePctOriginal):fmtP(originalSize?((p.posSize||0)/originalSize*100):0)} · ${p.pnl>=0?'+':'-'}$${fmt(Math.abs(p.pnl||0))}</span>`).join('')}
       </div>` : ''}
 
       ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${t.notes}</div>`:''}
@@ -4053,18 +4163,20 @@ window.saveEditTrade = async () => {
   const eDate = document.getElementById('eDate').value;
   if(!ticker||!entry){ toast('Completá ticker y entry como mínimo.','error'); return; }
 
-  // Calculate posSize: derive from risk+SL if both exist, else use manual size
+  const existingTrade = (window.G?.trades()||[]).find(t=>t.id===id) || {};
   const sizeEl = document.getElementById('eSize');
   const manualSize = parseFloat(sizeEl?.value)||0;
   const slDist = sl && entry ? Math.abs(sl-entry)/entry : 0;
-  // If we have risk AND SL, always derive posSize from risk (source of truth)
-  // Only use manual size if no risk or no SL
-  const posSize = (risk && slDist) ? Math.round(risk/slDist*100)/100 : (manualSize || 0);
+  const isOpenPosition = ['active','zombie'].includes(existingTrade.status);
+  const posSize = isOpenPosition
+    ? (manualSize || existingTrade.posSize || 0)
+    : ((risk && slDist) ? Math.round(risk/slDist*100)/100 : (manualSize || 0));
+  const calcRisk = slDist && posSize ? Math.round(posSize*slDist*100)/100 : risk;
 
   try {
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
       ticker, exchange, leverage:lev, dir:editDir,
-      entry, sl, risk, posSize,
+      entry, sl, risk: calcRisk, posSize,
       ...(eDate ? { createdAt: eDate+'T00:00:00.000Z' } : {}),
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName,
