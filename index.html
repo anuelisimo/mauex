@@ -2206,16 +2206,11 @@ const fmtPx = n => {
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
 const fmtD = d => {
   if (!d) return '—';
-  const s = String(d);
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  // IMPORTANT: manual dates are stored as YYYY-MM-DD or YYYY-MM-DDT00:00:00.000Z.
-  // Do not pass them through new Date(), because Argentina timezone can display the previous day.
+  const str = String(d);
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
-  try {
-    return new Date(d).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' });
-  } catch(e) {
-    return s || '—';
-  }
+  try { return new Date(d).toLocaleDateString('es',{day:'2-digit',month:'2-digit',year:'2-digit'}); }
+  catch(e) { return str || '—'; }
 };
 
 window.toast = (msg, type='success') => {
@@ -2712,7 +2707,7 @@ function renderDashboard() {
   const wins   = closed.filter(t=>(t.pnl||0)>0);
   const totPnl = closed.reduce((s,t)=>s+(t.pnl||0),0);
   const now    = new Date();
-  const mPnl   = closed.filter(t=>{ const d=new Date(t.closeDate||t.updatedAt); return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear(); }).reduce((s,t)=>s+(t.pnl||0),0);
+  const mPnl   = closed.filter(t=>t.closeDate).filter(t=>{ const d=new Date(t.closeDate); return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear(); }).reduce((s,t)=>s+(t.pnl||0),0);
   const best   = closed.reduce((b,t)=>(t.pnl||0)>(b.pnl||0)?t:b,{pnl:0});
   const worst  = closed.reduce((w,t)=>(t.pnl||0)<(w.pnl||0)?t:w,{pnl:0});
 
@@ -2766,7 +2761,7 @@ function renderDashboard() {
 function drawPnlChart(closed) {
   const canvas = document.getElementById('chartPnl'); if(!canvas) return;
   const months = {};
-  closed.forEach(t=>{ const d=new Date(t.closeDate||t.updatedAt); const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); months[k]=(months[k]||0)+(t.pnl||0); });
+  closed.filter(t=>t.closeDate).forEach(t=>{ const d=new Date(t.closeDate); const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); months[k]=(months[k]||0)+(t.pnl||0); });
   const sorted = Object.keys(months).sort().slice(-12);
   const vals   = sorted.map(k=>months[k]);
   if(chPnl){chPnl.destroy();chPnl=null;}
@@ -3781,7 +3776,12 @@ function renderHistory() {
   // Sort
   const colMap = {ticker:'ticker',dir:'dir',exchange:'exchange',trader:'traderName',entry:'entry',exit:'closePrice',pnl:'pnl',pnlpct:'pnlPct',fentrada:'createdAt',fcierre:'closeDate'};
   const sortKey = colMap[_histSort.col] || 'closeDate';
-  filtered = [...filtered].sort((a,b)=>{ const av=a[sortKey]||'', bv=b[sortKey]||''; return (typeof av==='number')?(av-bv)*_histSort.dir:String(av).localeCompare(String(bv))*_histSort.dir; });
+  filtered = [...filtered].sort((a,b)=>{
+    const av = a[sortKey] || '';
+    const bv = b[sortKey] || '';
+    if (typeof av === 'number' || typeof bv === 'number') return ((Number(av)||0)-(Number(bv)||0))*_histSort.dir;
+    return String(av).localeCompare(String(bv))*_histSort.dir;
+  });
   // Charts use all closed trades
   renderHistCharts(closed);
   const wins = filtered.filter(t=>(t.pnl||0)>0).length;
@@ -3814,7 +3814,7 @@ function renderHistory() {
       <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'—'}</td>
       <td class="${pnlPctCls}">${t.pnlPct!=null?fmtP(t.pnlPct):'—'}</td>
       <td style="color:var(--t3);font-size:10px;">${t.createdAt?fmtD(t.createdAt):'—'}</td>
-      <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate||t.updatedAt)}</td>
+      <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate)}</td>
       <td><span class="badge ${resBadge}">${resLabel}</span></td>
       <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'—'}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;">
