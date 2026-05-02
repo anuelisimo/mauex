@@ -3463,9 +3463,9 @@ function renderHistCharts(trades) {
   // Helper: info tooltip on chart titles
   const info = (text) => `<span title="${text}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid var(--t3);color:var(--t3);font-size:9px;font-family:sans-serif;cursor:help;margin-left:5px;vertical-align:middle;">i</span>`;
 
-  const sorted = [...trades].sort((a,b)=>new Date(a.closeDate||a.createdAt)-new Date(b.closeDate||b.createdAt));
+  const sorted = [...trades].sort((a,b)=>new Date(a.closeDate)-new Date(b.closeDate));
   let cum = 0;
-  const equityPoints = sorted.map(t=>{ cum+=t.pnl||0; return { v: cum, date: t.closeDate||t.createdAt?.split('T')[0]||'', pnl: t.pnl||0 }; });
+  const equityPoints = sorted.map(t=>{ cum+=t.pnl||0; return { v: cum, date: t.closeDate||'', pnl: t.pnl||0 }; });
   const eqVals = equityPoints.map(p=>p.v);
   const maxEq = Math.max(...eqVals, 0);
   const minEq = Math.min(...eqVals, 0);
