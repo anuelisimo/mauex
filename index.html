@@ -1719,6 +1719,20 @@ window.confirmClose = async () => {
   const closeLevel = action?.closeLevel || closePctEl?.dataset.closeLevel || (closeReason === 'sl' ? 'sl' : closeReason === 'tp' ? 'tp' : 'manual');
   const pctOriginal = originalSize ? Math.round(closeSize/originalSize*10000)/100 : closePct;
   const note = closeNotes || (closeReason === 'tp' ? 'Take profit' : closeReason === 'sl' ? 'Stop loss' : (isFullClose ? 'Cierre del restante' : 'Cierre parcial manual'));
+  const isStructuredLevelClose = ['tp1','tp2','tp3','sl'].includes(closeLevel);
+  const levelClosure = isStructuredLevelClose ? {
+    closedAt: closeDate,
+    closePrice,
+    closePctOriginal: pctOriginal,
+    pnl,
+    posSize: closeSize,
+    reason: closeReason,
+  } : null;
+  const levelCloseUpdates = levelClosure ? {
+    ['levelClosures.' + closeLevel]: levelClosure,
+    ['levelAlerts.' + closeLevel + '.confirmed']: true,
+    ['levelAlerts.' + closeLevel + '.confirmedAt']: new Date().toISOString(),
+  } : {};
 
   try {
     const {addDoc, collection, updateDoc, doc, db} = window._fb;
@@ -1746,6 +1760,7 @@ window.confirmClose = async () => {
         status:'closed_parent', posSize: 0, risk: 0, originalPosSize: originalSize,
         closePrice, closeDate, closeNotes:'Posicion cerrada por parciales',
         closeReason:'partial_sequence', updatedAt: new Date().toISOString(),
+        ...levelCloseUpdates,
       });
     } else {
       await addDoc(collection(db,'trades'), { ...closeData, userId: CU.uid, partialClose: true, originalId: id });
@@ -1753,7 +1768,7 @@ window.confirmClose = async () => {
         posSize: remainSize, risk: riskForSize(t, remainSize), originalPosSize: originalSize,
         realizedPnl: Math.round(((Number(t.realizedPnl)||0) + pnl)*100)/100,
         updatedAt: new Date().toISOString(),
-        notes: (t.notes ? t.notes + ' · ' : '') + note + ' (' + pctOriginal + '% original) a $' + closePrice,
+        ...levelCloseUpdates,
       });
     }
 
@@ -3292,7 +3307,7 @@ function renderWatchlist() {
         }).join('')}
       </div>` : ''}
 
-      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${t.notes}</div>`:''}
+      ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
 
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
@@ -3352,6 +3367,28 @@ function setAlert(id, level, meta={}) {
 window.setAlert = setAlert;
 function clearAlerts(id) { const a=getAlerts(); delete a[id]; localStorage.setItem(ALERT_KEY, JSON.stringify(a)); }
 function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
+function levelClosureOf(t, level, closedParts) {
+  if (!t || !level) return null;
+  const fromParent = t.levelClosures?.[level];
+  if (fromParent) return fromParent;
+  const fromAlert = t.levelAlerts?.[level];
+  if (fromAlert?.confirmed) return fromAlert;
+  const parts = closedParts || (typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : []);
+  const part = parts.find(x => x.closeLevel === level);
+  if (!part) return null;
+  return {
+    closedAt: part.closeDate,
+    closePrice: part.closePrice,
+    closePctOriginal: part.closePctOriginal,
+    pnl: part.pnl,
+    posSize: part.posSize,
+    reason: part.closeReason,
+  };
+}
+function isLevelConfirmed(t, level, closedParts) { return !!levelClosureOf(t, level, closedParts); }
+function cleanAutoCloseNotes(notes) {
+  return String(notes || '').split(' · ').filter(p => !/^TP[123] cerrado [(][^)]* original[)] a [$]?/i.test(p.trim())).join(' · ');
+}
 async function syncLocalAlertsToCloud() {
   const local = getAlerts();
   const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active');
@@ -3380,8 +3417,8 @@ function alertBadge(level, blinkClass) {
 function getPositionAlert(t, price) {
   if (!price || !t.entry) return { cardClass:'', badges:'' };
 
-  const closedLevels = new Set((typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : []).map(x=>x.closeLevel).filter(Boolean));
-  const badgeFor = level => alertBadge(level, closedLevels.has(level) ? '' : 'badge-alert-slow');
+  const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
+  const badgeFor = level => alertBadge(level, isLevelConfirmed(t, level, closedParts) ? '' : 'badge-alert-slow');
   const hitBadges = [];
 
   ['sl','tp1','tp2','tp3'].forEach(level => {
@@ -3538,7 +3575,7 @@ function renderPositions() {
     const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
     const originalSize = typeof positionOriginalSize === 'function' ? positionOriginalSize(t) : (t.posSize||0);
     const closedSize = closedParts.reduce((s,x)=>s+(Number(x.posSize)||0),0);
-    const closedLevelSet = new Set(closedParts.map(x=>x.closeLevel).filter(Boolean));
+    const closedLevelSet = new Set(['tp1','tp2','tp3','sl'].filter(level => isLevelConfirmed(t, level, closedParts)));
     const realizedPnl = closedParts.length ? closedParts.reduce((s,x)=>s+(Number(x.pnl)||0),0) : (Number(t.realizedPnl)||0);
     const openPct = originalSize ? Math.round((t.posSize/originalSize)*10000)/100 : 100;
     const closedPct = originalSize ? Math.round((closedSize/originalSize)*10000)/100 : 0;
@@ -3638,19 +3675,22 @@ function renderPositions() {
           const tpCloseSize = Math.min(originalSize ? originalSize * (tp.pct/100) : (t.posSize||0) * (tp.pct/100), t.posSize||0);
           const tpPnlAmt = tpCloseSize&&t.entry ? Math.round((tpCloseSize/t.entry)*(tp.v-t.entry)*(t.dir==='short'?-1:1)*100)/100 : null;
           const rr = rrFor(tp.v);
-          const isClosedTp = closedLevelSet.has(tp.k);
+          const closure = levelClosureOf(t, tp.k, closedParts);
+          const isClosedTp = !!closure;
           const clickAttr = isClosedTp ? '' : `onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})"`;
-          return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${isClosedTp?'rgba(255,255,255,0.025)':tpBg};${isClosedTp?'opacity:0.62;':'cursor:pointer;'}" ${clickAttr}>
+          const closedPctLabel = closure?.closePctOriginal ? Math.round(closure.closePctOriginal*100)/100 + '%' : tp.pct + '%';
+          const closedPriceLabel = closure?.closePrice ? '$' + fmtPx(closure.closePrice) : '$' + fmtPx(tp.v);
+          return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${isClosedTp?'rgba(34,197,94,0.055)':tpBg};${isClosedTp?'border-top:1px solid rgba(34,197,94,0.35);':'cursor:pointer;'}" ${clickAttr}>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px;">
-              <span style="font-size:8px;color:${tpColor};opacity:0.75;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%${isClosedTp?' · cerrado':''}</span>
+              <span style="font-size:8px;color:${tpColor};opacity:0.8;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${isClosedTp?'cerrado ':''}${isClosedTp?closedPctLabel:tp.pct+'%'}</span>
               <span style="display:flex;align-items:center;gap:6px;">
-                ${isClosedTp?`<span style="font-size:11px;color:${tpColor};font-weight:700;">✓</span>`:''}
+                ${isClosedTp?`<span style="font-size:11px;color:${tpColor};font-weight:800;">&#10003;</span>`:''}
                 ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
               </span>
             </div>
-            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">${isClosedTp?closedPriceLabel:'$'+fmtPx(tp.v)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
-              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
+              ${isClosedTp?'confirmado':(distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:'')} ${!isClosedTp&&tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
             </div>
           </div>`;
         }).join('')}
@@ -3662,11 +3702,9 @@ function renderPositions() {
         <div style="padding:8px 14px;border-left:0.5px solid var(--border2);border-right:0.5px solid var(--border2);"><div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Abierto</div><div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--accent);">${openPct}%</div></div>
         <div style="padding:8px 14px;"><div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">PnL realizado</div><div style="font-size:13px;font-weight:600;font-family:var(--mono);" class="${realizedPnl>=0?'pnl-pos':'pnl-neg'}">${realizedPnl>=0?'+':'-'}$${fmt(Math.abs(realizedPnl))}</div></div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;border-bottom:0.5px solid var(--border2);">
-        ${closedParts.map(p=>`<span class="badge ${p.pnl>=0?'bl':'bs'}">${String(p.closeLevel||p.closeReason||'parcial').toUpperCase()} · ${p.closePctOriginal?fmtP(p.closePctOriginal):fmtP(originalSize?((p.posSize||0)/originalSize*100):0)} · ${p.pnl>=0?'+':'-'}$${fmt(Math.abs(p.pnl||0))}</span>`).join('')}
-      </div>` : ''}
+` : ''}
 
-      ${t.notes?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${t.notes}</div>`:''}
+      ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
 
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
