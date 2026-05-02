@@ -1599,7 +1599,10 @@ window.setCloseAction = key => {
   if(!action) return;
   window._closeAction = action;
   document.getElementById('closePrice').value = action.price || '';
-  document.getElementById('closePct').value = action.pctRemaining;
+  const pctEl = document.getElementById('closePct');
+  pctEl.value = action.pctRemaining;
+  pctEl.dataset.closeSize = action.closeSize || '';
+  pctEl.dataset.closeLevel = action.closeLevel || action.level || '';
   document.getElementById('closeReason').value = action.reason || 'manual';
   document.getElementById('closeNotes').value = action.notes || '';
   const btn = document.getElementById('closeConfirmBtn');
@@ -1623,6 +1626,8 @@ window.openCloseTrade = id => {
   window._closeId = id;
   window._closeChoices = {};
   window._closeAction = null;
+  const closePctEl = document.getElementById('closePct');
+  if(closePctEl) { closePctEl.dataset.closeSize = ''; closePctEl.dataset.closeLevel = ''; }
 
   document.getElementById('closeDate').value  = new Date().toISOString().split('T')[0];
   document.getElementById('closePrice').value = price || '';
@@ -1668,7 +1673,7 @@ window.openCloseTrade = id => {
     price:price || '', reason:'manual', level:'manual', closeLevel:'manual', closeSize:t.posSize,
     notes:'Cierre del restante', button:'Cerrar restante',
   }));
-  actions.push(`<button class="btn sm" style="text-align:left;padding:9px 10px;" onclick="window._closeAction=null;document.getElementById('closePct').value='50';document.getElementById('closeReason').value='manual';document.getElementById('closeNotes').value='Cierre parcial manual';document.getElementById('closeConfirmBtn').textContent='Cerrar parcial';">Cierre parcial manual<br><span style="font-size:10px;color:var(--t3);">Elegis % y precio</span></button>`);
+  actions.push(`<button class="btn sm" style="text-align:left;padding:9px 10px;" onclick="window._closeAction=null;document.getElementById('closePct').dataset.closeSize='';document.getElementById('closePct').dataset.closeLevel='';document.getElementById('closePct').value='50';document.getElementById('closeReason').value='manual';document.getElementById('closeNotes').value='Cierre parcial manual';document.getElementById('closeConfirmBtn').textContent='Cerrar parcial';">Cierre parcial manual<br><span style="font-size:10px;color:var(--t3);">Elegis % y precio</span></button>`);
 
   const quick = document.getElementById('closeQuickActions');
   if(quick) quick.innerHTML = actions.join('');
@@ -1699,7 +1704,9 @@ window.confirmClose = async () => {
 
   const originalSize = positionOriginalSize(t);
   const action = window._closeAction;
-  let closeSize = action?.closeSize ? Number(action.closeSize) : Math.round((Number(t.posSize)||0) * closePct) / 100;
+  const closePctEl = document.getElementById('closePct');
+  const selectedCloseSize = parseFloat(closePctEl?.dataset.closeSize || '') || 0;
+  let closeSize = selectedCloseSize || (action?.closeSize ? Number(action.closeSize) : Math.round((Number(t.posSize)||0) * closePct) / 100);
   closeSize = Math.min(Math.max(closeSize, 0), Number(t.posSize)||0);
   if(!closeSize){ toast('No hay tamaño abierto para cerrar.','error'); return; }
 
@@ -1708,7 +1715,7 @@ window.confirmClose = async () => {
   const pnl = pnlForClose(t, closeSize, closePrice);
   const margin = t.dir==='spot' ? closeSize : closeSize/(t.leverage||1);
   const days = Math.round((new Date(closeDate) - new Date(t.createdAt)) / 86400000);
-  const closeLevel = action?.closeLevel || (closeReason === 'sl' ? 'sl' : closeReason === 'tp' ? 'tp' : 'manual');
+  const closeLevel = action?.closeLevel || closePctEl?.dataset.closeLevel || (closeReason === 'sl' ? 'sl' : closeReason === 'tp' ? 'tp' : 'manual');
   const pctOriginal = originalSize ? Math.round(closeSize/originalSize*10000)/100 : closePct;
   const note = closeNotes || (closeReason === 'tp' ? 'Take profit' : closeReason === 'sl' ? 'Stop loss' : (isFullClose ? 'Cierre del restante' : 'Cierre parcial manual'));
 
@@ -2306,6 +2313,13 @@ const fmtPx = n => {
   return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
 };
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
+function dirLevLabel(item) {
+  const dir = String(item?.dir || '').toUpperCase();
+  const lev = Number(item?.leverage || item?.lev || 1);
+  if (!dir) return '—';
+  if (dir === 'SPOT' || !Number.isFinite(lev) || lev <= 1) return dir;
+  return dir + ' x' + lev;
+}
 const fmtD = d => {
   if (!d) return '—';
   const str = String(d);
@@ -3203,7 +3217,7 @@ function renderWatchlist() {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;"></div>
             <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
-            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${(t.dir||'').toUpperCase()}</span>
+            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
             ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
@@ -3255,10 +3269,10 @@ function renderWatchlist() {
       <div style="display:grid;grid-template-columns:${tps.map(()=>'1fr').join(' ')};border-bottom:0.5px solid var(--border2);">
         ${tps.map((tp,i) => {
           const tpColors = ['#4ade80','#22c55e','#16a34a'];
-          const tpColor  = tpColors[i]||'#4ade80';
-          const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i]||'transparent';
-          const p = tpPnlCalc(tp.v, tp.pct);
-          const dist = t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
+          const tpColor  = tpColors[i] || '#4ade80';
+          const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i] || 'transparent';
+          const distFromEntry = tp.v&&t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
+          const tpPnlAmt = t.posSize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
           const rr = rrFor(tp.v);
           return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -3267,7 +3281,7 @@ function renderWatchlist() {
             </div>
             <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
-              ${dist!=null?`+${dist.toFixed(1)}%`:''} ${p!=null?`· +$${fmt(p)}`:''}
+              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
             </div>
           </div>`;
         }).join('')}
@@ -3314,21 +3328,22 @@ function alertBadge(level, blinkClass) {
 function getPositionAlert(t, price) {
   if (!price || !t.entry) return { cardClass:'', badges:'' };
 
+  const closedLevels = new Set((typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : []).map(x=>x.closeLevel).filter(Boolean));
+  const badgeFor = level => alertBadge(level, closedLevels.has(level) ? '' : 'badge-alert-slow');
   const hitBadges = [];
-  if (hasAlert(t.id, 'sl'))  hitBadges.push(alertBadge('sl',  ''));
-  if (hasAlert(t.id, 'tp1')) hitBadges.push(alertBadge('tp1', ''));
-  if (hasAlert(t.id, 'tp2')) hitBadges.push(alertBadge('tp2', ''));
-  if (hasAlert(t.id, 'tp3')) hitBadges.push(alertBadge('tp3', ''));
 
-  // Detect new hits
+  ['sl','tp1','tp2','tp3'].forEach(level => {
+    if (hasAlert(t.id, level)) hitBadges.push(badgeFor(level));
+  });
+
   if (t.sl && !hasAlert(t.id,'sl')) {
     const hitSL = (t.dir==='short') ? price >= t.sl : price <= t.sl;
-    if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(alertBadge('sl','')); }
+    if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(badgeFor('sl')); }
   }
   ['tp1','tp2','tp3'].forEach(k => {
     if (t[k] && !hasAlert(t.id,k)) {
       const hitTP = (t.dir==='short') ? price <= t[k] : price >= t[k];
-      if (hitTP) { setAlert(t.id,k); hitBadges.push(alertBadge(k,'')); }
+      if (hitTP) { setAlert(t.id,k); hitBadges.push(badgeFor(k)); }
     }
   });
 
@@ -3397,6 +3412,7 @@ function renderPositions() {
     const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
     const originalSize = typeof positionOriginalSize === 'function' ? positionOriginalSize(t) : (t.posSize||0);
     const closedSize = closedParts.reduce((s,x)=>s+(Number(x.posSize)||0),0);
+    const closedLevelSet = new Set(closedParts.map(x=>x.closeLevel).filter(Boolean));
     const realizedPnl = closedParts.length ? closedParts.reduce((s,x)=>s+(Number(x.pnl)||0),0) : (Number(t.realizedPnl)||0);
     const openPct = originalSize ? Math.round((t.posSize/originalSize)*10000)/100 : 100;
     const closedPct = originalSize ? Math.round((closedSize/originalSize)*10000)/100 : 0;
@@ -3434,7 +3450,7 @@ function renderPositions() {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div style="width:8px;height:8px;border-radius:50%;background:${t.status==='zombie'?'#666':'#22c55e'};flex-shrink:0;"></div>
             <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
-            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${(t.dir||'').toUpperCase()}</span>
+            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
             ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
@@ -3493,12 +3509,18 @@ function renderPositions() {
           const tpColor  = tpColors[i] || '#4ade80';
           const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i] || 'transparent';
           const distFromEntry = tp.v&&t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
-          const tpPnlAmt = t.posSize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
+          const tpCloseSize = Math.min(originalSize ? originalSize * (tp.pct/100) : (t.posSize||0) * (tp.pct/100), t.posSize||0);
+          const tpPnlAmt = tpCloseSize&&t.entry ? Math.round((tpCloseSize/t.entry)*(tp.v-t.entry)*(t.dir==='short'?-1:1)*100)/100 : null;
           const rr = rrFor(tp.v);
-          return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};cursor:pointer;" onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%</span>
-              ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
+          const isClosedTp = closedLevelSet.has(tp.k);
+          const clickAttr = isClosedTp ? '' : `onclick="closeAtTP('${t.id}','${tp.k}',${tp.v})"`;
+          return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${isClosedTp?'rgba(255,255,255,0.025)':tpBg};${isClosedTp?'opacity:0.62;':'cursor:pointer;'}" ${clickAttr}>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px;">
+              <span style="font-size:8px;color:${tpColor};opacity:0.75;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%${isClosedTp?' · cerrado':''}</span>
+              <span style="display:flex;align-items:center;gap:6px;">
+                ${isClosedTp?`<span style="font-size:11px;color:${tpColor};font-weight:700;">✓</span>`:''}
+                ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
+              </span>
             </div>
             <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
@@ -4983,8 +5005,8 @@ window.renderDashHistory = () => {
   const si = col => _dashHistSort.col===col?(_dashHistSort.dir===1?'↑':'↓'):'';
   tableEl.innerHTML = `<div class="card" style="padding:0;overflow:hidden;">
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
-    <table class="tbl" style="min-width:600px;">
-      <thead><tr>${[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry'],['exit','Exit'],['pnl','PnL'],['pnlpct','PnL%'],['fcierre','Fecha cierre']].map(([col,lbl])=>`<th style="cursor:pointer;user-select:none;" onclick="sortDashHistory('${col}')" title="Ordenar por ${lbl}">${lbl} ${si(col)}</th>`).join('')}</tr></thead>
+    <table class="tbl" style="min-width:720px;">
+      <thead><tr>${[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry'],['exit','Exit'],['pnl','PnL'],['pnlpct','PnL%'],['fcierre','Fecha cierre']].map(([col,lbl])=>`<th style="cursor:pointer;user-select:none;" onclick="sortDashHistory('${col}')" title="Ordenar por ${lbl}">${lbl} ${si(col)}</th>`).join('')}<th></th></tr></thead>
       <tbody>${trades.map(t => {
         const pnl = t.pnl || 0;
         const cls = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
@@ -4998,6 +5020,10 @@ window.renderDashHistory = () => {
           <td class="${cls}" style="font-family:var(--mono);">${pnl>=0?'+':''}$${Math.abs(pnl).toFixed(0)}</td>
           <td class="${cls}" style="font-family:var(--mono);">${t.pnlPct!=null?(t.pnlPct>=0?'+':'')+t.pnlPct.toFixed(1)+'%':'—'}</td>
           <td style="font-size:11px;color:var(--t2);">${fmtD(historyCloseDateOf(t))}</td>
+          <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;">
+            <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
+            <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
+          </td>
         </tr>`;
       }).join('')}</tbody>
     </table></div></div>`;
@@ -6414,7 +6440,7 @@ function renderOrders() {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;"></div>
             <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${o.ticker}</span>
-            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${(o.dir||'').toUpperCase()}</span>
+            <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(o)}</span>
             <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} ↗</a>
             <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);">PENDIENTE</span>
