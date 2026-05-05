@@ -1295,14 +1295,8 @@ onAuthStateChanged(auth, async user => {
     // Show master password modal if keys are configured
     setTimeout(checkMasterPassNeeded, 800);
     startAutoSync();
-    // Register userId with Railway backend so fills polling can save to Firestore
-    const _railwayUrl = 'https://mauex-backend-production.up.railway.app';
-    fetch(`${_railwayUrl}/set-user`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.uid })
-    }).then(() => console.log('✅ userId registered with Railway'))
-      .catch(e => console.warn('set-user failed:', e.message));
+    // Railway is reached through the Cloudflare Worker for exchange sync.
+    // Avoid a direct browser call here because Railway can reject CORS preflight.
   } else {
     document.getElementById('authScreen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
@@ -2773,6 +2767,19 @@ window.compute = () => {
 let chPnl, chWR, chA;
 let _liquidityCache = null; // cache so we don't re-fetch on every render
 
+function normalizeDashboardBalance(raw = {}) {
+  const usdt = Number(raw.USDT ?? raw.usdt ?? 0) || 0;
+  const usdc = Number(raw.USDC ?? raw.usdc ?? 0) || 0;
+  const fallbackTotal = usdt + usdc;
+  const total = Number(raw.total ?? raw.totalEquity ?? raw.wallet ?? fallbackTotal) || 0;
+  const free = Number(raw.free ?? raw.available ?? raw.availableBalance ?? (fallbackTotal || total)) || 0;
+  const margin = Number(raw.margin ?? raw.marginUsed ?? 0) || 0;
+  const orders = Number(raw.orders ?? raw.orderMargin ?? 0) || 0;
+  const pnl = Number(raw.pnl ?? raw.unrealizedPnl ?? raw.upnl ?? 0) || 0;
+
+  return { total, free, margin, orders, pnl, USDT: usdt, USDC: usdc };
+}
+
 async function fetchAndRenderLiquidity() {
   const el = document.getElementById('dashLiquidity');
   if (!el) return;
@@ -2783,12 +2790,13 @@ async function fetchAndRenderLiquidity() {
     try {
       el.style.display = 'block';
       el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
-      const r = await fetch(`${PROXY_URL}/balance`);
+      const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
+        data = d;
         if (d.balances) {
           _liquidityCache = d;
-          data = d;
+          window._liquidityCache = d;
           if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
         }
       }
@@ -2796,11 +2804,21 @@ async function fetchAndRenderLiquidity() {
   }
 
   if (!data?.balances || Object.keys(data.balances).length === 0) {
+    const balanceErrors = data?.errors || data?.balanceErrors || {};
+    if (Object.keys(balanceErrors).length) {
+      el.style.display = 'block';
+      el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--red);font-family:var(--mono);font-size:11px;">
+        No pude leer capital de exchanges: ${Object.entries(balanceErrors).map(([ex,msg])=>`${ex}: ${msg}`).join(' | ')}
+      </div>`;
+      return;
+    }
     el.style.display = 'none';
     return;
   }
 
-  const { balances } = data;
+  const balances = Object.fromEntries(
+    Object.entries(data.balances).map(([ex, b]) => [ex, normalizeDashboardBalance(b)])
+  );
 
   // Totals — pure exchange data, no Firestore crossing
   let grandTotal = 0, grandFree = 0, grandMargin = 0, grandOrders = 0, grandPnl = 0;
@@ -2906,6 +2924,7 @@ async function fetchAndRenderLiquidity() {
 window._updateLiquidityCache = (data) => {
   if (data?.balances) {
     _liquidityCache = data;
+    window._liquidityCache = data;
     if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
   }
   fetchAndRenderLiquidity();
@@ -2943,9 +2962,10 @@ function renderDashboard() {
 
   // If no liquidity cache yet, fetch balance directly and draw pie
   if (!_liquidityCache && PROXY_URL) {
-    fetch(`${PROXY_URL}/balance`).then(r=>r.json()).then(d=>{
+    fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
       if (d.balances) {
         _liquidityCache = d;
+        window._liquidityCache = d;
         if (window._drawCapitalPie) window._drawCapitalPie();
       }
     }).catch(()=>{});
@@ -4144,7 +4164,10 @@ function renderHistCharts(trades) {
 window._drawCapitalPie = () => {
   const div = document.getElementById('capitalPieDiv');
   if (!div) return;
-  const balances = window._liquidityCache?.balances;
+  const rawBalances = window._liquidityCache?.balances;
+  const balances = rawBalances ? Object.fromEntries(
+    Object.entries(rawBalances).map(([ex, b]) => [ex, normalizeDashboardBalance(b)])
+  ) : null;
   if (!balances) { setTimeout(window._drawCapitalPie, 800); return; }
   let libre = 0, margen = 0, ordenes = 0;
   Object.values(balances).forEach(b => {
@@ -5690,28 +5713,19 @@ window.syncAllExchanges = async () => {
   // Use Worker backend if proxy URL is configured
   if(PROXY_URL) {
     try {
-      const r    = await fetch(`${PROXY_URL}/summary`);
+      const r    = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache:'no-store' });
       const data = await r.json();
 
-      // Detect executed orders (orders that disappeared from exchange)
-      const prevOrderIds = new Set((exchangeOrders||[]).map(o=>o.exchangeId).filter(Boolean));
-      const newOrderIds  = new Set((data.orders||[]).map(o=>o.exchangeId).filter(Boolean));
-      const executedOrders = (exchangeOrders||[]).filter(o =>
-        o.exchangeId && prevOrderIds.has(o.exchangeId) && !newOrderIds.has(o.exchangeId)
-      );
-      if (executedOrders.length && prevOrderIds.size > 0) {
-        executedOrders.forEach(o => showOrderExecutedModal(o));
-      }
-
-      exchangePositions        = data.positions || [];
+      exchangePositions        = [];
       window.exchangePositions = exchangePositions;
-      window.exchangeOrders    = data.orders    || [];
-      exchangeOrders           = data.orders    || [];
+      window.exchangeOrders    = [];
+      exchangeOrders           = [];
       lastSyncTime             = new Date();
 
       // Cache liquidity data for dashboard
       if (data.balances) {
         _liquidityCache = data;
+        window._liquidityCache = data;
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 200);
       }
       if (data.liquidity) window._updateLiquidityCache(data);
@@ -5720,22 +5734,24 @@ window.syncAllExchanges = async () => {
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
       try { updateStatusBar(); } catch(e) { console.error('updateStatusBar error:', e); }
 
-      const count = exchangePositions.length;
-      const msg   = `✅ ${count} posición${count!==1?'es':''} · PnL $${(data.totalPnl||0).toFixed(0)}`;
+      const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
+      const errTxt = errs.length ? ' · revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/') : '';
+      const totalCapital = Number(data.liquidity?.total ?? data.totals?.total ?? 0) || 0;
+      const msg   = `✅ Capital $${fmt(totalCapital)}${errTxt}`;
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled = false; }
 
       // Show errors if any
-      const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
       if(errs.length) {
         errs.forEach(([ex, err]) => console.warn(`${ex}: ${err}`));
+        toast('Sincronización parcial: revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/'), 'error');
       }
       return;
     } catch(e) {
       console.error('Worker sync failed:', e.message);
       toast('Error al sincronizar: ' + e.message, 'error');
       const syncBtnEl = document.getElementById('syncBtn');
-      if(syncBtnEl){ syncBtnEl.textContent='↻ Sync exchanges'; syncBtnEl.disabled=false; }
+      if(syncBtnEl){ syncBtnEl.textContent='↻ Sync capital'; syncBtnEl.disabled=false; }
       return;
     }
   }
@@ -5820,9 +5836,9 @@ window.importAllHistory = async () => {
 let syncTimer = null;
 function startAutoSync() {
   if(syncTimer) clearInterval(syncTimer);
-  // Sync positions every 30s (exchange rate limit friendly)
-  // PnL updates in real-time via WebSocket (setPrice → updatePriceEl)
-  // Auto-sync removed — positions are manual, prices update via WebSocket
+  // Sync exchange capital every 30s; positions and orders stay manual.
+  setTimeout(() => window.syncAllExchanges?.(), 1200);
+  syncTimer = setInterval(() => window.syncAllExchanges?.(), 30000);
 }
 
 // ── AI Analysis autocomplete ───────────────────────────────────────────────
