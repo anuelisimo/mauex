@@ -552,6 +552,104 @@ window._updateLiquidityCache = (data) => {
   fetchAndRenderLiquidity();
 };
 
+const dashSafe = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const dashPnl = t => Number(t?.pnl) || 0;
+const dashClosedAt = t => t?.closeDate || t?.closedAt || t?.updatedAt || t?.createdAt || '';
+const dashRiskOf = t => {
+  const entry = Number(t?.entry) || 0;
+  const sl = Number(t?.sl) || 0;
+  const size = Number(t?.originalPosSize || t?.posSize) || 0;
+  if (!entry || !sl || !size) return 0;
+  return Math.abs((entry - sl) / entry * size);
+};
+const dashStatsOf = (trades) => {
+  const wins = trades.filter(t => dashPnl(t) > 0);
+  const losses = trades.filter(t => dashPnl(t) < 0);
+  const grossWin = wins.reduce((s,t)=>s+dashPnl(t),0);
+  const grossLoss = Math.abs(losses.reduce((s,t)=>s+dashPnl(t),0));
+  const avgWin = wins.length ? grossWin / wins.length : 0;
+  const avgLoss = losses.length ? -grossLoss / losses.length : 0;
+  const pnl = trades.reduce((s,t)=>s+dashPnl(t),0);
+  const winRate = trades.length ? wins.length / trades.length : 0;
+  const expectancy = trades.length ? pnl / trades.length : 0;
+  const rrValues = trades.map(t => {
+    const risk = dashRiskOf(t);
+    return risk ? dashPnl(t) / risk : null;
+  }).filter(v => Number.isFinite(v));
+  const avgR = rrValues.length ? rrValues.reduce((s,v)=>s+v,0) / rrValues.length : 0;
+  const sorted = [...trades].sort((a,b)=>(new Date(dashClosedAt(a)).getTime()||0)-(new Date(dashClosedAt(b)).getTime()||0));
+  let equity = 0, peak = 0, maxDd = 0;
+  sorted.forEach(t => {
+    equity += dashPnl(t);
+    peak = Math.max(peak, equity);
+    maxDd = Math.max(maxDd, peak - equity);
+  });
+  const vals = trades.map(dashPnl);
+  const avg = vals.length ? vals.reduce((s,v)=>s+v,0) / vals.length : 0;
+  const variance = vals.length ? vals.reduce((s,v)=>s+Math.pow(v-avg,2),0) / vals.length : 0;
+  const sharpe = variance ? (avg / Math.sqrt(variance)) * Math.sqrt(vals.length) : 0;
+  return {count:trades.length,wins:wins.length,losses:losses.length,pnl,winRate,avgWin,avgLoss,profitFactor:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy,maxDd,avgR,sharpe};
+};
+const dashMetricCard = m => `<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div>${m.sub?`<div class="metric-sub">${m.sub}</div>`:''}</div>`;
+const dashMoney = v => `${v>=0?'+':'-'}$${fmt(Math.abs(v))}`;
+const dashGroupStats = (trades, keyFn) => {
+  const map = {};
+  trades.forEach(t => {
+    const key = keyFn(t) || 'Sin dato';
+    if (!map[key]) map[key] = [];
+    map[key].push(t);
+  });
+  return Object.keys(map).map(name => ({name, trades:map[name], stats:dashStatsOf(map[name])})).sort((a,b)=>b.stats.pnl-a.stats.pnl);
+};
+const dashProfessionalRow = (row) => {
+  const s = row.stats;
+  const pf = s.profitFactor === Infinity ? 'INF' : s.profitFactor.toFixed(2);
+  return `<tr>
+    <td><strong>${dashSafe(row.name)}</strong></td>
+    <td>${s.count}</td>
+    <td class="${s.pnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(s.pnl)}</td>
+    <td>${Math.round(s.winRate*100)}%</td>
+    <td>${pf}</td>
+    <td class="${s.expectancy>=0?'pnl-pos':'pnl-neg'}">${dashMoney(s.expectancy)}</td>
+  </tr>`;
+};
+function renderProfessionalDashboard(closed) {
+  const metricsEl = document.getElementById('dashProMetrics');
+  const tablesEl = document.getElementById('dashProTables');
+  if (!metricsEl || !tablesEl) return;
+  if (!closed.length) {
+    metricsEl.innerHTML = '';
+    tablesEl.innerHTML = '';
+    return;
+  }
+  const s = dashStatsOf(closed);
+  const best = closed.reduce((b,t)=>dashPnl(t)>dashPnl(b)?t:b, closed[0]);
+  const worst = closed.reduce((w,t)=>dashPnl(t)<dashPnl(w)?t:w, closed[0]);
+  metricsEl.innerHTML = [
+    {l:'PnL total',v:dashMoney(s.pnl),cls:s.pnl>=0?'green':'red',sub:`${s.count} trades cerrados`},
+    {l:'Win rate',v:Math.round(s.winRate*100)+'%',cls:s.winRate>=0.5?'green':'red',sub:`${s.wins} wins / ${s.losses} losses`},
+    {l:'Profit factor',v:s.profitFactor===Infinity?'INF':s.profitFactor.toFixed(2),cls:s.profitFactor>=1?'green':'red',sub:'Ganancias / perdidas'},
+    {l:'Expectancy',v:dashMoney(s.expectancy),cls:s.expectancy>=0?'green':'red',sub:'Promedio por trade'},
+    {l:'Max drawdown',v:'-$'+fmt(s.maxDd),cls:'red',sub:'Caida maxima acumulada'},
+    {l:'Avg win / loss',v:`+$${fmt(s.avgWin)} / -$${fmt(Math.abs(s.avgLoss))}`,cls:s.avgWin>Math.abs(s.avgLoss)?'green':'red'},
+    {l:'R promedio',v:(s.avgR>=0?'+':'')+s.avgR.toFixed(2)+'R',cls:s.avgR>=0?'green':'red',sub:'Solo trades con SL'},
+    {l:'Sharpe simple',v:s.sharpe.toFixed(2),cls:s.sharpe>=0?'green':'red',sub:`Best ${best?.ticker||'-'} / Worst ${worst?.ticker||'-'}`},
+  ].map(dashMetricCard).join('');
+
+  const traderRows = dashGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,8);
+  const tickerRows = dashGroupStats(closed, t => (t.ticker || 'Sin ticker').toUpperCase()).slice(0,8);
+  const table = (title, rows) => `<div class="card" style="padding:0;overflow:hidden;">
+    <div class="sec-label" style="padding:14px 14px 0;">${title}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+      <table class="tbl" style="min-width:560px;">
+        <thead><tr><th>Nombre</th><th>Trades</th><th>PnL</th><th>WR</th><th>PF</th><th>Expectancy</th></tr></thead>
+        <tbody>${rows.length?rows.map(dashProfessionalRow).join(''):`<tr><td colspan="6" style="color:var(--t3);">Sin datos suficientes</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
+  tablesEl.innerHTML = `<div class="g2">${table('Ranking por trader', traderRows)}${table('Ranking por activo', tickerRows)}</div>`;
+}
+
 function renderDashboard() {
   const G      = window.G; if(!G) return;
   const all    = G.trades();
@@ -579,6 +677,7 @@ function renderDashboard() {
   // Charts
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
   fetchAndRenderLiquidity();
+  renderProfessionalDashboard(closed);
   // Render equity curve + stats + capital pie (same as historial)
   setTimeout(() => renderHistCharts(closed), 50);
 
