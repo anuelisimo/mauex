@@ -28,14 +28,28 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Trayendo la ultima version de GitHub...
+set "STASHED=0"
+git diff --quiet
+if %ERRORLEVEL% NEQ 0 (
+  echo Hay cambios locales fuera del frontend. Los guardo temporalmente para poder traer GitHub...
+  git stash push -m "mauex-temp-non-frontend" -- worker.js
+  if %ERRORLEVEL% EQU 0 set "STASHED=1"
+)
+
 git pull --rebase origin main
 if %ERRORLEVEL% NEQ 0 (
   echo.
   echo No pude acomodar automaticamente los cambios con la version online.
   echo Deja esta ventana abierta y mandale una captura a Codex.
   echo.
+  if "%STASHED%"=="1" git stash pop
   pause
   exit /b 1
+)
+
+if "%STASHED%"=="1" (
+  echo Recuperando cambios locales no relacionados...
+  git stash pop
 )
 
 echo.
