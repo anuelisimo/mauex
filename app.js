@@ -2807,7 +2807,9 @@ async function hmacSHA256Base64(secret, message) {
 }
 
 // ── Master password state ─────────────────────────────────────────────────
-let _masterPass = sessionStorage.getItem('mauex_mp') || '';
+const MASTER_PASS_SESSION_KEY = 'mauex_mp';
+const MASTER_PASS_DEVICE_KEY = 'mauex_mp_remembered';
+let _masterPass = sessionStorage.getItem(MASTER_PASS_SESSION_KEY) || localStorage.getItem(MASTER_PASS_DEVICE_KEY) || '';
 
 window.saveMasterPass = () => {
   const p = document.getElementById('masterPass').value;
@@ -2818,9 +2820,24 @@ window.saveMasterPass = () => {
   }
   if(p.length < 8){ toast('Mínimo 8 caracteres.','error'); return; }
   _masterPass = p;
+  sessionStorage.setItem(MASTER_PASS_SESSION_KEY, p);
   const st = document.getElementById('masterStatus');
   st.style.display='block'; st.style.color='var(--accent)';
   st.textContent='✅ Contraseña guardada en memoria (sesión actual)';
+  toast('Contraseña maestra lista.');
+};
+
+window.saveMasterPass2 = () => {
+  const p = document.getElementById('masterPass2')?.value || '';
+  if(p.length < 8) {
+    const st = document.getElementById('masterStatus2');
+    if(st){ st.textContent='Mínimo 8 caracteres'; st.style.display='block'; st.style.color='var(--red)'; }
+    return;
+  }
+  _masterPass = p;
+  sessionStorage.setItem(MASTER_PASS_SESSION_KEY, p);
+  const st = document.getElementById('masterStatus2');
+  if(st){ st.textContent='Contraseña guardada en memoria'; st.style.display='block'; st.style.color='var(--accent)'; }
   toast('Contraseña maestra lista.');
 };
 
@@ -3651,17 +3668,22 @@ window.checkMasterPassNeeded = async function() {
       ${ex==='binance'?'⬡ Binance':ex==='bybit'?'◈ Bybit':'OK OKX'}
     </span>`).join('');
   document.getElementById('masterPassExchanges').innerHTML = badges;
+  const remember = document.getElementById('rememberDexPass');
+  if (remember) remember.checked = !!localStorage.getItem(MASTER_PASS_DEVICE_KEY);
   openModal('masterPassModal');
   setTimeout(()=>document.getElementById('unlockPass')?.focus(), 300);
 };
 
 window.doUnlock = async () => {
   const pass = document.getElementById('unlockPass').value;
+  const remember = document.getElementById('rememberDexPass')?.checked || false;
   if(!pass){ document.getElementById('unlockError').textContent='Ingresá tu contraseña.'; document.getElementById('unlockError').style.display='block'; return; }
   // Test decryption with a known exchange
   const G = window.G;
   _masterPass = pass;
-  sessionStorage.setItem('mauex_mp', pass);
+  sessionStorage.setItem(MASTER_PASS_SESSION_KEY, pass);
+  if (remember) localStorage.setItem(MASTER_PASS_DEVICE_KEY, pass);
+  else localStorage.removeItem(MASTER_PASS_DEVICE_KEY);
   try {
     const configured = ['binance','bybit','okx','mexc','kucoin'].filter(ex=>G?._hasExchangeKey?.(ex));
     if(configured.length){
@@ -3676,7 +3698,8 @@ window.doUnlock = async () => {
     startAutoSync();
   } catch(e){
     _masterPass='';
-    sessionStorage.removeItem('mauex_mp');
+    sessionStorage.removeItem(MASTER_PASS_SESSION_KEY);
+    localStorage.removeItem(MASTER_PASS_DEVICE_KEY);
     document.getElementById('unlockError').textContent='Contraseña incorrecta. Intentá de nuevo.';
     document.getElementById('unlockError').style.display='block';
   }
