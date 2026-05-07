@@ -387,6 +387,71 @@ function pnlForClose(t, closeSize, closePrice) {
   const sign = (t.dir === 'short') ? -1 : 1;
   return Math.round((closeSize / t.entry) * (closePrice - t.entry) * sign * 100) / 100;
 }
+const CLOSE_GOOD_TAGS = [
+  'Respete plan','Buena entrada','Espere confirmacion','Buena paciencia','Tome parciales',
+  'Movi SL correctamente','Cerre por invalidacion','Buen cierre manual','Buen tamano','Evite sobreoperar'
+];
+const CLOSE_ERROR_GROUPS = [
+  { title:'Errores de entrada', tags:['FOMO','Entre tarde','Entre sin confirmacion','Mala lectura de contexto','Trade sin tesis','Persegui precio','Entre contra tendencia'] },
+  { title:'Errores de gestion', tags:['Cerre temprano','No tome parcial','Movi SL mal','No respete SL','Deje volver ganancia','No movi SL a BE','Movi SL a BE demasiado pronto'] },
+  { title:'Riesgo / disciplina', tags:['Sobreapalancamiento','Tamano excesivo','Risk mayor al plan','Revenge trade','Sobreoperacion','No estaba atento'] },
+  { title:'Salida', tags:['Salida tardia','Salida impulsiva','Cierre emocional','Cierre tecnico correcto'] },
+];
+function plannedRForTrade(t) {
+  const entry = Number(t?.entry) || 0;
+  const sl = Number(t?.sl) || 0;
+  const tp = Number(t?.tp1 || t?.tp2 || t?.tp3) || 0;
+  if (!entry || !sl || !tp || entry === sl) return 0;
+  return Math.abs((tp - entry) / (entry - sl));
+}
+function suggestedCloseTags(t) {
+  const tags = [];
+  if (!Number(t?.sl)) tags.push('Sin SL');
+  if (!['tp1','tp2','tp3'].some(k => Number(t?.[k]))) tags.push('Sin TP');
+  const lev = Number(t?.leverage) || 1;
+  if (lev > 20) tags.push('Over leverage');
+  else if (lev > 10) tags.push('Leverage alto');
+  const rr = plannedRForTrade(t);
+  if (Number(t?.sl) && ['tp1','tp2','tp3'].some(k => Number(t?.[k])) && rr && rr < 1) tags.push('RR flojo');
+  if (!String(t?.notes || '').trim()) tags.push('Sin notas');
+  return [...new Set(tags)];
+}
+function toggleCloseReviewTag(btn) {
+  btn.classList.toggle('selected');
+}
+window.toggleCloseReviewTag = toggleCloseReviewTag;
+function renderCloseReviewTags(t) {
+  const el = document.getElementById('closeReviewTags');
+  if (!el) return;
+  const suggested = suggestedCloseTags(t);
+  const chip = (tag, kind, selected=false) =>
+    `<button type="button" class="review-chip ${kind} ${selected?'selected':''}" data-close-review-tag="${tag}" data-close-review-kind="${kind}" onclick="toggleCloseReviewTag(this)">${tag}</button>`;
+  const row = (title, hint, html) => `<div style="margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <span class="lbl" style="margin:0;">${title}</span>
+      <span class="info-dot" title="${hint}">i</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">${html}</div>
+  </div>`;
+  el.innerHTML = `
+    <div style="border:0.5px solid var(--border2);border-radius:var(--r);padding:10px 12px;background:rgba(255,255,255,0.015);">
+      ${row('Sugeridos por MAUex', 'Tags que MAUex detecta automaticamente con los datos actuales del trade. Podes quitarlos si no aplican.', suggested.length ? suggested.map(x=>chip(x,'warn',true)).join('') : '<span style="font-size:11px;color:var(--t3);">Sin alertas automaticas.</span>')}
+      ${row('Aciertos', 'Marca todo lo positivo que quieras recordar de este cierre.', CLOSE_GOOD_TAGS.map(x=>chip(x,'good')).join(''))}
+      ${CLOSE_ERROR_GROUPS.map(group => row(group.title, 'Marca una o varias causas reales. Esto alimenta el Dashboard de calidad.', group.tags.map(x=>chip(x,'bad')).join(''))).join('')}
+    </div>`;
+}
+function getCloseReviewData() {
+  const selected = [...document.querySelectorAll('[data-close-review-tag].selected')];
+  const byKind = kind => selected.filter(x => x.dataset.closeReviewKind === kind).map(x => x.dataset.closeReviewTag);
+  const mauexTags = byKind('warn');
+  const goodTags = byKind('good');
+  const errorTags = byKind('bad');
+  return {
+    mauexTags, goodTags, errorTags,
+    reviewTags: [...new Set([...mauexTags, ...goodTags, ...errorTags])],
+    reviewedAt: new Date().toISOString(),
+  };
+}
 
 window.openPartialClose = id => {
   window.openCloseTrade(id);
@@ -483,6 +548,7 @@ window.openCloseTrade = id => {
 
   const quick = document.getElementById('closeQuickActions');
   if(quick) quick.innerHTML = actions.join('');
+  renderCloseReviewTags(t);
   openModal('closeTradeModal');
 };
 
@@ -499,6 +565,7 @@ window.confirmPartialClose = async () => {
 async function confirmCascadeClose(t, action, closeDate, closeNotes) {
   const originalSize = positionOriginalSize(t);
   const closeDateSafe = closeDate || new Date().toISOString().split('T')[0];
+  const reviewData = getCloseReviewData();
   let remaining = Number(t.posSize)||0;
   let totalClosed = 0;
   let totalPnl = 0;
@@ -524,6 +591,7 @@ async function confirmCascadeClose(t, action, closeDate, closeNotes) {
       posSize: closeSize, originalPosSize: originalSize, risk: riskForSize(t, closeSize),
       status: 'closed', closePrice, closeDate: closeDateSafe, closeNotes: level.l+' cerrado',
       closeReason:'tp', closeLevel: level.k, closePctOriginal: pctOriginal,
+      ...reviewData,
       pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
       daysOpen: Math.round((new Date(closeDateSafe) - new Date(t.createdAt)) / 86400000),
       createdAt: t.createdAt, updatedAt: new Date().toISOString(),
@@ -546,12 +614,14 @@ async function confirmCascadeClose(t, action, closeDate, closeNotes) {
       status:'closed_parent', posSize:0, risk:0,
       closePrice:lastPrice, closeDate: closeDateSafe, closeNotes:'Posicion cerrada por parciales',
       closeReason:'partial_sequence', closeLevel:lastLevel,
+      ...reviewData,
       realizedPnl: Math.round(((Number(t.realizedPnl)||0) + totalPnl)*100)/100,
       ...updates,
     });
   } else {
     await updateDoc(doc(db,'trades',t.id), {
       posSize: remaining, risk: riskForSize(t, remaining),
+      ...reviewData,
       realizedPnl: Math.round(((Number(t.realizedPnl)||0) + totalPnl)*100)/100,
       ...updates,
     });
@@ -591,6 +661,7 @@ window.confirmClose = async () => {
   const closeLevel = action?.closeLevel || closePctEl?.dataset.closeLevel || (closeReason === 'sl' ? 'sl' : closeReason === 'tp' ? 'tp' : 'manual');
   const pctOriginal = originalSize ? Math.round(closeSize/originalSize*10000)/100 : closePct;
   const note = closeNotes || (closeReason === 'tp' ? 'Take profit' : closeReason === 'sl' ? 'Stop loss' : (isFullClose ? 'Cierre del restante' : 'Cierre parcial manual'));
+  const reviewData = getCloseReviewData();
   const isStructuredLevelClose = ['tp1','tp2','tp3','sl'].includes(closeLevel);
   const levelClosure = isStructuredLevelClose ? {
     closedAt: closeDate,
@@ -615,6 +686,7 @@ window.confirmClose = async () => {
       posSize: closeSize, originalPosSize: originalSize, risk: riskForSize(t, closeSize),
       status: 'closed', closePrice, closeDate, closeNotes: note,
       closeReason, closeLevel, closePctOriginal: pctOriginal,
+      ...reviewData,
       pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
       daysOpen: days, createdAt: t.createdAt, updatedAt: new Date().toISOString(),
     };
@@ -632,12 +704,14 @@ window.confirmClose = async () => {
         status:'closed_parent', posSize: 0, risk: 0, originalPosSize: originalSize,
         closePrice, closeDate, closeNotes:'Posicion cerrada por parciales',
         closeReason:'partial_sequence', updatedAt: new Date().toISOString(),
+        ...reviewData,
         ...levelCloseUpdates,
       });
     } else {
       await addDoc(collection(db,'trades'), { ...closeData, userId: CU.uid, partialClose: true, originalId: id });
       await updateDoc(doc(db,'trades',id), {
         posSize: remainSize, risk: riskForSize(t, remainSize), originalPosSize: originalSize,
+        ...reviewData,
         realizedPnl: Math.round(((Number(t.realizedPnl)||0) + pnl)*100)/100,
         updatedAt: new Date().toISOString(),
         ...levelCloseUpdates,

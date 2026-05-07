@@ -590,7 +590,24 @@ const dashStatsOf = (trades) => {
   const sharpe = variance ? (avg / Math.sqrt(variance)) * Math.sqrt(vals.length) : 0;
   return {count:trades.length,wins:wins.length,losses:losses.length,pnl,winRate,avgWin,avgLoss,profitFactor:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy,maxDd,avgR,sharpe};
 };
-const dashMetricCard = m => `<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div>${m.sub?`<div class="metric-sub">${m.sub}</div>`:''}</div>`;
+const infoDot = text => text ? `<span class="info-dot" title="${dashSafe(text)}">i</span>` : '';
+const dashMetricInfo = {
+  'PnL total':'Resultado neto acumulado de todos los trades cerrados del historial.',
+  'Win rate':'Porcentaje de trades cerrados con PnL positivo.',
+  'Profit factor':'Ganancias brutas divididas por perdidas brutas. Arriba de 1 indica sistema rentable.',
+  'Expectancy':'Promedio esperado por trade. Es el PnL total dividido por la cantidad de trades.',
+  'Max drawdown':'Mayor caida acumulada desde un pico de la curva de equity.',
+  'Avg win / loss':'Ganancia promedio de los trades ganadores comparada contra perdida promedio de los perdedores.',
+  'R promedio':'Resultado promedio medido contra el riesgo definido por el SL. Solo cuenta trades con SL cargado.',
+  'Sharpe simple':'Relacion simple entre retorno promedio y variabilidad de resultados. Cuanto mas alto, mas consistente.',
+  'Trades cerrados':'Cantidad de operaciones cerradas en el historial.',
+  'PnL este mes':'Resultado neto de los trades cerrados durante el mes actual.',
+  'Mejor trade':'Trade cerrado con mayor ganancia en dolares.',
+  'Peor trade':'Trade cerrado con mayor perdida en dolares.',
+  'Traders seguidos':'Cantidad de traders distintos asociados a tus operaciones.',
+  'Activos operados':'Cantidad de tickers distintos registrados en la app.',
+};
+const dashMetricCard = m => `<div class="metric">${infoDot(m.info || dashMetricInfo[m.l])}<div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div>${m.sub?`<div class="metric-sub">${m.sub}</div>`:''}</div>`;
 const dashMoney = v => `${v>=0?'+':'-'}$${fmt(Math.abs(v))}`;
 const dashGroupStats = (trades, keyFn) => {
   const map = {};
@@ -650,6 +667,140 @@ function renderProfessionalDashboard(closed) {
   tablesEl.innerHTML = `<div class="g2">${table('Ranking por trader', traderRows)}${table('Ranking por activo', tickerRows)}</div>`;
 }
 
+const dashPlannedR = t => {
+  const entry = Number(t?.entry) || 0;
+  const sl = Number(t?.sl) || 0;
+  const tp = Number(t?.tp1 || t?.tp2 || t?.tp3) || 0;
+  if (!entry || !sl || !tp || entry === sl) return 0;
+  return Math.abs((tp - entry) / (entry - sl));
+};
+function tradeQualityOf(t, globalStats) {
+  let score = 60;
+  const tags = [];
+  const good = [];
+  const mauexTags = Array.isArray(t?.mauexTags) ? t.mauexTags : [];
+  const manualGood = Array.isArray(t?.goodTags) ? t.goodTags : [];
+  const manualErrors = Array.isArray(t?.errorTags) ? t.errorTags : [];
+  const pnl = dashPnl(t);
+  const notes = [t?.notes, t?.closeNotes].filter(Boolean).join(' ');
+  const notesLower = notes.toLowerCase();
+  const hasSL = Number(t?.sl) > 0;
+  const hasTP = ['tp1','tp2','tp3'].some(k => Number(t?.[k]) > 0);
+  const lev = Number(t?.leverage) || 1;
+  const rr = dashPlannedR(t);
+
+  if (hasSL) { score += 12; good.push('Con SL'); }
+  else { score -= 18; tags.push('Sin SL'); }
+
+  if (hasTP) { score += 8; good.push('Con TP'); }
+  else { score -= 6; tags.push('Sin TP'); }
+
+  if (rr >= 2) { score += 12; good.push('Buen RR'); }
+  else if (rr >= 1) score += 5;
+  else if (hasSL && hasTP) { score -= 8; tags.push('RR flojo'); }
+
+  if (notes.trim().length >= 30) score += 8;
+  else if (notes.trim().length < 8) { score -= 10; tags.push('Sin notas'); }
+
+  if (lev > 20) { score -= 18; tags.push('Over leverage'); }
+  else if (lev > 10) { score -= 9; tags.push('Leverage alto'); }
+
+  if (pnl > 0) score += 6;
+  if (pnl < 0) score -= 6;
+
+  const avgLossAbs = Math.abs(globalStats?.avgLoss || 0);
+  if (pnl < 0 && avgLossAbs && Math.abs(pnl) > avgLossAbs * 1.6) {
+    score -= 14;
+    tags.push('Loss grande');
+  }
+
+  const reason = String(t?.closeReason || t?.reason || '').toLowerCase();
+  if (/tp|take profit/.test(reason)) { score += 8; good.push('Respeto TP'); }
+  if (/sl|stop/.test(reason) && hasSL) good.push('Respeto SL');
+
+  if (/fomo/.test(notesLower)) { score -= 12; tags.push('FOMO'); }
+  if (/revenge|venganza/.test(notesLower)) { score -= 14; tags.push('Revenge trade'); }
+  if (/miedo|fear|panico|panic/.test(notesLower)) { score -= 10; tags.push('Cierre emocional'); }
+  if (/temprano|early/.test(notesLower)) { score -= 8; tags.push('Closed early'); }
+
+  mauexTags.forEach(tag => { if (!tags.includes(tag)) tags.push(tag); });
+  manualErrors.forEach(tag => { if (!tags.includes(tag)) tags.push(tag); });
+  manualGood.forEach(tag => { if (!good.includes(tag)) good.push(tag); });
+  score += Math.min(18, manualGood.length * 4);
+  score -= Math.min(28, manualErrors.length * 5);
+  if (manualGood.includes('Respete plan')) score += 6;
+  if (manualGood.includes('Cerre por invalidacion')) score += 4;
+  if (manualErrors.includes('No respete SL')) score -= 12;
+  if (manualErrors.includes('Revenge trade')) score -= 12;
+  if (manualErrors.includes('FOMO')) score -= 10;
+  if (manualErrors.includes('Sobreapalancamiento')) score -= 10;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, tags:[...new Set(tags)], good:[...new Set(good)], rr };
+}
+function renderQualityDashboard(closed) {
+  const el = document.getElementById('dashQuality');
+  if (!el) return;
+  if (!closed.length) { el.innerHTML = ''; return; }
+  const stats = dashStatsOf(closed);
+  const scored = closed.map(t => ({ trade:t, quality:tradeQualityOf(t, stats) })).sort((a,b)=>b.quality.score-a.quality.score);
+  const avgScore = Math.round(scored.reduce((s,x)=>s+x.quality.score,0) / scored.length);
+  const tagCounts = {};
+  scored.forEach(x => x.quality.tags.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }));
+  const repeated = Object.keys(tagCounts).sort((a,b)=>tagCounts[b]-tagCounts[a]).slice(0,7);
+  const best = scored.slice(0,5);
+  const watch = [...scored].sort((a,b)=>a.quality.score-b.quality.score).slice(0,5);
+  const badge = (text, tone) => {
+    const color = tone === 'good' ? 'var(--accent)' : 'var(--amber)';
+    const bg = tone === 'good' ? 'rgba(0,196,122,0.13)' : 'rgba(245,158,11,0.13)';
+    return `<span style="display:inline-flex;align-items:center;padding:3px 7px;border-radius:4px;background:${bg};color:${color};font-family:var(--mono);font-size:9px;font-weight:700;">${dashSafe(text)}</span>`;
+  };
+  const scoreColor = s => s >= 75 ? 'var(--accent)' : s >= 55 ? 'var(--amber)' : 'var(--red)';
+  const tradeLine = x => `<div style="display:grid;grid-template-columns:44px 1fr 70px;gap:10px;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);">
+    <div style="font-family:var(--mono);font-size:17px;font-weight:800;color:${scoreColor(x.quality.score)};">${x.quality.score}</div>
+    <div style="min-width:0;">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <strong style="font-family:var(--mono);font-size:11px;">${dashSafe(x.trade.ticker || '-')}</strong>
+        <span class="badge ${x.trade.dir==='long'?'bl':x.trade.dir==='short'?'bs':'bsp'}">${String(x.trade.dir||'').toUpperCase()}</span>
+        <span style="font-size:10px;color:var(--t3);">${dashSafe(x.trade.traderName || x.trade.exchange || '')}</span>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${(x.quality.tags.length?x.quality.tags:x.quality.good).slice(0,3).map(tag=>badge(tag, x.quality.tags.length?'warn':'good')).join('')}</div>
+    </div>
+    <div class="${dashPnl(x.trade)>=0?'pnl-pos':'pnl-neg'}" style="font-family:var(--mono);font-size:11px;text-align:right;">${dashMoney(dashPnl(x.trade))}</div>
+  </div>`;
+
+  el.innerHTML = `<div class="card" style="padding:16px;position:relative;">
+    ${infoDot('Analiza tus trades cerrados y estima la calidad de ejecucion. No reemplaza tu criterio: sirve para detectar patrones repetidos de riesgo, notas incompletas, RR bajo o leverage excesivo.')}
+    <div class="fxb" style="gap:12px;align-items:flex-start;margin-bottom:14px;">
+      <div>
+        <div class="sec-label" style="margin-bottom:5px;">Calidad de ejecucion</div>
+        <div style="font-size:11px;color:var(--t2);font-family:var(--mono);">Score automatico 0-100 basado en gestion de riesgo, RR, notas, leverage y resultado.</div>
+      </div>
+      <div style="text-align:right;padding-right:20px;">
+        <div style="font-size:28px;font-family:var(--mono);font-weight:800;color:${scoreColor(avgScore)};">${avgScore}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">score promedio</div>
+      </div>
+    </div>
+    <div class="g3">
+      <div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;display:flex;gap:6px;align-items:center;">ERRORES REPETIDOS ${infoDot('Tags negativos que aparecen con mas frecuencia en el historial, por ejemplo Sin SL, Sin notas u Over leverage. El numero de la derecha indica cuantas veces aparece.')}</div>
+        ${repeated.length ? repeated.map(tag => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);">
+          <span>${badge(tag, 'warn')}</span>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--t1);">${tagCounts[tag]}</span>
+        </div>`).join('') : `<div style="color:var(--t3);font-size:11px;">Sin patrones negativos detectados.</div>`}
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;display:flex;gap:6px;align-items:center;">MEJORES EJECUCIONES ${infoDot('Trades con mayor score de ejecucion. El numero grande es el score 0-100; a la derecha se muestra el PnL del trade.')}</div>
+        ${best.map(tradeLine).join('')}
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;display:flex;gap:6px;align-items:center;">A REVISAR ${infoDot('Trades con menor score. Sirven para encontrar operaciones donde hubo poco plan, falta de SL/TP, notas incompletas o perdida grande.')}</div>
+        ${watch.map(tradeLine).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderDashboard() {
   const G      = window.G; if(!G) return;
   const all    = G.trades();
@@ -672,12 +823,13 @@ function renderDashboard() {
     {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'—',sub:worst.ticker||'',cls:'red'},
     {l:'Traders seguidos',v:String([...new Set(all.map(t=>t.traderId).filter(Boolean))].length)},
     {l:'Activos operados',v:String([...new Set(all.map(t=>t.ticker).filter(Boolean))].length)},
-  ].map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div>${m.sub?`<div class="metric-sub">${m.sub}</div>`:''}</div>`).join('');
+  ].map(dashMetricCard).join('');
 
   // Charts
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
   fetchAndRenderLiquidity();
   renderProfessionalDashboard(closed);
+  renderQualityDashboard(closed);
   // Render equity curve + stats + capital pie (same as historial)
   setTimeout(() => renderHistCharts(closed), 50);
 
