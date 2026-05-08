@@ -320,12 +320,19 @@ window.compute = () => {
   a2.style.display=other.length?'block':'none';  a2.textContent=other.join(' · ');
 
   // Metrics — solo si hay SL y riesgo
+  const rrParts = [[tp1,tp1pct],[tp2,tp2pct],[tp3,tp3pct]]
+    .filter(([price,pct]) => hasSL && price > 0 && pct > 0)
+    .map(([price,pct]) => ({ rr: Math.abs((price-entry)/(sl-entry)), pct }));
+  const rrWeight = rrParts.reduce((s,r) => s + r.pct, 0);
+  const weightedRR = rrWeight ? rrParts.reduce((s,r) => s + r.rr * r.pct, 0) / rrWeight : null;
+
   document.getElementById('calcMetrics').innerHTML= hasSL && hasRisk ? [
     {l:'Tamaño posición',v:'$'+fmt(posSize)},
     {l:sp?'Capital':'Margen isolated',v:'$'+fmt(margin)},
     {l:'SL % margen',v:(slDist*(sp?1:lev)*100).toFixed(1)+'%',cls:slDist*lev*100>50?'red':''},
-    ...(!sp&&liq?[{l:'Liquidación',v:'$'+fmt(liq),cls:liqSafe?'':' red'}]:[]),
-  ].map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val${m.cls||''}">${m.v}</div></div>`).join('') : '';
+    ...(weightedRR!=null?[{l:'R:R ponderado',v:weightedRR.toFixed(2)+':1',cls:weightedRR>=2?'green':weightedRR>=1?'':'red'}]:[]),
+    ...(!sp&&liq?[{l:'Liquidación',v:'$'+fmtPx(liq),cls:liqSafe?'':'red'}]:[]),
+  ].map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div></div>`).join('') : '';
 
   // Levels table
   const sign = sh ? -1 : 1;
@@ -350,7 +357,7 @@ window.compute = () => {
     ${levelRows.map(r=>`
     <div style="display:grid;grid-template-columns:52px 1fr 60px 80px 70px 55px;padding:8px 0;border-bottom:0.5px solid var(--border);align-items:center;">
       <span class="badge ${r.isSL?'bs':r.isLiq?'bw':r.isEntry?'be':'bl'}">${r.l}</span>
-      <div><span style="font-family:var(--mono);font-size:12px;font-weight:600;">$${fmt(r.price)}</span>
+      <div><span style="font-family:var(--mono);font-size:12px;font-weight:600;">$${fmtPx(r.price)}</span>
         <span style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-left:4px;">${fmtP((r.price-entry)/entry*100)}</span></div>
       <span style="font-family:var(--mono);font-size:10px;color:var(--t3);">${r.pct!=null?Math.round(r.pct*100)+'%':''}</span>
       <span style="font-family:var(--mono);font-size:11px;" class="${r.pnl==null?'':r.pnl>=0?'pnl-pos':'pnl-neg'}">${r.pnl!=null?(r.pnl>=0?'+':'')+fmt(r.pnl):''}</span>
@@ -382,7 +389,7 @@ window.compute = () => {
         <div style="font-size:8px;color:${p.c};font-family:var(--mono);font-weight:600;white-space:nowrap;">${p.l}</div>
         <div style="width:1.5px;height:20px;background:${p.c};margin:1px auto;"></div>
       </div>
-      <div style="position:absolute;left:${pct(p.v)}%;transform:translateX(-50%);top:10px;font-size:8px;color:${p.c};font-family:var(--mono);white-space:nowrap;">$${fmt(p.v)}</div>`).join('')}`;
+      <div style="position:absolute;left:${pct(p.v)}%;transform:translateX(-50%);top:10px;font-size:8px;color:${p.c};font-family:var(--mono);white-space:nowrap;">$${fmtPx(p.v)}</div>`).join('')}`;
 };
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
