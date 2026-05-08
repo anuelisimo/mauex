@@ -590,7 +590,7 @@ const dashStatsOf = (trades) => {
   const sharpe = variance ? (avg / Math.sqrt(variance)) * Math.sqrt(vals.length) : 0;
   return {count:trades.length,wins:wins.length,losses:losses.length,pnl,winRate,avgWin,avgLoss,profitFactor:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy,maxDd,avgR,sharpe};
 };
-const infoDot = text => text ? `<span class="info-dot" title="${dashSafe(text)}">i</span>` : '';
+const infoDot = text => text ? `<span class="info-dot" data-tip="${dashSafe(text)}" title="${dashSafe(text)}">i</span>` : '';
 const dashMetricInfo = {
   'PnL total':'Resultado neto acumulado de todos los trades cerrados del historial.',
   'Win rate':'Porcentaje de trades cerrados con PnL positivo.',
@@ -1341,6 +1341,7 @@ function setAlert(id, level, meta={}) {
 window.setAlert = setAlert;
 function clearAlerts(id) { const a=getAlerts(); delete a[id]; localStorage.setItem(ALERT_KEY, JSON.stringify(a)); }
 function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
+window.hasAlert = hasAlert;
 function levelClosureOf(t, level, closedParts) {
   if (!t || !level) return null;
   const fromParent = t.levelClosures?.[level];
@@ -1365,9 +1366,10 @@ function cleanAutoCloseNotes(notes) {
 }
 async function syncLocalAlertsToCloud() {
   const local = getAlerts();
-  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active');
-  for (const t of active) {
-    for (const level of ['sl','tp1','tp2','tp3']) {
+  const trackable = (window.G?.trades?.()||[]).filter(t => t.status === 'active' || t.status === 'pending');
+  for (const t of trackable) {
+    const levels = t.status === 'pending' ? ['entry'] : ['sl','tp1','tp2','tp3'];
+    for (const level of levels) {
       if (!local[t.id]?.[level] || cloudAlertOf(t.id, level)) continue;
       const payload = alertPayload(level, { hitAt: typeof local[t.id][level] === 'string' ? local[t.id][level] : new Date().toISOString(), source:'local_migration' });
       await persistCloudAlert(t.id, level, payload);
@@ -1378,12 +1380,15 @@ async function syncLocalAlertsToCloud() {
 // Build alert badge (icon + label)
 function alertBadge(level, blinkClass) {
   const isSL = level === 'sl';
-  const colors = { sl:'#e05252', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
+  const isEntry = level === 'entry';
+  const colors = { sl:'#e05252', entry:'#f59e0b', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
   const color  = colors[level] || '#4ade80';
   const icon   = isSL
     ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/></svg>`
+    : isEntry
+    ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="${color}" stroke-width="2"/><circle cx="6" cy="6" r="1.3" fill="${color}"/></svg>`
     : `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9.5 10.5,2" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const label  = level.toUpperCase();
+  const label  = isEntry ? 'ENTRY TOCADO' : level.toUpperCase();
   return `<span class="${blinkClass}" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:${color}22;color:${color};">${icon}${label}</span>`;
 }
 
@@ -1446,7 +1451,7 @@ async function fetchLevelCandles(t, start, end) {
 function candleHitForLevel(t, level, value, candles) {
   const isLong = (t.dir||'long') !== 'short';
   for (const c of candles) {
-    if (level === 'sl') {
+    if (level === 'sl' || level === 'entry') {
       if (isLong ? c.low <= value : c.high >= value) return { hitAt:new Date(c.time).toISOString(), price:value };
     } else if (isLong ? c.high >= value : c.low <= value) {
       return { hitAt:new Date(c.time).toISOString(), price:value };
@@ -1457,12 +1462,17 @@ function candleHitForLevel(t, level, value, candles) {
 window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
   await syncLocalAlertsToCloud();
   const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active' && t.entry && (t.sl || t.tp1 || t.tp2 || t.tp3));
-  if (!active.length || !window._fb?.updateDoc) return;
+  const pendingOrders = (window.G?.trades?.()||[]).filter(t => t.status === 'pending' && t.entry && !hasAlert(t.id, 'entry'));
+  const trackable = [...active, ...pendingOrders];
+  if (!trackable.length || !window._fb?.updateDoc) return;
   let touched = 0;
-  for (const t of active) {
+  let touchedEntries = 0;
+  for (const t of trackable) {
     const {start, end} = getLevelCheckWindow(t);
     if (end - start < 60 * 1000) continue;
-    const pendingLevels = [['sl', t.sl], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3]].filter(([level,value]) => value && !hasAlert(t.id, level));
+    const pendingLevels = t.status === 'pending'
+      ? [['entry', t.entry]].filter(([level,value]) => value && !hasAlert(t.id, level))
+      : [['sl', t.sl], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3]].filter(([level,value]) => value && !hasAlert(t.id, level));
     if (!pendingLevels.length) continue;
     try {
       const candles = await fetchLevelCandles(t, start, end);
@@ -1474,6 +1484,7 @@ window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
         t.levelAlerts = { ...(t.levelAlerts||{}), [level]: payload };
         rememberLocalAlert(t.id, level, payload);
         updates['levelAlerts.'+level] = payload;
+        if (level === 'entry') touchedEntries++;
         touched++;
       }
       if (Object.keys(updates).length > 1) updates.updatedAt = new Date().toISOString();
@@ -1484,7 +1495,11 @@ window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
   }
   if (touched) {
     renderPositions?.();
-    toast('Detecte '+touched+' nivel(es) tocados mientras no estabas.', 'warning');
+    renderOrders?.();
+    const msg = touchedEntries
+      ? 'Detecte '+touchedEntries+' orden(es) que tocaron entry mientras no estabas.'
+      : 'Detecte '+touched+' nivel(es) tocados mientras no estabas.';
+    toast(msg, 'warning');
   }
 };
 
@@ -1796,7 +1811,7 @@ function renderHistCharts(trades) {
   if (!trades.length) { el.innerHTML=''; return; }
 
   // Helper: info tooltip on chart titles
-  const info = (text) => `<span title="${text}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid var(--t3);color:var(--t3);font-size:9px;font-family:sans-serif;cursor:help;margin-left:5px;vertical-align:middle;">i</span>`;
+  const info = (text) => `<span class="info-dot" data-tip="${dashSafe(text)}" title="${dashSafe(text)}" style="margin-left:5px;vertical-align:middle;">i</span>`;
 
   const sorted = [...trades].sort((a,b)=>new Date(a.closeDate)-new Date(b.closeDate));
   let cum = 0;
@@ -4615,6 +4630,10 @@ function renderOrders() {
     const slDistPct = sl&&entryPrice ? Math.abs(sl-entryPrice)/entryPrice*100 : null;
     const riskUsd = totalSize&&slDistPct ? totalSize*slDistPct/100 : null;
     const tpList = [{l:'TP1',v:tp1,pct:o.tp1pct||33},{l:'TP2',v:tp2,pct:o.tp2pct||33},{l:'TP3',v:tp3,pct:o.tp3pct||34}].filter(x=>x.v);
+    const entryTouched = hasAlert(o.id, 'entry');
+    const entryBadge = entryTouched ? alertBadge('entry', 'badge-alert-slow') : '';
+    const orderCardClass = entryTouched ? 'order-card hit-entry' : 'order-card';
+    const orderBorderColor = entryTouched ? 'var(--accent)' : 'var(--amber)';
 
     const isMin = !!cardStates[o.exchangeId];
     const cardId = o.exchangeId;
@@ -4640,6 +4659,7 @@ function renderOrders() {
             <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} ↗</a>
             <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);">PENDIENTE</span>
+            ${entryBadge}
             ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
           </div>
         </div>
@@ -4653,13 +4673,13 @@ function renderOrders() {
       </div>`;
 
     if (isMin) {
-      return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--amber);margin-bottom:8px;overflow:hidden;" id="order-card-${cardId}">
+      return `<div class="${orderCardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${orderBorderColor};margin-bottom:8px;overflow:hidden;" id="order-card-${cardId}">
         ${header}
         ${entryPrice&&(sl||tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--amber);margin-bottom:8px;overflow:hidden;" id="order-card-${cardId}">
+    return `<div class="${orderCardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${orderBorderColor};margin-bottom:8px;overflow:hidden;" id="order-card-${cardId}">
       ${header}
 
       ${entryPrice&&(sl||tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}

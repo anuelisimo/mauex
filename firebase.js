@@ -429,7 +429,7 @@ function renderCloseReviewTags(t) {
   const row = (title, hint, html) => `<div style="margin-bottom:10px;">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
       <span class="lbl" style="margin:0;">${title}</span>
-      <span class="info-dot" title="${hint}">i</span>
+      <span class="info-dot" data-tip="${String(hint).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}" title="${hint}">i</span>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">${html}</div>
   </div>`;
@@ -954,14 +954,16 @@ function checkPriceAlerts(sym, price) {
     const dir   = t.dir || 'long';
     const isLong = dir === 'long' || dir === 'spot';
 
-    // ── ÓRDENES: precio tocó el entry — UNA VEZ ──
+    // ── ORDENES: precio toco el entry — UNA VEZ ──
     if (t.status === 'pending' && entry) {
       const key = _alertKey(t.id, 'entry_hit');
-      const hit = isLong ? price <= entry * 1.005 && price >= entry * 0.995
-                         : price >= entry * 0.995 && price <= entry * 1.005;
-      if (hit && _shouldAlert(key, false)) {
+      const alreadyMarked = !!(t.levelAlerts?.entry || window.hasAlert?.(t.id, 'entry'));
+      const hit = isLong ? price <= entry : price >= entry;
+      if (hit && !alreadyMarked && _shouldAlert(key, false)) {
         _recordAlert(key, false);
-        _notify(`⚡ ${t.ticker} Orden ejecutada`, `Precio $${price.toFixed(4)} tocó el entry $${entry}`, false);
+        window.setAlert?.(t.id, 'entry', { price, source:'live' });
+        _notify(`${t.ticker} Orden ejecutada`, `Precio $${price.toFixed(4)} toco el entry $${entry}`, false);
+        try { renderOrders?.(); } catch(e) {}
       }
     }
 
