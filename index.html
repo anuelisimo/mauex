@@ -6,7 +6,7 @@
 <title>MAUex — Trading Journal</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 90'><rect width='90' height='90' rx='18' fill='%230a0c0f'/><polyline points='10,78 27,52 45,26' fill='none' stroke='%23f03d3d' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><polyline points='45,26 63,52 80,78' fill='none' stroke='%2300c47a' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><circle cx='45' cy='26' r='4' fill='%23e8edf3'/></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./styles.css?v=20260508">
+<link rel="stylesheet" href="./styles.css?v=20260509">
 </head>
 <body>
 
@@ -217,6 +217,14 @@
               <input type="number" id="cTP2pct" value="33" oninput="compute()" style="text-align:center;">
               <input type="number" id="cTP3" placeholder="TP3 precio" oninput="compute()">
               <input type="number" id="cTP3pct" value="34" oninput="compute()" style="text-align:center;">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 116px;gap:6px;margin-top:10px;align-items:end;">
+              <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
+              <input type="number" id="cInv1" placeholder="precio invalida" oninput="compute()">
+              <select id="cInv1Side" onchange="compute()"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
+              <input type="number" id="cInv2" placeholder="precio invalida 2" oninput="compute()">
+              <select id="cInv2Side" onchange="compute()"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
+              <input type="text" id="cInvNote" placeholder="nota breve de invalidacion" style="grid-column:1/-1;">
             </div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
@@ -710,6 +718,14 @@
         <div><label class="lbl">Liquidación DEX</label><input type="number" id="eLiquidation" placeholder="Precio real del DEX"></div>
         <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL" oninput="syncEditFields('size')"></div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 116px 1fr 116px;gap:6px;margin-bottom:12px;align-items:end;">
+        <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
+        <input type="number" id="eInv1" placeholder="precio invalida">
+        <select id="eInv1Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
+        <input type="number" id="eInv2" placeholder="precio invalida 2">
+        <select id="eInv2Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
+        <input type="text" id="eInvNote" placeholder="nota breve de invalidacion" style="grid-column:1/-1;">
+      </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional" oninput="syncEditFields('risk')"></div>
         <div></div>
@@ -893,6 +909,14 @@
         <div><label class="lbl">TP2 precio</label><input type="number" id="mTP2" placeholder="TP2"></div>
         <div><label class="lbl">TP3 precio</label><input type="number" id="mTP3" placeholder="TP3"></div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 116px 1fr 116px;gap:6px;margin-bottom:12px;align-items:end;">
+        <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
+        <input type="number" id="mInv1" placeholder="precio invalida">
+        <select id="mInv1Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
+        <input type="number" id="mInv2" placeholder="precio invalida 2">
+        <select id="mInv2Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
+        <input type="text" id="mInvNote" placeholder="nota breve de invalidacion" style="grid-column:1/-1;">
+      </div>
       <div style="margin-bottom:10px;"><label class="lbl">Fecha</label><input type="text" id="mDate"></div>
       <div><label class="lbl">Notas</label><textarea id="mNotes" placeholder="Contexto..."></textarea></div>
     </div>
@@ -956,11 +980,11 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      FIREBASE MODULE
      ═══════════════════════════════════════════════════════════════════════ -->
-<script type="module" src="./firebase.js?v=20260508"></script>
+<script type="module" src="./firebase.js?v=20260509"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260508b"></script>
+<script src="./app.js?v=20260509"></script>
 </body>
 </html>

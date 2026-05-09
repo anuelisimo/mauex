@@ -163,9 +163,16 @@ window.showPage = page => {
       const p = G.getPrice ? G.getPrice(sym, t.dir) : null;
       if (p == null) {
         // Quick REST fetch
-        fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`)
+        const useKucoin = (t.exchange||'').toUpperCase() === 'KUCOIN' || sym === 'XMR';
+        const url = useKucoin
+          ? `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`
+          : `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`;
+        (useKucoin && window.proxyFetch ? window.proxyFetch(url) : fetch(url))
           .then(r=>r.json())
-          .then(d=>{ if(d.price && window.G) { window.G.prices[sym]={spot:parseFloat(d.price)}; renderPositions(); } })
+          .then(d=>{
+            const px = useKucoin ? Number(d?.data?.price || 0) : Number(d?.price || 0);
+            if(px && window.G) { window.G.prices[sym]={...(window.G.prices[sym]||{}), spot:px}; renderPositions(); }
+          })
           .catch(()=>{});
       }
     });
@@ -284,6 +291,7 @@ window.compute = () => {
   const tp1   = parseFloat(document.getElementById('cTP1').value)||0;
   const tp2   = parseFloat(document.getElementById('cTP2').value)||0;
   const tp3   = parseFloat(document.getElementById('cTP3').value)||0;
+  const calcInvs = readInvalidationFields('c');
   const tp1pct= (parseFloat(document.getElementById('cTP1pct').value)||33)/100;
   const tp2pct= (parseFloat(document.getElementById('cTP2pct').value)||33)/100;
   const tp3pct= (parseFloat(document.getElementById('cTP3pct').value)||34)/100;
@@ -366,13 +374,14 @@ window.compute = () => {
     </div>`).join('')}` : '';
 
   // Price bar
-  const all=[entry,...(hasSL?[sl]:[]),...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[])].filter(v=>v>0);
+  const all=[entry,...(hasSL?[sl]:[]),...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[]),...calcInvs.map(x=>x.price)].filter(v=>v>0);
   const minP=Math.min(...all)*.985, maxP=Math.max(...all)*1.015, range=maxP-minP||1;
   const pct=v=>Math.min(98,Math.max(2,((v-minP)/range*100))).toFixed(2);
   const pts=[{v:entry,l:'Entry',c:'var(--t1)'},{v:sl,l:'SL',c:'var(--red)'},
     ...(tp1?[{v:tp1,l:'TP1',c:'var(--accent)'}]:[]),
     ...(tp2?[{v:tp2,l:'TP2',c:'var(--accent)'}]:[]),
     ...(tp3?[{v:tp3,l:'TP3',c:'var(--accent)'}]:[]),
+    ...calcInvs.map((x,i)=>({v:x.price,l:x.label||`Inv ${i+1}`,c:'#38bdf8'})),
     ...(!sp&&liq?[{v:liq,l:'Liq',c:'var(--amber)'}]:[])];
   // Build gradient TP zones: each zone gets progressively more opaque green
   const tpZones = [
@@ -906,6 +915,30 @@ function drawAssetsChart(all) {
 }
 
 // ── Watchlist ──────────────────────────────────────────────────────────────
+function readInvalidationFields(prefix) {
+  const note = document.getElementById(prefix+'InvNote')?.value?.trim() || '';
+  return [1,2].map(i => {
+    const price = parseFloat(document.getElementById(prefix+'Inv'+i)?.value) || 0;
+    const side = document.getElementById(prefix+'Inv'+i+'Side')?.value || 'up';
+    return price > 0 ? { key:'inv'+i, label:'Inv '+i, price, side, note } : null;
+  }).filter(Boolean);
+}
+
+function tradeInvalidations(t) {
+  const list = Array.isArray(t?.invalidations) ? t.invalidations : [];
+  return list.map((x,i) => ({
+    key: x.key || 'inv'+(i+1),
+    label: x.label || 'Inv '+(i+1),
+    price: Number(x.price || 0),
+    side: x.side === 'down' ? 'down' : 'up',
+    note: x.note || '',
+  })).filter(x => x.price > 0).slice(0, 2);
+}
+
+function invalidationHit(inv, price) {
+  return inv.side === 'down' ? price <= inv.price : price >= inv.price;
+}
+
 function buildPriceBar(t, currentPrice) {
   if (!t?.entry) return '';
   const dir   = t.dir || 'long';
@@ -916,9 +949,10 @@ function buildPriceBar(t, currentPrice) {
   const tp2   = t.tp2  || null;
   const tp3   = t.tp3  || null;
   const cur   = currentPrice || null;
+  const invs  = tradeInvalidations(t);
 
   // All price points for range calculation
-  const allPrices = [entry, sl, liq, tp1, tp2, tp3, cur].filter(p => p && p > 0);
+  const allPrices = [entry, sl, liq, tp1, tp2, tp3, cur, ...invs.map(x=>x.price)].filter(p => p && p > 0);
   if (allPrices.length < 2) return '';
   let minP = Math.min(...allPrices) * 0.998;
   let maxP = Math.max(...allPrices) * 1.002;
@@ -938,6 +972,7 @@ function buildPriceBar(t, currentPrice) {
     ...(tp1 ? [{v:tp1, c:'#4ade80', l:'TP1', w:1}] : []),
     ...(tp2 ? [{v:tp2, c:'#22c55e', l:'TP2', w:1}] : []),
     ...(tp3 ? [{v:tp3, c:'#16a34a', l:'TP3', w:1}] : []),
+    ...invs.map((x,i)=>({v:x.price, c:'#38bdf8', l:x.label || `Inv ${i+1}`, w:1})),
     ...(cur ? [{v:cur, c:'#e040fb', l:'', w:3, isCur:true}] : []),
   ];
 
@@ -1091,6 +1126,7 @@ function buildPriceBar(t, currentPrice) {
     sl&&!isBreakeven ? dotHtml(pctN(sl), '#e05252', 11) : '',
     cur    ? dotHtml(pctN(cur),   '#e040fb', 14, 'box-shadow:0 0 10px rgba(224,64,251,0.7);') : '',
     entry  ? dotHtml(pctN(entry), '#ffffff', 11) : '',
+    ...invs.map(x => dotHtml(pctN(x.price), '#38bdf8', 10, 'box-shadow:0 0 8px rgba(56,189,248,0.45);')),
     tp1    ? dotHtml(pctN(tp1),   '#4ade80', 10) : '',
     tp2    ? dotHtml(pctN(tp2),   '#22c55e', 10) : '',
     tp3    ? dotHtml(pctN(tp3),   '#16a34a', 10) : '',
@@ -1200,6 +1236,7 @@ function renderWatchlist() {
     const wLiq = t.liquidation || (lev>1&&t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrW) : t.entry/(1+1/lev-mmrW)) : null);
     const fakeT = {...t, liquidation: t.liquidation||wLiq};
     const isMin = !!cardStates[t.id];
+    const invalidAlert = getInvalidationAlert(t, currentPrice);
     const dirColor  = t.dir==='short' ? '#e05252' : '#22c55e';
     const dirBg     = t.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
     const dirBorder = t.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
@@ -1222,6 +1259,7 @@ function renderWatchlist() {
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
             ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+            ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
             ${currentPrice&&distToEntry!=null?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry>=0?'▲':'▼'} ${Math.abs(distToEntry).toFixed(2)}% al entry</span>`:''}
           </div>
         </div>
@@ -1235,13 +1273,13 @@ function renderWatchlist() {
       </div>`;
 
     if (isMin) {
-      return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
+      return `<div class="${invalidAlert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
         ${header}
         ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
+    return `<div class="${invalidAlert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
       ${header}
 
       ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
@@ -1373,9 +1411,10 @@ function cleanAutoCloseNotes(notes) {
 }
 async function syncLocalAlertsToCloud() {
   const local = getAlerts();
-  const trackable = (window.G?.trades?.()||[]).filter(t => t.status === 'active' || t.status === 'pending');
+  const trackable = (window.G?.trades?.()||[]).filter(t => t.status === 'active' || t.status === 'pending' || t.status === 'watchlist');
   for (const t of trackable) {
-    const levels = t.status === 'pending' ? ['entry'] : ['sl','tp1','tp2','tp3'];
+    const invLevels = tradeInvalidations(t).map(x => x.key);
+    const levels = t.status === 'pending' ? ['entry', ...invLevels] : ['sl','tp1','tp2','tp3', ...invLevels];
     for (const level of levels) {
       if (!local[t.id]?.[level] || cloudAlertOf(t.id, level)) continue;
       const payload = alertPayload(level, { hitAt: typeof local[t.id][level] === 'string' ? local[t.id][level] : new Date().toISOString(), source:'local_migration' });
@@ -1388,15 +1427,34 @@ async function syncLocalAlertsToCloud() {
 function alertBadge(level, blinkClass) {
   const isSL = level === 'sl';
   const isEntry = level === 'entry';
-  const colors = { sl:'#e05252', entry:'#f59e0b', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
+  const isInv = /^inv\d+$/.test(level);
+  const colors = { sl:'#e05252', entry:'#f59e0b', inv1:'#38bdf8', inv2:'#38bdf8', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
   const color  = colors[level] || '#4ade80';
   const icon   = isSL
     ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/></svg>`
     : isEntry
     ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="${color}" stroke-width="2"/><circle cx="6" cy="6" r="1.3" fill="${color}"/></svg>`
+    : isInv
+    ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 1.5L10.5 10H1.5L6 1.5Z" stroke="${color}" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 4.4V6.8" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="8.6" r=".7" fill="${color}"/></svg>`
     : `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9.5 10.5,2" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const label  = isEntry ? 'ENTRY TOCADO' : level.toUpperCase();
+  const label  = isEntry ? 'ENTRY TOCADO' : isInv ? 'INVALIDACION' : level.toUpperCase();
   return `<span class="${blinkClass}" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:${color}22;color:${color};">${icon}${label}</span>`;
+}
+
+function getInvalidationAlert(t, price) {
+  const hitBadges = [];
+  tradeInvalidations(t).forEach(inv => {
+    const key = inv.key || 'inv1';
+    if (hasAlert(t.id, key)) {
+      hitBadges.push(alertBadge(key, 'badge-alert-slow'));
+      return;
+    }
+    if (price && invalidationHit(inv, price)) {
+      setAlert(t.id, key, { price, source:'live' });
+      hitBadges.push(alertBadge(key, 'badge-alert-slow'));
+    }
+  });
+  return { cardClass: hitBadges.length ? 'hit-invalidation' : '', badges: hitBadges.join('') };
 }
 
 // Get proximity/hit alert info for a position
@@ -1406,6 +1464,8 @@ function getPositionAlert(t, price) {
   const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
   const badgeFor = level => alertBadge(level, isLevelConfirmed(t, level, closedParts) ? '' : 'badge-alert-slow');
   const hitBadges = [];
+  const invAlert = getInvalidationAlert(t, price);
+  if (invAlert.badges) hitBadges.push(invAlert.badges);
 
   ['sl','tp1','tp2','tp3'].forEach(level => {
     if (hasAlert(t.id, level)) hitBadges.push(badgeFor(level));
@@ -1422,7 +1482,8 @@ function getPositionAlert(t, price) {
     }
   });
 
-  const cardClass = hasAlert(t.id,'sl') ? 'hit-sl' : hitBadges.length ? 'hit-tp' : '';
+  const hasInv = tradeInvalidations(t).some(inv => hasAlert(t.id, inv.key || 'inv1'));
+  const cardClass = hasAlert(t.id,'sl') ? 'hit-sl' : hasInv ? 'hit-invalidation' : hitBadges.length ? 'hit-tp' : '';
   return { cardClass, badges: hitBadges.join('') };
 }
 
@@ -1457,7 +1518,12 @@ async function fetchLevelCandles(t, start, end) {
 }
 function candleHitForLevel(t, level, value, candles) {
   const isLong = (t.dir||'long') !== 'short';
+  const inv = /^inv\d+$/.test(level) ? tradeInvalidations(t).find(x => x.key === level) : null;
   for (const c of candles) {
+    if (inv) {
+      if (inv.side === 'down' ? c.low <= value : c.high >= value) return { hitAt:new Date(c.time).toISOString(), price:value };
+      continue;
+    }
     if (level === 'sl' || level === 'entry') {
       if (isLong ? c.low <= value : c.high >= value) return { hitAt:new Date(c.time).toISOString(), price:value };
     } else if (isLong ? c.high >= value : c.low <= value) {
@@ -1468,18 +1534,20 @@ function candleHitForLevel(t, level, value, candles) {
 }
 window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
   await syncLocalAlertsToCloud();
-  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active' && t.entry && (t.sl || t.tp1 || t.tp2 || t.tp3));
+  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active' && t.entry && (t.sl || t.tp1 || t.tp2 || t.tp3 || tradeInvalidations(t).length));
   const pendingOrders = (window.G?.trades?.()||[]).filter(t => t.status === 'pending' && t.entry && !hasAlert(t.id, 'entry'));
-  const trackable = [...active, ...pendingOrders];
+  const watchInvalidations = (window.G?.trades?.()||[]).filter(t => t.status === 'watchlist' && t.entry && tradeInvalidations(t).length);
+  const trackable = [...active, ...pendingOrders, ...watchInvalidations];
   if (!trackable.length || !window._fb?.updateDoc) return;
   let touched = 0;
   let touchedEntries = 0;
   for (const t of trackable) {
     const {start, end} = getLevelCheckWindow(t);
     if (end - start < 60 * 1000) continue;
+    const invLevels = tradeInvalidations(t).map(inv => [inv.key, inv.price]);
     const pendingLevels = t.status === 'pending'
-      ? [['entry', t.entry]].filter(([level,value]) => value && !hasAlert(t.id, level))
-      : [['sl', t.sl], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3]].filter(([level,value]) => value && !hasAlert(t.id, level));
+      ? [['entry', t.entry], ...invLevels].filter(([level,value]) => value && !hasAlert(t.id, level))
+      : [['sl', t.sl], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3], ...invLevels].filter(([level,value]) => value && !hasAlert(t.id, level));
     if (!pendingLevels.length) continue;
     try {
       const candles = await fetchLevelCandles(t, start, end);
@@ -1578,7 +1646,7 @@ function renderPositions() {
     const mmrPos = 0.005;
     const lev    = t.leverage||1;
     const liq    = lev > 1 && t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrPos) : t.entry/(1+1/lev-mmrPos)) : null;
-    const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq };
+    const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq, invalidations:t.invalidations };
     const slDistPct = t.sl&&t.entry ? Math.abs(t.sl-t.entry)/t.entry*100 : null;
     const riskUsd   = t.risk || (t.posSize&&slDistPct ? t.posSize*slDistPct/100 : null);
     const priceChg  = price&&t.entry ? (price-t.entry)/t.entry*100*sign : null;
@@ -2279,7 +2347,7 @@ window.openEditTrade = id => {
   } else {
     // Manual trade: all fields editable
     document.getElementById('editTradeModal').querySelector('.modal-title').textContent = '✎ Editar trade';
-    ['eTicker','eExchange','eLev','eEntry','eSL','eLiquidation','eRisk','eTP1','eTP1pct','eTP2','eTP2pct','eTP3','eTP3pct'].forEach(id=>{
+    ['eTicker','eExchange','eLev','eEntry','eSL','eLiquidation','eRisk','eTP1','eTP1pct','eTP2','eTP2pct','eTP3','eTP3pct','eInv1','eInv1Side','eInv2','eInv2Side','eInvNote'].forEach(id=>{
       const el=document.getElementById(id);
       if(el){ el.disabled=false; el.style.opacity=''; }
     });
@@ -2301,11 +2369,36 @@ window.openEditTrade = id => {
     document.getElementById('eTP2pct').value   = t?.tp2pct||33;
     document.getElementById('eTP3').value      = t?.tp3||'';
     document.getElementById('eTP3pct').value   = t?.tp3pct||34;
+    const invs = tradeInvalidations(t);
+    document.getElementById('eInv1').value = invs[0]?.price || '';
+    document.getElementById('eInv1Side').value = invs[0]?.side || 'up';
+    document.getElementById('eInv2').value = invs[1]?.price || '';
+    document.getElementById('eInv2Side').value = invs[1]?.side || 'up';
+    document.getElementById('eInvNote').value = invs.find(x=>x.note)?.note || '';
 
     document.querySelectorAll('[data-ed]').forEach(b=>{
       b.className='dir-btn';
       if(b.dataset.ed===editDir) b.classList.add(editDir==='long'?'al':editDir==='short'?'as':'asp');
     });
+  }
+
+  const finalInvs = tradeInvalidations(t);
+  if (document.getElementById('eInv1')) {
+    document.getElementById('eInv1').disabled = false;
+    document.getElementById('eInv1Side').disabled = false;
+    document.getElementById('eInv2').disabled = false;
+    document.getElementById('eInv2Side').disabled = false;
+    document.getElementById('eInvNote').disabled = false;
+    document.getElementById('eInv1').style.opacity = '';
+    document.getElementById('eInv1Side').style.opacity = '';
+    document.getElementById('eInv2').style.opacity = '';
+    document.getElementById('eInv2Side').style.opacity = '';
+    document.getElementById('eInvNote').style.opacity = '';
+    document.getElementById('eInv1').value = finalInvs[0]?.price || '';
+    document.getElementById('eInv1Side').value = finalInvs[0]?.side || 'up';
+    document.getElementById('eInv2').value = finalInvs[1]?.price || '';
+    document.getElementById('eInv2Side').value = finalInvs[1]?.side || 'up';
+    document.getElementById('eInvNote').value = finalInvs.find(x=>x.note)?.note || '';
   }
 
   openModal('editTradeModal');
@@ -2320,14 +2413,15 @@ window.saveEditTrade = async () => {
   const traderName = traders.find(tr=>tr.id===traderId)?.name||'';
   const notes      = document.getElementById('eNotes').value;
   const liquidationOverride = parseFloat(document.getElementById('eLiquidation').value)||0;
+  const invalidations = readInvalidationFields('e');
 
   // Exchange trade: only update trader, notes and liquidation override
   if(window._editFromExchange) {
     try {
-      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), { traderId, traderName, notes, liquidation: liquidationOverride || null, updatedAt:new Date().toISOString() });
+      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), { traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, updatedAt:new Date().toISOString() });
       // Also update local exchange position
       const pos = exchangePositions.find(p=>p.exchangeId===id||p.id===id);
-      if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; pos.liquidation=liquidationOverride || null; }
+      if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; pos.liquidation=liquidationOverride || null; pos.invalidations=invalidations; }
       await window._loadTrades();
       closeModal('editTradeModal');
       renderPositions();
@@ -2369,7 +2463,7 @@ window.saveEditTrade = async () => {
       entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize,
       ...(eDate ? { createdAt: eDate+'T00:00:00.000Z' } : {}),
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
-      notes, traderId, traderName,
+      notes, traderId, traderName, invalidations,
       updatedAt: new Date().toISOString(),
     });
     await window._loadTrades();
@@ -2395,9 +2489,10 @@ window.openManualTrade = () => {
   entryRowId = 0;
   document.getElementById('entryRows').innerHTML = '';
   document.getElementById('mAvgLabel').textContent = '';
-  ['mTicker','mExchange','mSL','mTP1','mTP2','mTP3','mNotes'].forEach(id=>{
+  ['mTicker','mExchange','mSL','mTP1','mTP2','mTP3','mInv1','mInv2','mInvNote','mNotes'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
+  ['mInv1Side','mInv2Side'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='up'; });
   document.getElementById('mLev').value = '1';
   document.getElementById('mDate').value = new Date().toISOString().split('T')[0];
   // Reset direction buttons
@@ -4632,14 +4727,15 @@ function renderOrders() {
     const tp1 = o.tp1 || null;
     const tp2 = o.tp2 || null;
     const tp3 = o.tp3 || null;
-    const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir, liquidation: liqApprox };
+    const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir, liquidation: liqApprox, invalidations:o.invalidations };
     const distToOrder = currentPrice&&entryPrice ? fmtP((entryPrice-currentPrice)/currentPrice*100) : '—';
     const slDistPct = sl&&entryPrice ? Math.abs(sl-entryPrice)/entryPrice*100 : null;
     const riskUsd = totalSize&&slDistPct ? totalSize*slDistPct/100 : null;
     const tpList = [{l:'TP1',v:tp1,pct:o.tp1pct||33},{l:'TP2',v:tp2,pct:o.tp2pct||33},{l:'TP3',v:tp3,pct:o.tp3pct||34}].filter(x=>x.v);
     const entryTouched = hasAlert(o.id, 'entry');
     const entryBadge = entryTouched ? alertBadge('entry', 'badge-alert-slow') : '';
-    const orderCardClass = entryTouched ? 'order-card hit-entry' : 'order-card';
+    const invalidAlert = getInvalidationAlert(o, currentPrice);
+    const orderCardClass = entryTouched ? 'order-card hit-entry' : invalidAlert.cardClass ? 'order-card hit-invalidation' : 'order-card';
     const orderBorderColor = entryTouched ? 'var(--accent)' : 'var(--amber)';
 
     const isMin = !!cardStates[o.exchangeId];
@@ -4666,7 +4762,9 @@ function renderOrders() {
             <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} ↗</a>
             <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);">PENDIENTE</span>
+            ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${o.traderName}</span>`:''}
             ${entryBadge}
+            ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
             ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
           </div>
         </div>

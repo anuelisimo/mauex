@@ -179,6 +179,7 @@ window.saveTrade = async status => {
   const traderId   = document.getElementById('cTrader').value;
   const traderName = traders.find(t=>t.id===traderId)?.name || '';
   const notes  = document.getElementById('cNotes').value;
+  const invalidations = readInvalidationFields('c');
 
   if (!ticker || !entry) {
     toast('Completá ticker y entry como mínimo.','error'); _savingTrade = false; return;
@@ -195,7 +196,7 @@ window.saveTrade = async status => {
       dir: calcState.dir,
       exchange: calcState.dir === 'spot' ? 'spot' : calcState.ex,
       leverage: lev,
-      traderId, traderName, notes, status,
+      traderId, traderName, notes, invalidations, status,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -395,7 +396,7 @@ const CLOSE_ERROR_GROUPS = [
   { title:'Errores de entrada', tags:['FOMO','Entre tarde','Entre sin confirmacion','Mala lectura de contexto','Trade sin tesis','Persegui precio','Entre contra tendencia'] },
   { title:'Errores de gestion', tags:['Cerre temprano','No tome parcial','Movi SL mal','No respete SL','Deje volver ganancia','No movi SL a BE','Movi SL a BE demasiado pronto'] },
   { title:'Riesgo / disciplina', tags:['Sobreapalancamiento','Tamano excesivo','Risk mayor al plan','Revenge trade','Sobreoperacion','No estaba atento'] },
-  { title:'Salida', tags:['Salida tardia','Salida impulsiva','Cierre emocional','Cierre tecnico correcto'] },
+  { title:'Salida', tags:['Salida tardia','Salida impulsiva','Cierre emocional','Cierre tecnico correcto','Segui despues de invalidacion'] },
 ];
 function plannedRForTrade(t) {
   const entry = Number(t?.entry) || 0;
@@ -413,6 +414,7 @@ function suggestedCloseTags(t) {
   else if (lev > 10) tags.push('Leverage alto');
   const rr = plannedRForTrade(t);
   if (Number(t?.sl) && ['tp1','tp2','tp3'].some(k => Number(t?.[k])) && rr && rr < 1) tags.push('RR flojo');
+  if (tradeInvalidations(t).some(inv => t?.levelAlerts?.[inv.key])) tags.push('Tesis invalidada');
   if (!String(t?.notes || '').trim()) tags.push('Sin notas');
   return [...new Set(tags)];
 }
@@ -765,6 +767,7 @@ window.saveManualTrade = async () => {
   const slDist    = sl ? Math.abs(sl-avgEntry)/avgEntry : 0.05;
   const risk      = Math.round(totalSize*slDist*100)/100;
   const date      = document.getElementById('mDate').value;
+  const invalidations = readInvalidationFields('m');
   try {
     await addDoc(collection(db,'trades'), {
       userId: CU.uid, ticker,
@@ -775,6 +778,7 @@ window.saveManualTrade = async () => {
       tp2: parseFloat(document.getElementById('mTP2').value)||0,
       tp3: parseFloat(document.getElementById('mTP3').value)||0,
       notes: document.getElementById('mNotes').value,
+      invalidations,
       status: 'active',
       createdAt: date ? date+'T00:00:00.000Z' : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -879,6 +883,7 @@ function parseCSV(text) {
 const prices = {};  // prices[sym] = { spot: n, futures: n }
 let wsMap = {};
 let pollTimer = null;
+let kucoinPollTimer = null;
 
 const CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
@@ -891,6 +896,30 @@ function isCrypto(ticker, exchange) {
   if (exchange && CRYPTO_EXCHANGES.includes((exchange||'').toUpperCase())) return true;
   const sym = (ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
   return CRYPTOS.includes(sym) || (ticker||'').endsWith('USDT') || (ticker||'').endsWith('BUSD');
+}
+
+function readInvalidationFields(prefix) {
+  const note = document.getElementById(prefix+'InvNote')?.value?.trim() || '';
+  return [1,2].map(i => {
+    const price = parseFloat(document.getElementById(prefix+'Inv'+i)?.value) || 0;
+    const side = document.getElementById(prefix+'Inv'+i+'Side')?.value || 'up';
+    return price > 0 ? { key:'inv'+i, label:'Inv '+i, price, side, note } : null;
+  }).filter(Boolean);
+}
+
+function tradeInvalidations(t) {
+  const list = Array.isArray(t?.invalidations) ? t.invalidations : [];
+  return list.map((x,i) => ({
+    key: x.key || 'inv'+(i+1),
+    label: x.label || 'Inv '+(i+1),
+    price: Number(x.price || 0),
+    side: x.side === 'down' ? 'down' : 'up',
+    note: x.note || '',
+  })).filter(x => x.price > 0).slice(0, 2);
+}
+
+function invalidationHit(inv, price) {
+  return inv.side === 'down' ? price <= inv.price : price >= inv.price;
 }
 
 function setPrice(sym, type, price) {
@@ -953,6 +982,19 @@ function checkPriceAlerts(sym, price) {
     const tp3   = t.tp3 || 0;
     const dir   = t.dir || 'long';
     const isLong = dir === 'long' || dir === 'spot';
+
+    if (['watchlist','pending','active'].includes(t.status)) {
+      tradeInvalidations(t).forEach(inv => {
+        const key = _alertKey(t.id, inv.key + '_hit');
+        const alreadyMarked = !!(t.levelAlerts?.[inv.key] || window.hasAlert?.(t.id, inv.key));
+        if (!alreadyMarked && invalidationHit(inv, price) && _shouldAlert(key, false)) {
+          _recordAlert(key, false);
+          window.setAlert?.(t.id, inv.key, { price, source:'live' });
+          _notify(`${t.ticker} invalidacion tocada`, `Precio $${price.toFixed(4)} toco ${inv.label} $${inv.price}`, false);
+          try { renderWatchlist?.(); renderOrders?.(); renderPositions?.(); } catch(e) {}
+        }
+      });
+    }
 
     // ── ORDENES: precio toco el entry — UNA VEZ ──
     if (t.status === 'pending' && entry) {
@@ -1097,6 +1139,7 @@ function startLivePrices() {
   Object.values(wsMap).forEach(ws=>{ try{ws.close();}catch(e){} });
   wsMap = {};
   if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
+  if (kucoinPollTimer) { clearInterval(kucoinPollTimer); kucoinPollTimer=null; }
 
   if (cryptoSyms.length) {
     // Binance SPOT
@@ -1168,6 +1211,27 @@ function startLivePrices() {
       };
       wsMap['bybit-fut'] = ws;
     } catch(e){}
+  }
+
+  const kucoinSpotSyms = [...new Set(relevant
+    .filter(t => (t.exchange||'').toUpperCase() === 'KUCOIN' || (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase() === 'XMR')
+    .map(t => t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase())
+    .filter(Boolean))];
+
+  if (kucoinSpotSyms.length) {
+    const pollKucoin = async () => {
+      for (const sym of kucoinSpotSyms) {
+        try {
+          const url = `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`;
+          const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+          const d = await r.json();
+          const p = Number(d?.data?.price || 0);
+          if (p > 0) setPrice(sym, 'spot', p);
+        } catch(e) {}
+      }
+    };
+    pollKucoin();
+    kucoinPollTimer = setInterval(pollKucoin, 30000);
   }
 
   // Stocks/ETFs - poll every 30s
