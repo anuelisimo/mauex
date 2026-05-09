@@ -169,8 +169,22 @@ window.showPage = page => {
           : `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`;
         (useKucoin && window.proxyFetch ? window.proxyFetch(url) : fetch(url))
           .then(r=>r.json())
-          .then(d=>{
-            const px = useKucoin ? Number(d?.data?.price || 0) : Number(d?.price || 0);
+          .then(async d=>{
+            let px = useKucoin ? Number(d?.data?.price || 0) : Number(d?.price || 0);
+            if (!px && sym === 'XMR') {
+              try {
+                const cg = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
+                const cd = await cg.json();
+                px = Number(cd?.monero?.usd || 0);
+              } catch(e) {}
+            }
+            if (!px && sym === 'XMR') {
+              try {
+                const kr = await fetch('https://api.kraken.com/0/public/Ticker?pair=XMRUSD');
+                const kd = await kr.json();
+                px = Number(kd?.result?.XXMRZUSD?.c?.[0] || kd?.result?.XMRUSD?.c?.[0] || 0);
+              } catch(e) {}
+            }
             if(px && window.G) { window.G.prices[sym]={...(window.G.prices[sym]||{}), spot:px}; renderPositions(); }
           })
           .catch(()=>{});
@@ -582,7 +596,8 @@ const openRiskOf = t => {
   const entry = Number(t?.entry) || 0;
   const sl = Number(t?.sl) || 0;
   const size = Number(t?.posSize) || 0;
-  if (!entry || !sl || !size) return 0;
+  if (!size) return 0;
+  if (!entry || !sl) return (t?.dir === 'spot') ? size : size / (Number(t?.leverage) || 1);
   return Math.abs((entry - sl) / entry * size);
 };
 const dashStatsOf = (trades) => {
@@ -623,7 +638,7 @@ const dashMetricInfo = {
   'Avg win / loss':'Ganancia promedio de los trades ganadores comparada contra perdida promedio de los perdedores.',
   'R promedio':'Resultado promedio medido contra el riesgo definido por el SL. Solo cuenta trades con SL cargado.',
   'Sharpe simple':'Relacion simple entre retorno promedio y variabilidad de resultados. Cuanto mas alto, mas consistente.',
-  'Riesgo abierto':'Suma del capital en riesgo de las posiciones abiertas segun entry, SL y tamano abierto. Las posiciones sin SL no pueden sumarse con precision.',
+  'Riesgo abierto':'Suma del capital en riesgo de las posiciones abiertas. Si una posicion no tiene SL, MauEX toma todo el margen como capital en riesgo.',
   'Trades cerrados':'Cantidad de operaciones cerradas en el historial.',
   'PnL este mes':'Resultado neto de los trades cerrados durante el mes actual.',
   'Mejor trade':'Trade cerrado con mayor ganancia en dolares.',
@@ -1642,10 +1657,25 @@ function renderPositions() {
 
   const showZombies = window._showZombies || false;
   const allActive   = G.trades().filter(t=>t.status==='active'||t.status==='zombie');
+  const activeOnly = allActive.filter(t=>t.status==='active');
+  const pendingCount = G.trades().filter(t=>t.status==='pending').length;
   const manualActive = showZombies ? allActive : allActive.filter(t=>t.status==='active');
   const zombieCount = allActive.filter(t=>t.status==='zombie').length;
+  const summaryEl = document.getElementById('posSummary');
+  const summaryRisk = activeOnly.reduce((s,t)=>s+openRiskOf(t),0);
+  let summaryPnl = 0, missingPrices = 0;
+  activeOnly.forEach(t => {
+    const price = G.getPrice(t.ticker, t.dir);
+    if (!price) { missingPrices++; return; }
+    const sign = (t.dir==='short') ? -1 : 1;
+    summaryPnl += Math.round((t.posSize/t.entry)*(price-t.entry)*sign*100)/100;
+  });
+  if (summaryEl) {
+    summaryEl.innerHTML = `${activeOnly.length} pos Â· ${pendingCount} ord Â· <span class="${summaryPnl>=0?'pnl-pos':'pnl-neg'}">${summaryPnl>=0?'+':'-'}$${fmt(Math.abs(summaryPnl))}</span>${missingPrices?` <span style="color:var(--amber);">(${missingPrices} sin precio)</span>`:''} Â· riesgo <span style="color:var(--red);">$${fmt(summaryRisk)}</span>`;
+  }
 
   if (!allActive.filter(t=>t.status==='active').length && !showZombies) {
+    if (summaryEl) summaryEl.textContent = `${pendingCount} ord Â· sin posiciones`;
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
       <div class="empty-text">No hay posiciones abiertas</div>

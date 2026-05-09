@@ -1219,15 +1219,34 @@ function startLivePrices() {
     .filter(Boolean))];
 
   if (kucoinSpotSyms.length) {
+    const fallbackUsdPrice = async (sym) => {
+      if (sym === 'XMR') {
+        try {
+          const cg = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
+          const cd = await cg.json();
+          const cp = Number(cd?.monero?.usd || 0);
+          if (cp > 0) return cp;
+        } catch(e) {}
+        try {
+          const kr = await fetch('https://api.kraken.com/0/public/Ticker?pair=XMRUSD');
+          const kd = await kr.json();
+          const kp = Number(kd?.result?.XXMRZUSD?.c?.[0] || kd?.result?.XMRUSD?.c?.[0] || 0);
+          if (kp > 0) return kp;
+        } catch(e) {}
+      }
+      return 0;
+    };
     const pollKucoin = async () => {
       for (const sym of kucoinSpotSyms) {
+        let p = 0;
         try {
           const url = `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`;
           const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
           const d = await r.json();
-          const p = Number(d?.data?.price || 0);
-          if (p > 0) setPrice(sym, 'spot', p);
+          p = Number(d?.data?.price || 0);
         } catch(e) {}
+        if (!p) p = await fallbackUsdPrice(sym);
+        if (p > 0) setPrice(sym, 'spot', p);
       }
     };
     pollKucoin();
