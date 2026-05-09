@@ -578,6 +578,13 @@ const dashRiskOf = t => {
   if (!entry || !sl || !size) return 0;
   return Math.abs((entry - sl) / entry * size);
 };
+const openRiskOf = t => {
+  const entry = Number(t?.entry) || 0;
+  const sl = Number(t?.sl) || 0;
+  const size = Number(t?.posSize) || 0;
+  if (!entry || !sl || !size) return 0;
+  return Math.abs((entry - sl) / entry * size);
+};
 const dashStatsOf = (trades) => {
   const wins = trades.filter(t => dashPnl(t) > 0);
   const losses = trades.filter(t => dashPnl(t) < 0);
@@ -616,6 +623,7 @@ const dashMetricInfo = {
   'Avg win / loss':'Ganancia promedio de los trades ganadores comparada contra perdida promedio de los perdedores.',
   'R promedio':'Resultado promedio medido contra el riesgo definido por el SL. Solo cuenta trades con SL cargado.',
   'Sharpe simple':'Relacion simple entre retorno promedio y variabilidad de resultados. Cuanto mas alto, mas consistente.',
+  'Riesgo abierto':'Suma del capital en riesgo de las posiciones abiertas segun entry, SL y tamano abierto. Las posiciones sin SL no pueden sumarse con precision.',
   'Trades cerrados':'Cantidad de operaciones cerradas en el historial.',
   'PnL este mes':'Resultado neto de los trades cerrados durante el mes actual.',
   'Mejor trade':'Trade cerrado con mayor ganancia en dolares.',
@@ -822,6 +830,8 @@ function renderDashboard() {
   const all    = G.trades();
   const closed = all.filter(t=>t.status==='closed');
   const active = all.filter(t=>t.status==='active');
+  const activeRisk = active.reduce((s,t)=>s+openRiskOf(t),0);
+  const activeNoSl = active.filter(t=>!Number(t.sl)).length;
   const wins   = closed.filter(t=>(t.pnl||0)>0);
   const totPnl = closed.reduce((s,t)=>s+(t.pnl||0),0);
   const now    = new Date();
@@ -834,6 +844,7 @@ function renderDashboard() {
     {l:'Trades cerrados',v:String(closed.length),sub:`${active.length} activos`},
     {l:'Win rate',v:closed.length?Math.round(wins.length/closed.length*100)+'%':'—',cls:closed.length&&wins.length/closed.length>=.5?'green':'red'},
     {l:'PnL total',v:(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl)),cls:totPnl>=0?'green':'red'},
+    {l:'Riesgo abierto',v:'$'+fmt(activeRisk),cls:activeRisk?'red':'',sub:activeNoSl?`${activeNoSl} sin SL`:'Posiciones activas'},
     {l:'PnL este mes',v:(mPnl>=0?'+':'')+'$'+fmt(Math.abs(mPnl)),cls:mPnl>=0?'green':'red'},
     {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'—',sub:best.ticker||'',cls:'green'},
     {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'—',sub:worst.ticker||'',cls:'red'},
@@ -863,10 +874,13 @@ function renderDashboard() {
   // Active positions mini-list with live PnL total
   let liveTot=0, hasPx=false;
   active.forEach(t=>{ const p=G.getPrice(t.ticker,t.dir); if(p==null) return; hasPx=true; liveTot+=Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100; });
+  const liveRisk = active.reduce((s,t)=>s+openRiskOf(t),0);
   const posHtml = active.length ? `
     ${hasPx?`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:4px;">
       <span style="font-size:9px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</span>
       <span style="font-family:var(--mono);font-size:14px;font-weight:600;" class="${liveTot>=0?'pnl-pos':'pnl-neg'}">${liveTot>=0?'+':'-'}$${fmt(Math.abs(liveTot))}</span>
+      <span style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-left:12px;">RIESGO</span>
+      <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red);">$${fmt(liveRisk)}</span>
     </div>`:''}
     ${active.slice(0,5).map(t=>{
     const p = G.getPrice(t.ticker, t.dir);
@@ -937,6 +951,29 @@ function tradeInvalidations(t) {
 
 function invalidationHit(inv, price) {
   return inv.side === 'down' ? price <= inv.price : price >= inv.price;
+}
+
+function invalidationSignature(inv) {
+  return inv ? [Number(inv.price)||0, inv.side || 'up', inv.note || ''].join('|') : '';
+}
+
+async function resetInvalidationAlertsIfChanged(id, before=[], after=[]) {
+  const byKey = list => Object.fromEntries((list||[]).map(x => [x.key, x]));
+  const oldMap = byKey(before);
+  const newMap = byKey(after);
+  for (const key of ['inv1','inv2']) {
+    if (invalidationSignature(oldMap[key]) !== invalidationSignature(newMap[key])) {
+      await clearAlertLevel(id, key);
+    }
+  }
+}
+
+function invalidationNotesHtml(t) {
+  const touched = tradeInvalidations(t).filter(inv => hasAlert(t.id, inv.key) && inv.note);
+  if (!touched.length) return '';
+  return `<div style="font-size:11px;color:#9bdcff;padding:6px 12px;background:rgba(56,189,248,0.08);border-bottom:0.5px solid rgba(56,189,248,0.25);font-family:var(--mono);">
+    ${touched.map(inv => `<div><strong>${dashSafe(inv.label)} tocada:</strong> ${dashSafe(inv.note)}</div>`).join('')}
+  </div>`;
 }
 
 function buildPriceBar(t, currentPrice) {
@@ -1288,7 +1325,7 @@ function renderWatchlist() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
           ${t.sl ? `
-            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDist?slDist.toFixed(1)+'% entry':''}</div>
           ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
         </div>
@@ -1327,6 +1364,7 @@ function renderWatchlist() {
       </div>` : ''}
 
       ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
+      ${invalidationNotesHtml(t)}
 
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
@@ -1385,6 +1423,25 @@ function setAlert(id, level, meta={}) {
 }
 window.setAlert = setAlert;
 function clearAlerts(id) { const a=getAlerts(); delete a[id]; localStorage.setItem(ALERT_KEY, JSON.stringify(a)); }
+async function clearAlertLevel(id, level) {
+  const a = getAlerts();
+  if (a[id]) {
+    delete a[id][level];
+    if (!Object.keys(a[id]).length) delete a[id];
+    localStorage.setItem(ALERT_KEY, JSON.stringify(a));
+  }
+  const t = tradeForAlert(id);
+  if (t?.levelAlerts) delete t.levelAlerts[level];
+  try {
+    if (window._fb?.updateDoc && window._fb?.deleteField) {
+      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+        ['levelAlerts.'+level]: window._fb.deleteField(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch(e) { console.warn('No pude limpiar alerta:', e.message); }
+}
+window.clearInvalidationAlert = (id, level='inv1') => clearAlertLevel(id, level);
 function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
 window.hasAlert = hasAlert;
 function levelClosureOf(t, level, closedParts) {
@@ -1615,11 +1672,20 @@ function renderPositions() {
     const sign = (t.dir==='short') ? -1 : 1;
     totalPnl += Math.round((t.posSize/t.entry)*(price-t.entry)*sign*100)/100;
   });
+  const totalRisk = sorted.filter(t=>t.status==='active').reduce((s,t)=>s+openRiskOf(t),0);
+  const noSlCount = sorted.filter(t=>t.status==='active' && !Number(t.sl)).length;
 
   const totalHtml = manualActive.length ? `
     <div class="live-pnl-total">
-      <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
-      <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
+      <div>
+        <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
+      </div>
+      <div style="padding-left:18px;border-left:0.5px solid var(--border2);">
+        <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">CAPITAL EN RIESGO</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--red);">$${fmt(totalRisk)}</div>
+        ${noSlCount?`<div style="font-size:10px;color:var(--amber);font-family:var(--mono);">${noSlCount} sin SL</div>`:''}
+      </div>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
         ${zombieCount?`<button class="btn sm" style="font-size:10px;" onclick="window._showZombies=!window._showZombies;renderPositions();">🧟 ${showZombies?'Ocultar':'Ver'} ${zombieCount} zombie${zombieCount>1?'s':''}</button>`:''}
       </div>
@@ -1713,7 +1779,7 @@ function renderPositions() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
           ${t.sl ? `
-            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
           ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
         </div>
@@ -1769,6 +1835,7 @@ function renderPositions() {
 ` : ''}
 
       ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
+      ${invalidationNotesHtml(t)}
 
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
@@ -2414,11 +2481,14 @@ window.saveEditTrade = async () => {
   const notes      = document.getElementById('eNotes').value;
   const liquidationOverride = parseFloat(document.getElementById('eLiquidation').value)||0;
   const invalidations = readInvalidationFields('e');
+  const existingBeforeEdit = (window.G?.trades()||[]).find(t=>t.id===id) || {};
+  const previousInvalidations = tradeInvalidations(existingBeforeEdit);
 
   // Exchange trade: only update trader, notes and liquidation override
   if(window._editFromExchange) {
     try {
       await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), { traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, updatedAt:new Date().toISOString() });
+      await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
       // Also update local exchange position
       const pos = exchangePositions.find(p=>p.exchangeId===id||p.id===id);
       if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; pos.liquidation=liquidationOverride || null; pos.invalidations=invalidations; }
@@ -2447,7 +2517,7 @@ window.saveEditTrade = async () => {
   const eDate = document.getElementById('eDate').value;
   if(!ticker||!entry){ toast('Completá ticker y entry como mínimo.','error'); return; }
 
-  const existingTrade = (window.G?.trades()||[]).find(t=>t.id===id) || {};
+  const existingTrade = existingBeforeEdit;
   const sizeEl = document.getElementById('eSize');
   const manualSize = parseFloat(sizeEl?.value)||0;
   const slDist = sl && entry ? Math.abs(sl-entry)/entry : 0;
@@ -2466,6 +2536,7 @@ window.saveEditTrade = async () => {
       notes, traderId, traderName, invalidations,
       updatedAt: new Date().toISOString(),
     });
+    await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
     await window._loadTrades();
     closeModal('editTradeModal');
     // Re-render current page

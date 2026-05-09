@@ -2,7 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword,
          signInWithEmailAndPassword, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc,
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, deleteField,
          doc, query, where, setDoc, getDoc }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -1273,7 +1273,7 @@ window.refreshPricesManual = async () => {
 };
 
 // Expose firebase internals for UI script
-window._fb = { addDoc, collection, db, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs, query, where };
+window._fb = { addDoc, collection, db, updateDoc, deleteDoc, deleteField, doc, setDoc, getDoc, getDocs, query, where };
 window._getCU = () => CU;
 window._loadTrades = loadTrades;
 window._loadAll = loadAll;
