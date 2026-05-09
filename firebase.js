@@ -734,10 +734,10 @@ window.deleteTrade = async id => {
     await deleteDoc(doc(db,'trades',id));
     await loadTrades();
     // Re-render current visible page
-    ['dashPage','watchPage','posPage','histPage'].forEach(pid => {
+    ['dashPage','watchPage','ordersPage','posPage','mapPage','histPage'].forEach(pid => {
       const el = document.getElementById(pid);
       if (el && el.style.display !== 'none') {
-        const fn = {dashPage:renderDashboard,watchPage:renderWatchlist,posPage:renderPositions,histPage:renderHistory}[pid];
+        const fn = {dashPage:renderDashboard,watchPage:renderWatchlist,ordersPage:renderOrders,posPage:renderPositions,mapPage:renderMap,histPage:renderHistory}[pid];
         if (fn) fn();
       }
     });
@@ -1115,6 +1115,8 @@ function updatePriceEl(sym) {
     el.textContent = (pnl>=0?'+':'-')+'$'+Math.abs(pnl).toLocaleString('en-US',{maximumFractionDigits:0});
     el.className = el.className.replace(/pnl-pos|pnl-neg/g,'').trim() + (pnl>=0?' pnl-pos':' pnl-neg');
   });
+  const mapPage = document.getElementById('mapPage');
+  if (mapPage && mapPage.style.display !== 'none' && typeof window.renderMap === 'function') window.renderMap();
 }
 
 function updateTimestamp() {

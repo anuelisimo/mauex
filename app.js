@@ -85,7 +85,7 @@ document.querySelectorAll('.modal-overlay').forEach(el =>
 // ── Navigation ─────────────────────────────────────────────────────────────
 const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
-  orders:'ordersPage', positions:'posPage', history:'histPage',
+  orders:'ordersPage', positions:'posPage', map:'mapPage', history:'histPage',
   traders:'tradPage', analysis:'analysisPage', settings:'settingsPage',
 };
 
@@ -133,6 +133,7 @@ window.showPage = page => {
     watchlist: renderWatchlist,
     orders:    renderOrders,
     positions: renderPositions,
+    map:       renderMap,
     history:   renderHistory,
     traders:   renderTraders,
   };
@@ -149,15 +150,15 @@ window.showPage = page => {
     loadBinanceSymbols();
     setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
   }
-  if (page === 'positions') {
+  if (page === 'positions' || page === 'map') {
     syncAllExchanges();
   }
 
   // When entering positions, do immediate REST price fetch for any missing prices
-  if (page === 'positions') {
+  if (page === 'positions' || page === 'map') {
     const G = window.G;
     if (!G) return;
-    G.trades().filter(t=>t.status==='active').forEach(t => {
+    G.trades().filter(t=>['active','pending','watchlist'].includes(t.status)).forEach(t => {
       const sym = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
       if (!sym || !window.startLivePrices) return;
       const p = G.getPrice ? G.getPrice(sym, t.dir) : null;
@@ -185,7 +186,11 @@ window.showPage = page => {
                 px = Number(kd?.result?.XXMRZUSD?.c?.[0] || kd?.result?.XMRUSD?.c?.[0] || 0);
               } catch(e) {}
             }
-            if(px && window.G) { window.G.prices[sym]={...(window.G.prices[sym]||{}), spot:px}; renderPositions(); }
+            if(px && window.G) {
+              window.G.prices[sym]={...(window.G.prices[sym]||{}), spot:px};
+              renderPositions();
+              if (typeof renderMap === 'function') renderMap();
+            }
           })
           .catch(()=>{});
       }
@@ -1891,6 +1896,197 @@ function renderPositions() {
 }
 
 
+// ── Exposure Map ───────────────────────────────────────────────────────────
+function mapTickerOf(t) {
+  return String(t?.ticker || t?.symbol || '').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+}
+
+function mapCurrentPrice(sym) {
+  const G = window.G;
+  if (!G || !sym) return null;
+  return G.getPrice(sym, 'futures') || G.getPrice(sym+'USDT', 'futures') || G.getPrice(sym, 'spot') || G.getPrice(sym+'USDT', 'spot') || null;
+}
+
+function mapLivePnl(t, price) {
+  const entry = Number(t?.entry) || 0;
+  const size = Number(t?.posSize) || 0;
+  if (!entry || !size || !price || t.status !== 'active') return null;
+  const sign = t.dir === 'short' ? -1 : 1;
+  return Math.round((size / entry) * (price - entry) * sign * 100) / 100;
+}
+
+function mapExposureOf(t) {
+  if (t.status !== 'active') return 0;
+  const size = Number(t.posSize) || 0;
+  if (!size) return 0;
+  return t.dir === 'short' ? -size : size;
+}
+
+function mapBuildTickerBar(items, currentPrice) {
+  const points = [];
+  const segments = [];
+  const addPoint = (price, label, color, weight=1) => {
+    price = Number(price) || 0;
+    if (price > 0) points.push({ price, label, color, weight });
+  };
+  const addSegment = (a, b, color, opacity=.28) => {
+    a = Number(a) || 0; b = Number(b) || 0;
+    if (a > 0 && b > 0 && a !== b) segments.push({ a, b, color, opacity });
+  };
+
+  items.forEach(item => {
+    const t = item.trade;
+    const prefix = item.kind === 'position' ? 'P' : item.kind === 'order' ? 'O' : 'W';
+    const dir = String(t.dir||'').toUpperCase();
+    addPoint(t.entry || t.price, `${prefix} ${dir}`, item.color, 2);
+    addPoint(t.sl, 'SL', 'var(--red)', 2);
+    addPoint(t.liquidation, 'Liq', 'var(--amber)', 1);
+    addPoint(t.tp1, 'TP1', '#4ade80', 1);
+    addPoint(t.tp2, 'TP2', '#22c55e', 1);
+    addPoint(t.tp3, 'TP3', '#16a34a', 1);
+    tradeInvalidations(t).forEach((inv, idx) => addPoint(inv.price, inv.label || `Inv ${idx+1}`, '#38bdf8', 1));
+    if (t.entry && t.sl) addSegment(t.entry, t.sl, 'var(--red)', .28);
+    if (t.entry && !t.sl && t.liquidation) addSegment(t.entry, t.liquidation, 'var(--amber)', .28);
+    [t.tp1,t.tp2,t.tp3].filter(Boolean).forEach(tp => addSegment(t.entry, tp, 'var(--accent)', .18));
+  });
+  if (currentPrice) points.push({ price: currentPrice, label: 'Actual', color: '#e040fb', current: true, weight: 3 });
+
+  const prices = points.map(p=>p.price).filter(Boolean);
+  if (prices.length < 2) return `<div style="font-family:var(--mono);font-size:11px;color:var(--t3);">Faltan niveles para dibujar el mapa.</div>`;
+
+  let minP = Math.min(...prices);
+  let maxP = Math.max(...prices);
+  const mid = currentPrice || prices.reduce((s,p)=>s+p,0)/prices.length;
+  if ((maxP - minP) / Math.max(mid, 1) < .015) { minP = mid * .9925; maxP = mid * 1.0075; }
+  minP *= .998; maxP *= 1.002;
+  const range = maxP - minP;
+  const pct = p => Math.max(0, Math.min(100, ((p - minP) / range) * 100));
+
+  const segmentHtml = segments.map(s => {
+    const l = Math.min(pct(s.a), pct(s.b));
+    const r = Math.max(pct(s.a), pct(s.b));
+    return `<div style="position:absolute;left:${l}%;width:${Math.max(1,r-l)}%;top:39px;height:6px;background:${s.color};opacity:${s.opacity};border-radius:3px;"></div>`;
+  }).join('');
+
+  const markerHtml = points
+    .sort((a,b)=>a.price-b.price || b.weight-a.weight)
+    .slice(0, 34)
+    .map((p, i) => {
+      const left = pct(p.price);
+      const topOffset = i % 2 ? '54px' : '-25px';
+      const priceTop = i % 2 ? '-17px' : '12px';
+      const cls = p.current ? 'map-marker current' : 'map-marker';
+      return `<div class="${cls}" style="left:${left}%;">
+        <div class="map-marker-dot" style="background:${p.color};"></div>
+        <div class="map-marker-label" style="top:${topOffset};color:${p.color};">${dashSafe(p.label)}</div>
+        <div class="map-marker-price" style="top:${priceTop};">$${fmtPx(p.price)}</div>
+      </div>`;
+    }).join('');
+
+  return `<div class="map-line">
+    <div class="map-axis"></div>
+    ${segmentHtml}
+    ${markerHtml}
+  </div>`;
+}
+
+function mapRow(item, currentPrice) {
+  const t = item.trade;
+  const pnl = item.kind === 'position' ? mapLivePnl(t, currentPrice) : null;
+  const entry = Number(t.entry || t.price) || 0;
+  const invCount = tradeInvalidations(t).length;
+  const meta = [
+    t.exchange || '',
+    t.traderName ? '· '+t.traderName : '',
+    entry ? 'entry $'+fmtPx(entry) : '',
+    t.sl ? 'SL $'+fmtPx(t.sl) : '',
+    invCount ? `${invCount} inv.` : ''
+  ].filter(Boolean).join(' ');
+  const right = item.kind === 'position'
+    ? (pnl==null ? 'sin precio' : `${pnl>=0?'+':'-'}$${fmt(Math.abs(pnl))}`)
+    : item.kind === 'order'
+      ? 'pendiente'
+      : 'idea';
+  const rightCls = item.kind === 'position' && pnl != null ? (pnl >= 0 ? 'pnl-pos' : 'pnl-neg') : '';
+  return `<div class="map-row">
+    <div class="map-kind" style="color:${item.color};">${item.label}</div>
+    <div>
+      <span style="font-weight:700;color:var(--t1);">${dashSafe(t.ticker||'')}</span>
+      <span class="badge ${t.dir==='short'?'bs':t.dir==='spot'?'bsp':'bl'}" style="margin-left:6px;">${dirLevLabel(t)}</span>
+      <span style="color:var(--t3);margin-left:6px;">${dashSafe(meta)}</span>
+    </div>
+    <div class="${rightCls}" style="font-weight:700;text-align:right;">${right}</div>
+  </div>`;
+}
+
+function renderMap() {
+  const G = window.G; if (!G) return;
+  const container = document.getElementById('mapList');
+  if (!container) return;
+  const incPositions = document.getElementById('mapIncPositions')?.checked !== false;
+  const incOrders = document.getElementById('mapIncOrders')?.checked !== false;
+  const incWatch = document.getElementById('mapIncWatch')?.checked !== false;
+
+  const source = [];
+  G.trades().forEach(t => {
+    if (incPositions && t.status === 'active') source.push({ kind:'position', label:'Posición', color:'var(--accent)', trade:t });
+    if (incOrders && t.status === 'pending') source.push({ kind:'order', label:'Orden', color:'var(--amber)', trade:t });
+    if (incWatch && t.status === 'watchlist') source.push({ kind:'watch', label:'Watch', color:'var(--red)', trade:t });
+  });
+
+  const groups = {};
+  source.forEach(item => {
+    const sym = mapTickerOf(item.trade);
+    if (!sym) return;
+    groups[sym] = groups[sym] || [];
+    groups[sym].push(item);
+  });
+
+  const sorted = Object.entries(groups).sort((a,b) => {
+    const ap = a[1].filter(x=>x.kind==='position').length;
+    const bp = b[1].filter(x=>x.kind==='position').length;
+    return bp - ap || a[0].localeCompare(b[0]);
+  });
+
+  if (!sorted.length) {
+    container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay elementos para mostrar</div><div class="empty-sub">Activá Posiciones, Órdenes o Watchlist.</div></div>`;
+    return;
+  }
+
+  container.innerHTML = sorted.map(([sym, items]) => {
+    const currentPrice = mapCurrentPrice(sym);
+    const positions = items.filter(x=>x.kind==='position').map(x=>x.trade);
+    const orders = items.filter(x=>x.kind==='order').length;
+    const watches = items.filter(x=>x.kind==='watch').length;
+    const pnl = positions.reduce((s,t)=>s+(mapLivePnl(t, currentPrice)||0),0);
+    const risk = positions.reduce((s,t)=>s+openRiskOf(t),0);
+    const net = positions.reduce((s,t)=>s+mapExposureOf(t),0);
+    const hasLong = positions.some(t=>t.dir==='long' || t.dir==='spot');
+    const hasShort = positions.some(t=>t.dir==='short');
+    const netTxt = !positions.length ? '—' : `${net>0?'LONG':net<0?'SHORT':'NEUTRAL'} $${fmt(Math.abs(net))}`;
+    const conflict = hasLong && hasShort ? `<div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--amber);">⚠ Long y short simultáneos en ${sym}</div>` : '';
+    return `<div class="map-group">
+      <div class="map-group-head">
+        <div>
+          <div class="map-group-title">${dashSafe(sym)}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:4px;">${positions.length} pos · ${orders} ord · ${watches} watch</div>
+          ${conflict}
+        </div>
+        <div class="map-metrics">
+          <div class="map-metric">Precio<strong>${currentPrice?'$'+fmtPx(currentPrice):'—'}</strong></div>
+          <div class="map-metric">PnL<strong class="${pnl>=0?'pnl-pos':'pnl-neg'}">${positions.length?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}</strong></div>
+          <div class="map-metric">Riesgo<strong style="color:var(--red);">${positions.length?'$'+fmt(risk):'—'}</strong></div>
+          <div class="map-metric">Exposición<strong>${netTxt}</strong></div>
+        </div>
+      </div>
+      <div class="map-price-wrap">${mapBuildTickerBar(items, currentPrice)}</div>
+      <div class="map-rows">${items.map(item=>mapRow(item, currentPrice)).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+window.renderMap = renderMap;
+
 // ── History ────────────────────────────────────────────────────────────────
 function checkPendingReviews() {
   const G = window.G;
@@ -2573,10 +2769,10 @@ window.saveEditTrade = async () => {
     await window._loadTrades();
     closeModal('editTradeModal');
     // Re-render current page
-    ['dashPage','watchPage','ordersPage','posPage','histPage'].forEach(pid=>{
+    ['dashPage','watchPage','ordersPage','posPage','mapPage','histPage'].forEach(pid=>{
       const el=document.getElementById(pid);
       if(el&&el.style.display!=='none'){
-        const fn={dashPage:renderDashboard,watchPage:renderWatchlist,ordersPage:renderOrders,posPage:renderPositions,histPage:renderHistory}[pid];
+        const fn={dashPage:renderDashboard,watchPage:renderWatchlist,ordersPage:renderOrders,posPage:renderPositions,mapPage:renderMap,histPage:renderHistory}[pid];
         if(fn) fn();
       }
     });
@@ -3882,6 +4078,7 @@ window.syncAllExchanges = async () => {
 
       try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
+      try { renderMap(); } catch(e) { console.error('renderMap error:', e); }
       try { updateStatusBar(); } catch(e) { console.error('updateStatusBar error:', e); }
 
       const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
@@ -3949,6 +4146,7 @@ window.syncAllExchanges = async () => {
   if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled=false; }
   // Always re-render positions after sync
   renderPositions();
+  renderMap();
   updateStatusBar();
   return all;
 };
@@ -4982,6 +5180,7 @@ window.toggleZombie = async (id, makeZombie) => {
     });
     await window._loadTrades();
     renderPositions();
+    renderMap();
     toast(makeZombie ? '🧟 Archivado como zombie' : '↩ Restaurado a posiciones');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
@@ -4991,7 +5190,7 @@ window.moveCardToStatus = async (id, newStatus) => {
   try {
     await updateDoc(doc(db,'trades',id), { status: newStatus, updatedAt: new Date().toISOString() });
     await window._loadTrades();
-    renderWatchlist(); renderOrders(); renderPositions();
+    renderWatchlist(); renderOrders(); renderPositions(); renderMap();
     const labels = {watchlist:'Watchlist', pending:'Órdenes', active:'Posiciones'};
     toast('Movido a ' + (labels[newStatus]||newStatus));
   } catch(e) { toast('Error: '+e.message,'error'); }
@@ -5003,6 +5202,7 @@ window.movePendingToWatchlist = async id => {
     await window._loadTrades();
     renderOrders();
     renderWatchlist();
+    renderMap();
     toast('Movido a Watchlist.');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
@@ -5014,6 +5214,7 @@ window.moveWatchlistToPending = async id => {
     await window._loadTrades();
     renderOrders();
     renderWatchlist();
+    renderMap();
     toast('Movido a Órdenes abiertas.');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
@@ -5025,6 +5226,7 @@ window.deletePendingOrder = async id => {
     await deleteDoc(doc(db,'trades',id));
     await window._loadTrades();
     renderOrders();
+    renderMap();
     toast('Orden eliminada.');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };

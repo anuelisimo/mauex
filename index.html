@@ -99,6 +99,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       <span>Pos.</span>
     </button>
+    <button class="bnav-btn" data-page="map" onclick="window.showPage('map')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13"/><path d="M15 7v13"/></svg>
+      <span>Mapa</span>
+    </button>
     <button class="bnav-btn" data-page="analysis" onclick="window.showPage('analysis')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20 10 10 0 010-20z"/><path d="M12 8v4l3 3"/><path d="M9.5 2.5C9.5 2.5 7 5 7 12s2.5 9.5 2.5 9.5"/><path d="M14.5 2.5S17 5 17 12s-2.5 9.5-2.5 9.5"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
       <span>AI</span>
@@ -290,6 +294,22 @@
         </div>
       </div>
       <div id="posList"></div>
+    </div>
+
+    <!-- MAPA -->
+    <div id="mapPage" style="display:none;">
+      <div class="fxb" style="margin-bottom:16px;">
+        <div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Mapa</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Vista agrupada por ticker</div>
+        </div>
+        <div class="fx" style="gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+          <label class="map-filter"><input type="checkbox" id="mapIncPositions" checked onchange="renderMap()"> Posiciones</label>
+          <label class="map-filter"><input type="checkbox" id="mapIncOrders" checked onchange="renderMap()"> Órdenes</label>
+          <label class="map-filter"><input type="checkbox" id="mapIncWatch" checked onchange="renderMap()"> Watchlist</label>
+        </div>
+      </div>
+      <div id="mapList"></div>
     </div>
 
     <!-- HISTORIAL -->
