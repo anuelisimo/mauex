@@ -161,7 +161,7 @@ window.showPage = page => {
       const sym = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
       if (!sym || !window.startLivePrices) return;
       const p = G.getPrice ? G.getPrice(sym, t.dir) : null;
-      if (p == null) {
+      if (p == null || sym === 'XMR') {
         // Quick REST fetch
         const useKucoin = (t.exchange||'').toUpperCase() === 'KUCOIN' || sym === 'XMR';
         const url = useKucoin
@@ -1338,11 +1338,14 @@ function renderWatchlist() {
 
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
+          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en Liq.'}</div>
           ${t.sl ? `
             <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDist?slDist.toFixed(1)+'% entry':''}</div>
-          ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
+          ` : `
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber);">−$${fmt(margin||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">margen</div>
+          `}
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
@@ -1807,11 +1810,14 @@ function renderPositions() {
       ${(t.sl || margin || t.posSize) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
+          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en Liq.'}</div>
           ${t.sl ? `
             <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
-          ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
+          ` : `
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber);">−$${fmt(margin||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">margen</div>
+          `}
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
@@ -4516,28 +4522,44 @@ function updateStatusBar() {
   if(!bar) return;
   bar.style.display = 'flex';
 
-  const exPos = window.exchangePositions||[];
-  const manPos = G.trades().filter(t=>t.status==='active');
-  const totalPos = exPos.length + manPos.length;
-  const orders = window.exchangeOrders||[];
+  const allTrades = G.trades();
+  const manPos = allTrades.filter(t=>t.status==='active');
+  const manualOrders = allTrades.filter(t=>t.status==='pending');
+  const totalPos = manPos.length;
+  const totalOrders = manualOrders.length;
 
-  // PnL total
   let totalPnl = 0;
-  exPos.forEach(p=>{ totalPnl += p.pnl||0; });
+  let missingPrices = 0;
+  manPos.forEach(t => {
+    const entry = Number(t.entry) || 0;
+    const size = Number(t.posSize) || 0;
+    const price = G.getPrice(t.ticker, t.dir);
+    if (!entry || !size || !price) { missingPrices++; return; }
+    const sign = t.dir === 'short' ? -1 : 1;
+    totalPnl += Math.round((size / entry) * (price - entry) * sign * 100) / 100;
+  });
+  const totalRisk = manPos.reduce((s,t)=>s+openRiskOf(t),0);
+  const noSlCount = manPos.filter(t=>!Number(t.sl)).length;
 
   const dot = document.getElementById('sbDot');
   const sbPos = document.getElementById('sbPositions');
   const sbPnl = document.getElementById('sbPnl');
   const sbOrd = document.getElementById('sbOrders');
+  const sbRisk = document.getElementById('sbRisk');
   const sbBtc = document.getElementById('sbBtc');
 
   if(dot) dot.className = 'status-dot' + (totalPos>0?'':' amber');
   if(sbPos) sbPos.textContent = `${totalPos} posición${totalPos!==1?'es':''}`;
   if(sbPnl) {
-    sbPnl.textContent = totalPos>0 ? `PnL ${totalPnl>=0?'+':'-'}$${Math.abs(totalPnl).toFixed(0)}` : 'PnL —';
+    const missing = missingPrices ? ` (${missingPrices} sin precio)` : '';
+    sbPnl.textContent = totalPos>0 ? `PnL ${totalPnl>=0?'+':'-'}$${Math.abs(totalPnl).toFixed(0)}${missing}` : 'PnL —';
     sbPnl.style.color = totalPnl>=0?'var(--accent)':'var(--red)';
   }
-  if(sbOrd) sbOrd.textContent = `${orders.length} orden${orders.length!==1?'es':''}`;
+  if(sbOrd) sbOrd.textContent = `${totalOrders} orden${totalOrders!==1?'es':''}`;
+  if(sbRisk) {
+    sbRisk.textContent = `riesgo $${Math.round(totalRisk).toLocaleString('en-US')}${noSlCount ? ` (${noSlCount} sin SL)` : ''}`;
+    sbRisk.style.color = totalRisk ? 'var(--red)' : 'var(--t3)';
+  }
 
   // BTC price
   const btcPrice = G.getPrice('BTCUSDT','futures') || G.getPrice('BTC','futures');
@@ -4893,11 +4915,14 @@ function renderOrders() {
       ${(sl || totalSize) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">SL Riesgo</div>
+          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'SL Riesgo' : 'Riesgo en Liq.'}</div>
           ${sl ? `
             <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
-          ` : `<div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">⚠️ Sin SL</div>`}
+          ` : `
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">−$${fmt(o.dir==='spot'?totalSize:(totalSize/(lev||1)))}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">margen</div>
+          `}
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">

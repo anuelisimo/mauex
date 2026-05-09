@@ -119,6 +119,10 @@
     <div class="status-item">
       <span id="sbOrders" style="color:var(--t3);">0 órdenes</span>
     </div>
+    <div class="status-sep">·</div>
+    <div class="status-item">
+      <span id="sbRisk" style="color:var(--red);">riesgo —</span>
+    </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:16px;">
       <span id="sbBtc" style="color:var(--t2);">BTC —</span>
       <span id="sbFng" style="color:var(--t3);">F&G —</span>
@@ -280,7 +284,6 @@
       <div class="fxb" style="margin-bottom:20px;">
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Posiciones abiertas</div>
         <div class="fx" style="gap:8px;flex-wrap:wrap;">
-          <span id="posSummary" style="font-size:10px;color:var(--t2);font-family:var(--mono);"></span>
           <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
           <button class="btn sm" onclick="refreshPricesManual()">↻ Precios</button>
           <button class="btn acc sm" onclick="window.openDirectPositionModal()">+ Posición</button>

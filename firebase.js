@@ -1068,6 +1068,7 @@ function getPrice(ticker, dir) {
   const sym = ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
   const p = prices[sym];
   if (!p) return null;
+  if (sym === 'XMR') return p.spot || p.futures || null;
   return dir === 'spot' ? (p.spot || p.futures || null) : (p.futures || p.spot || null);
 }
 G.getPrice = getPrice;
