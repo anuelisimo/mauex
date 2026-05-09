@@ -638,7 +638,6 @@ const dashMetricInfo = {
   'Avg win / loss':'Ganancia promedio de los trades ganadores comparada contra perdida promedio de los perdedores.',
   'R promedio':'Resultado promedio medido contra el riesgo definido por el SL. Solo cuenta trades con SL cargado.',
   'Sharpe simple':'Relacion simple entre retorno promedio y variabilidad de resultados. Cuanto mas alto, mas consistente.',
-  'Riesgo abierto':'Suma del capital en riesgo de las posiciones abiertas. Si una posicion no tiene SL, MauEX toma todo el margen como capital en riesgo.',
   'Trades cerrados':'Cantidad de operaciones cerradas en el historial.',
   'PnL este mes':'Resultado neto de los trades cerrados durante el mes actual.',
   'Mejor trade':'Trade cerrado con mayor ganancia en dolares.',
@@ -845,8 +844,6 @@ function renderDashboard() {
   const all    = G.trades();
   const closed = all.filter(t=>t.status==='closed');
   const active = all.filter(t=>t.status==='active');
-  const activeRisk = active.reduce((s,t)=>s+openRiskOf(t),0);
-  const activeNoSl = active.filter(t=>!Number(t.sl)).length;
   const wins   = closed.filter(t=>(t.pnl||0)>0);
   const totPnl = closed.reduce((s,t)=>s+(t.pnl||0),0);
   const now    = new Date();
@@ -859,7 +856,6 @@ function renderDashboard() {
     {l:'Trades cerrados',v:String(closed.length),sub:`${active.length} activos`},
     {l:'Win rate',v:closed.length?Math.round(wins.length/closed.length*100)+'%':'—',cls:closed.length&&wins.length/closed.length>=.5?'green':'red'},
     {l:'PnL total',v:(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl)),cls:totPnl>=0?'green':'red'},
-    {l:'Riesgo abierto',v:'$'+fmt(activeRisk),cls:activeRisk?'red':'',sub:activeNoSl?`${activeNoSl} sin SL`:'Posiciones activas'},
     {l:'PnL este mes',v:(mPnl>=0?'+':'')+'$'+fmt(Math.abs(mPnl)),cls:mPnl>=0?'green':'red'},
     {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'—',sub:best.ticker||'',cls:'green'},
     {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'—',sub:worst.ticker||'',cls:'red'},
@@ -1338,7 +1334,7 @@ function renderWatchlist() {
 
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en Liq.'}</div>
+          <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${t.sl ? `
             <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDist?slDist.toFixed(1)+'% entry':''}</div>
@@ -1664,6 +1660,11 @@ function renderPositions() {
   const pendingCount = G.trades().filter(t=>t.status==='pending').length;
   const manualActive = showZombies ? allActive : allActive.filter(t=>t.status==='active');
   const zombieCount = allActive.filter(t=>t.status==='zombie').length;
+  const zombieBtn = document.getElementById('zombieToggleBtn');
+  if (zombieBtn) {
+    zombieBtn.style.display = zombieCount ? 'inline-flex' : 'none';
+    zombieBtn.textContent = showZombies ? 'Ocultar zombies' : 'Ver zombies';
+  }
   const summaryEl = document.getElementById('posSummary');
   const summaryRisk = activeOnly.reduce((s,t)=>s+openRiskOf(t),0);
   let summaryPnl = 0, missingPrices = 0;
@@ -1684,7 +1685,6 @@ function renderPositions() {
       <div class="empty-text">No hay posiciones abiertas</div>
       <div class="empty-sub">Usá la calculadora para abrir una posición</div>
       <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('calc')">📊 Calculadora</button>
-      ${zombieCount?`<button class="btn sm" style="margin-top:8px;" onclick="window._showZombies=true;renderPositions();">🧟 Ver ${zombieCount} zombies</button>`:''}
     </div>`;
     return;
   }
@@ -1711,16 +1711,13 @@ function renderPositions() {
   const totalHtml = manualActive.length ? `
     <div class="live-pnl-total">
       <div>
-        <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
-        <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
-      </div>
-      <div style="padding-left:18px;border-left:0.5px solid var(--border2);">
         <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">CAPITAL EN RIESGO</div>
         <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--red);">$${fmt(totalRisk)}</div>
         ${noSlCount?`<div style="font-size:10px;color:var(--amber);font-family:var(--mono);">${noSlCount} sin SL</div>`:''}
       </div>
-      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-        ${zombieCount?`<button class="btn sm" style="font-size:10px;" onclick="window._showZombies=!window._showZombies;renderPositions();">🧟 ${showZombies?'Ocultar':'Ver'} ${zombieCount} zombie${zombieCount>1?'s':''}</button>`:''}
+      <div style="margin-left:auto;text-align:right;">
+        <div style="font-size:11px;color:var(--t3);font-family:var(--mono);">PNL TOTAL EN VIVO</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;" class="${totalPnl>=0?'pnl-pos':'pnl-neg'}">${totalPnl>=0?'+':'-'}$${fmt(Math.abs(totalPnl))}</div>
       </div>
     </div>` : '';
 
@@ -1810,7 +1807,7 @@ function renderPositions() {
       ${(t.sl || margin || t.posSize) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en Liq.'}</div>
+          <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${t.sl ? `
             <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
@@ -4915,7 +4912,7 @@ function renderOrders() {
       ${(sl || totalSize) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:rgba(224,82,82,0.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'SL Riesgo' : 'Riesgo en Liq.'}</div>
+          <div style="font-size:8px;color:${sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${sl ? `
             <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>

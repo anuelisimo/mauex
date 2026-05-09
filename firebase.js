@@ -1112,7 +1112,7 @@ function updatePriceEl(sym) {
     const p       = getPrice(sym, dir);
     if (!entry||!posSize||p==null) return;
     const pnl = Math.round((posSize/entry)*(entry-p)*(dir==='short'?1:-1)*100)/100;
-    el.textContent = (pnl>=0?'+':'')+pnl.toLocaleString('en-US',{maximumFractionDigits:0});
+    el.textContent = (pnl>=0?'+':'-')+'$'+Math.abs(pnl).toLocaleString('en-US',{maximumFractionDigits:0});
     el.className = el.className.replace(/pnl-pos|pnl-neg/g,'').trim() + (pnl>=0?' pnl-pos':' pnl-neg');
   });
 }

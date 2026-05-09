@@ -285,9 +285,8 @@
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Posiciones abiertas</div>
         <div class="fx" style="gap:8px;flex-wrap:wrap;">
           <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
-          <button class="btn sm" onclick="refreshPricesManual()">↻ Precios</button>
+          <button class="btn sm" id="zombieToggleBtn" style="display:none;" onclick="window._showZombies=!window._showZombies;renderPositions();">Ver zombies</button>
           <button class="btn acc sm" onclick="window.openDirectPositionModal()">+ Posición</button>
-          <button class="btn sm" onclick="window.showPage('settings')">⚙ Config</button>
         </div>
       </div>
       <div id="posList"></div>
