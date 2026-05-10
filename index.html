@@ -853,7 +853,7 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Ticker</label><input type="text" id="dtTicker" placeholder="BTC"></div>
         <div><label class="lbl">Dirección</label>
-          <select id="dtDir"><option value="long">Long</option><option value="short">Short</option><option value="spot">Spot</option></select>
+          <select id="dtDir" onchange="window.updateDirectTradeSizeLabel()"><option value="long">Long</option><option value="short">Short</option><option value="spot">Spot</option></select>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
@@ -875,7 +875,7 @@
         <div><label class="lbl">Precio salida</label><input type="number" id="dtExit" placeholder="72000"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div><label class="lbl">Tamaño USD</label><input type="number" id="dtSize" placeholder="1000"></div>
+        <div><label class="lbl" id="dtSizeLabel">Margen USD</label><input type="number" id="dtSize" placeholder="1000"><div id="dtSizeHint" style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Capital usado como margen.</div></div>
         <div><label class="lbl">PnL $</label><input type="number" id="dtPnl" placeholder="Auto"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">

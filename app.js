@@ -25,6 +25,21 @@ const fmtPx = n => {
   return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
 };
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
+window.updateDirectTradeSizeLabel = () => {
+  const dir = document.getElementById('dtDir')?.value || 'long';
+  const label = document.getElementById('dtSizeLabel');
+  const hint = document.getElementById('dtSizeHint');
+  const lev = document.getElementById('dtLev');
+  if (dir === 'spot') {
+    if (label) label.textContent = 'Tamaño spot USD';
+    if (hint) hint.textContent = 'Capital comprado en spot. Sin margen ni leverage.';
+    if (lev) { lev.value = '1'; lev.disabled = true; }
+  } else {
+    if (label) label.textContent = 'Margen USD';
+    if (hint) hint.textContent = 'Capital usado como margen. MAUex calcula el nominal con el leverage.';
+    if (lev) lev.disabled = false;
+  }
+};
 function dirLevLabel(item) {
   const dir = String(item?.dir || '').toUpperCase();
   const lev = Number(item?.leverage || item?.lev || 1);
@@ -2515,7 +2530,7 @@ function renderHistory() {
       <td style="color:var(--t2);">${t.traderName||'—'}</td>
       <td style="font-family:var(--mono);">$${fmtPx(t.entry)}</td>
       <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'—'}</td>
-      <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'—'}</td>
+      <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'-')+'$'+fmt(Math.abs(t.pnl)):'—'}</td>
       <td class="${pnlPctCls}">${t.pnlPct!=null?fmtP(t.pnlPct):'—'}</td>
       <td style="color:var(--t3);font-size:10px;">${t.createdAt?fmtD(t.createdAt):'—'}</td>
       <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate)}</td>
@@ -2599,8 +2614,8 @@ window.openEditTrade = id => {
     document.getElementById('dtLev').value       = t.leverage||1;
     document.getElementById('dtEntry').value     = t.entry||'';
     document.getElementById('dtExit').value      = t.closePrice||'';
-    document.getElementById('dtSize').value      = t.posSize||'';
-    document.getElementById('dtPnl').value       = t.pnl||'';
+    document.getElementById('dtSize').value      = t.marginSize ?? (t.dir==='spot' ? (t.posSize||'') : ((t.posSize||0)/(t.leverage||1) || ''));
+    document.getElementById('dtPnl').value       = t.pnl ?? '';
     document.getElementById('dtOpenDate').value  = t.createdAt ? t.createdAt.split('T')[0] : '';
     document.getElementById('dtCloseDate').value = t.closeDate||'';
     document.getElementById('dtNotes').value     = [t.notes, t.closeNotes].filter(Boolean).join(' · ')||'';
@@ -2608,6 +2623,7 @@ window.openEditTrade = id => {
     document.querySelector('#directTradeModal .modal-title').textContent = '✎ Editar trade';
     document.getElementById('dtSaveBtn').textContent = 'Guardar cambios';
     window._directTradeEditId = id;
+    window.updateDirectTradeSizeLabel?.();
     openModal('directTradeModal');
     return;
   }

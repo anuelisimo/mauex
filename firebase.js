@@ -302,6 +302,7 @@ window.openDirectTradeModal = () => {
       G.traders().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   }
   document.getElementById('dtCloseDate').value = new Date().toISOString().split('T')[0];
+  window.updateDirectTradeSizeLabel?.();
   openModal('directTradeModal');
 };
 
@@ -317,7 +318,8 @@ window.saveDirectTrade = async (editId) => {
   const lev    = parseInt(document.getElementById('dtLev').value) || 1;
   const entry  = parseFloat(document.getElementById('dtEntry').value) || 0;
   const exit   = parseFloat(document.getElementById('dtExit').value) || 0;
-  const size   = parseFloat(document.getElementById('dtSize').value) || 0;
+  const marginInput = parseFloat(document.getElementById('dtSize').value) || 0;
+  const notional = dir === 'spot' ? marginInput : marginInput * lev;
   const manualPnl = document.getElementById('dtPnl').value;
   const openDate  = document.getElementById('dtOpenDate').value;
   const closeDate = document.getElementById('dtCloseDate').value || new Date().toISOString().split('T')[0];
@@ -328,18 +330,18 @@ window.saveDirectTrade = async (editId) => {
 
   // Calculate PnL if not provided manually
   let pnl = manualPnl ? parseFloat(manualPnl) : null;
-  if (pnl == null && entry && exit && size) {
+  if (pnl == null && entry && exit && notional) {
     const sign = (dir==='short') ? -1 : 1;
-    pnl = Math.round((size/entry)*(exit-entry)*sign*100)/100;
+    pnl = Math.round((notional/entry)*(exit-entry)*sign*100)/100;
   }
-  const margin = dir==='spot' ? size : size/lev;
+  const margin = dir==='spot' ? notional : marginInput;
   const pnlPct = pnl!=null && margin ? Math.round(pnl/margin*10000)/100 : 0;
   const days   = openDate ? Math.round((new Date(closeDate)-new Date(openDate))/86400000) : 0;
 
   try {
     const tradeData = {
       ticker, dir, exchange, leverage: lev, traderId, traderName,
-      entry, closePrice: exit, posSize: size,
+      entry, closePrice: exit, posSize: notional, marginSize: margin,
       pnl: pnl || 0, pnlPct, daysOpen: days,
       status: 'closed',
       createdAt: openDate ? openDate+'T00:00:00.000Z' : new Date().toISOString(),
