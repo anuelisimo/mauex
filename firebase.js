@@ -908,6 +908,19 @@ function isCrypto(ticker, exchange) {
   const sym = (ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
   return CRYPTOS.includes(sym) || (ticker||'').endsWith('USDT') || (ticker||'').endsWith('BUSD');
 }
+window.isCryptoTicker = isCrypto;
+
+async function fetchYahooPrice(ticker) {
+  const sym = String(ticker || '').trim().toUpperCase();
+  if (!sym) return 0;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
+  const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+  const d = await r.json();
+  const res = d.chart?.result?.[0];
+  const quote = res?.indicators?.quote?.[0]?.close || [];
+  const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();
+  return Number(res?.meta?.regularMarketPrice || lastClose || res?.meta?.previousClose || 0);
+}
 
 function readInvalidationFields(prefix) {
   const note = document.getElementById(prefix+'InvNote')?.value?.trim() || '';
@@ -1140,14 +1153,16 @@ function startLivePrices() {
   const relevant = trades.filter(t => t.status === 'active' || t.status === 'watchlist' || t.status === 'pending' || t.status === 'zombie');
   // Also include open exchange positions
   const posTickers = (window.exchangePositions||[]).map(p => p.ticker?.toUpperCase()).filter(Boolean);
-  const allTickers = [...new Set([
-    ...relevant.map(t => t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase()),
-    ...posTickers,
+  const cryptoSyms = [...new Set([
+    ...relevant
+      .filter(t => isCrypto(t.ticker, t.exchange))
+      .map(t => t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase()),
+    ...posTickers.map(t => t.replace(/USDT|BUSD|USD$/,'').toUpperCase()),
   ].filter(Boolean))];
-  const tickers = allTickers;
-  const cryptoSyms   = tickers.filter(s => s && s.length > 0);
-  const active       = relevant.filter(t => t.status === 'active');
-  const stockTickers = active.filter(t => !isCrypto(t.ticker, t.exchange)).map(t => t.ticker);
+  const stockTickers = [...new Set(relevant
+    .filter(t => !isCrypto(t.ticker, t.exchange))
+    .map(t => String(t.ticker || '').trim().toUpperCase())
+    .filter(Boolean))];
 
   // Close old WS
   Object.values(wsMap).forEach(ws=>{ try{ws.close();}catch(e){} });
@@ -1272,10 +1287,8 @@ function startLivePrices() {
     const poll = async () => {
       for (const t of stockTickers) {
         try {
-          const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?interval=1m&range=1d`);
-          const d = await r.json();
-          const p = d.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (p) setPrice(t, 'spot', p);
+          const p = await fetchYahooPrice(t);
+          if (p > 0) setPrice(t, 'spot', p);
         } catch(e){}
       }
     };
@@ -1285,11 +1298,11 @@ function startLivePrices() {
 }
 
 window.refreshPricesManual = async () => {
-  const active = trades.filter(t=>t.status==='active');
-  for (const t of active) {
+  const relevant = trades.filter(t=>['active','pending','watchlist','zombie'].includes(t.status));
+  for (const t of relevant) {
     const sym = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
     if (!sym) continue;
-    if (isCrypto(t.ticker)) {
+    if (isCrypto(t.ticker, t.exchange)) {
       try {
         const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
         const d = await r.json();
@@ -1299,6 +1312,11 @@ window.refreshPricesManual = async () => {
         const r = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`);
         const d = await r.json();
         if (d.markPrice) setPrice(sym, 'futures', parseFloat(d.markPrice));
+      } catch(e){}
+    } else {
+      try {
+        const p = await fetchYahooPrice(t.ticker);
+        if (p > 0) setPrice(sym, 'spot', p);
       } catch(e){}
     }
   }

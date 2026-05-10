@@ -25,6 +25,30 @@ const fmtPx = n => {
   return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
 };
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
+const APP_CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
+  'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
+  'TRX','IOTA','RSR','KAVA','OMG','WAXP','BLOK','VLX','AKRO','AAVE','ONDO','XMR','ANKR',
+  'HYPE','CAKE','LINEA','XVG','POL'];
+const APP_CRYPTO_EXCHANGES = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','GATE','KRAKEN','COINBASE','HUOBI'];
+function appIsCryptoTicker(ticker, exchange) {
+  if (window.isCryptoTicker) return window.isCryptoTicker(ticker, exchange);
+  const ex = String(exchange || '').toUpperCase();
+  if (APP_CRYPTO_EXCHANGES.includes(ex)) return true;
+  const raw = String(ticker || '').trim().toUpperCase();
+  const sym = raw.replace(/USDT|BUSD|USD$/,'');
+  return APP_CRYPTOS.includes(sym) || raw.endsWith('USDT') || raw.endsWith('BUSD');
+}
+async function fetchYahooSpotPrice(ticker) {
+  const sym = String(ticker || '').trim().toUpperCase();
+  if (!sym) return 0;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
+  const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+  const d = await r.json();
+  const res = d.chart?.result?.[0];
+  const quote = res?.indicators?.quote?.[0]?.close || [];
+  const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();
+  return Number(res?.meta?.regularMarketPrice || lastClose || res?.meta?.previousClose || 0);
+}
 window.updateDirectTradeSizeLabel = () => {
   const dir = document.getElementById('dtDir')?.value || 'long';
   const label = document.getElementById('dtSizeLabel');
@@ -178,6 +202,19 @@ window.showPage = page => {
       if (!sym || !window.startLivePrices) return;
       const p = G.getPrice ? G.getPrice(sym, t.dir) : null;
       if (p == null || sym === 'XMR') {
+        const isStockOrEtf = !appIsCryptoTicker(t.ticker, t.exchange);
+        if (isStockOrEtf) {
+          fetchYahooSpotPrice(t.ticker)
+            .then(px => {
+              if (px && window.G) {
+                window.G.prices[sym] = {...(window.G.prices[sym] || {}), spot:px};
+                renderPositions();
+                if (typeof renderMap === 'function') renderMap();
+              }
+            })
+            .catch(()=>{});
+          return;
+        }
         // Quick REST fetch
         const useKucoin = (t.exchange||'').toUpperCase() === 'KUCOIN' || sym === 'XMR';
         const url = useKucoin
@@ -2917,7 +2954,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
     const rangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo'};
     const yhIv = ivMap[interval]||'1d';
     const range = rangeMap[interval]||'1y';
-    const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yhIv}&range=${range}`;
+    const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
     try {
       const r = await (PROXY_URL ? window.proxyFetch(yhUrl) : fetch(yhUrl));
       const d = await r.json();
@@ -4219,8 +4256,23 @@ const STOCK_LIST = [
   {s:'META',n:'Meta',t:'stock'},{s:'NFLX',n:'Netflix',t:'stock'},{s:'AMD',n:'AMD',t:'stock'},
   {s:'INTC',n:'Intel',t:'stock'},{s:'BA',n:'Boeing',t:'stock'},{s:'JPM',n:'JPMorgan',t:'stock'},
   {s:'GS',n:'Goldman Sachs',t:'stock'},{s:'V',n:'Visa',t:'stock'},{s:'WMT',n:'Walmart',t:'stock'},
-  {s:'SPY',n:'S&P 500 ETF',t:'etf'},{s:'QQQ',n:'Nasdaq ETF',t:'etf'},{s:'IWM',n:'Russell 2000',t:'etf'},
-  {s:'GLD',n:'Gold ETF',t:'etf'},{s:'SLV',n:'Silver ETF',t:'etf'},{s:'TLT',n:'Bonds 20Y ETF',t:'etf'},
+  {s:'SPY',n:'S&P 500 ETF',t:'etf'},{s:'VOO',n:'Vanguard S&P 500 ETF',t:'etf'},
+  {s:'IVV',n:'iShares Core S&P 500 ETF',t:'etf'},{s:'QQQ',n:'Nasdaq ETF',t:'etf'},
+  {s:'DIA',n:'Dow Jones ETF',t:'etf'},{s:'IWM',n:'Russell 2000',t:'etf'},
+  {s:'VTI',n:'Total US Market ETF',t:'etf'},{s:'VEA',n:'Developed Markets ETF',t:'etf'},
+  {s:'VWO',n:'Emerging Markets ETF',t:'etf'},{s:'XLK',n:'Technology Sector ETF',t:'etf'},
+  {s:'XLE',n:'Energy Sector ETF',t:'etf'},{s:'XLF',n:'Financial Sector ETF',t:'etf'},
+  {s:'ARKK',n:'ARK Innovation ETF',t:'etf'},{s:'HYG',n:'High Yield Bond ETF',t:'etf'},
+  {s:'LQD',n:'Investment Grade Bond ETF',t:'etf'},{s:'SHY',n:'1-3Y Treasury ETF',t:'etf'},
+  {s:'IEF',n:'7-10Y Treasury ETF',t:'etf'},{s:'BIL',n:'1-3M Treasury ETF',t:'etf'},
+  {s:'GLD',n:'Gold ETF',t:'etf'},{s:'IAU',n:'iShares Gold Trust',t:'etf'},
+  {s:'IAUM',n:'iShares Gold Trust Micro ETF',t:'etf'},{s:'SGOL',n:'Physical Gold ETF',t:'etf'},
+  {s:'PHYS',n:'Sprott Physical Gold Trust',t:'etf'},
+  {s:'SLV',n:'Silver ETF',t:'etf'},{s:'SIVR',n:'Physical Silver ETF',t:'etf'},
+  {s:'PSLV',n:'Sprott Physical Silver Trust',t:'etf'},
+  {s:'USO',n:'United States Oil Fund',t:'etf'},{s:'UNG',n:'United States Natural Gas Fund',t:'etf'},
+  {s:'CPER',n:'United States Copper Fund',t:'etf'},{s:'PPLT',n:'Physical Platinum ETF',t:'etf'},
+  {s:'TLT',n:'Bonds 20Y ETF',t:'etf'},
   {s:'VIX',n:'Volatility Index',t:'index'},{s:'DXY',n:'Dollar Index',t:'index'},
   {s:'GC=F',n:'Oro (Futures)',t:'commodity'},{s:'SI=F',n:'Plata (Futures)',t:'commodity'},
   {s:'CL=F',n:'Petróleo WTI',t:'commodity'},{s:'BZ=F',n:'Petróleo Brent',t:'commodity'},
@@ -4280,7 +4332,12 @@ window.showTickerSuggestions = async (val) => {
     .slice(0,5)
     .map(s=>({label:`${s.sym} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
-  const all = [...cryptoMatches, ...stockMatches, ...mexcMatches];
+  const exactKnown = [...cryptoMatches, ...stockMatches, ...mexcMatches].some(x => x.ticker === q);
+  const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
+    ? [{label:`${q} â€” Buscar en Yahoo Finance`, ticker:q, source:'yahoo', type:'etf'}]
+    : [];
+  if (genericYahoo[0]) genericYahoo[0].label = `${q} - Buscar en Yahoo Finance`;
+  const all = [...cryptoMatches, ...stockMatches, ...genericYahoo, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
 
   const typeIcon = {crypto:'₿',stock:'📈',etf:'📊',commodity:'🪙',index:'📉'};
@@ -4325,7 +4382,8 @@ window.fetchOHLCV = async (symbol, interval, limit=300) => {
     const yhIv  = ivMap[interval]||'1d';
     const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':'1mo';
     try {
-      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${yhIv}&range=${range}`);
+      const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
+      const r = await (window.proxyFetch ? window.proxyFetch(yhUrl) : fetch(yhUrl));
       const d = await r.json();
       const res = d.chart?.result?.[0];
       if(!res) throw new Error('Sin datos Yahoo');
