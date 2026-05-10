@@ -2615,7 +2615,12 @@ window.openEditTrade = id => {
     document.getElementById('dtEntry').value     = t.entry||'';
     document.getElementById('dtExit').value      = t.closePrice||'';
     document.getElementById('dtSize').value      = t.marginSize ?? (t.dir==='spot' ? (t.posSize||'') : ((t.posSize||0)/(t.leverage||1) || ''));
-    document.getElementById('dtPnl').value       = t.pnl ?? '';
+    const dtPnlEl = document.getElementById('dtPnl');
+    if (dtPnlEl) {
+      dtPnlEl.value = t.pnl ?? '';
+      dtPnlEl.dataset.originalPnl = t.pnl != null ? String(t.pnl) : '';
+      dtPnlEl.dataset.manual = '';
+    }
     document.getElementById('dtOpenDate').value  = t.createdAt ? t.createdAt.split('T')[0] : '';
     document.getElementById('dtCloseDate').value = t.closeDate||'';
     document.getElementById('dtNotes').value     = [t.notes, t.closeNotes].filter(Boolean).join(' · ')||'';

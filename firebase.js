@@ -302,6 +302,12 @@ window.openDirectTradeModal = () => {
       G.traders().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   }
   document.getElementById('dtCloseDate').value = new Date().toISOString().split('T')[0];
+  const pnlEl = document.getElementById('dtPnl');
+  if (pnlEl) {
+    pnlEl.value = '';
+    pnlEl.dataset.manual = '';
+    pnlEl.dataset.originalPnl = '';
+  }
   window.updateDirectTradeSizeLabel?.();
   openModal('directTradeModal');
 };
@@ -320,7 +326,10 @@ window.saveDirectTrade = async (editId) => {
   const exit   = parseFloat(document.getElementById('dtExit').value) || 0;
   const marginInput = parseFloat(document.getElementById('dtSize').value) || 0;
   const notional = dir === 'spot' ? marginInput : marginInput * lev;
-  const manualPnl = document.getElementById('dtPnl').value;
+  const pnlEl = document.getElementById('dtPnl');
+  const manualPnl = (pnlEl?.value || '').trim();
+  const originalPnl = pnlEl?.dataset.originalPnl || '';
+  const userTouchedPnl = pnlEl?.dataset.manual === '1' || (!editId && manualPnl !== '') || (editId && manualPnl !== '' && manualPnl !== originalPnl);
   const openDate  = document.getElementById('dtOpenDate').value;
   const closeDate = document.getElementById('dtCloseDate').value || new Date().toISOString().split('T')[0];
   const notes  = document.getElementById('dtNotes').value;
@@ -329,7 +338,7 @@ window.saveDirectTrade = async (editId) => {
   if (!closeDate) { toast('Ingresá la fecha de cierre.','error'); return; }
 
   // Calculate PnL if not provided manually
-  let pnl = manualPnl ? parseFloat(manualPnl) : null;
+  let pnl = userTouchedPnl ? parseFloat(manualPnl) : null;
   if (pnl == null && entry && exit && notional) {
     const sign = (dir==='short') ? -1 : 1;
     pnl = Math.round((notional/entry)*(exit-entry)*sign*100)/100;

@@ -876,7 +876,7 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl" id="dtSizeLabel">Margen USD</label><input type="number" id="dtSize" placeholder="1000"><div id="dtSizeHint" style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Capital usado como margen.</div></div>
-        <div><label class="lbl">PnL $</label><input type="number" id="dtPnl" placeholder="Auto"></div>
+        <div><label class="lbl">PnL manual <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="dtPnl" placeholder="Auto" oninput="this.dataset.manual='1'"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Si lo dejás vacío, MAUex lo calcula.</div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Fecha entrada</label><input type="date" id="dtOpenDate"></div>
