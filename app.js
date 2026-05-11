@@ -71,6 +71,11 @@ function dirLevLabel(item) {
   if (dir === 'SPOT' || !Number.isFinite(lev) || lev <= 1) return dir;
   return dir + ' x' + lev;
 }
+function dirBadgeColors(dir) {
+  if (dir === 'short') return { color:'#e05252', bg:'rgba(224,82,82,0.12)', border:'rgba(224,82,82,0.25)' };
+  if (dir === 'spot') return { color:'var(--blue)', bg:'var(--blue-dim)', border:'rgba(61,156,240,0.28)' };
+  return { color:'#22c55e', bg:'rgba(34,197,94,0.12)', border:'rgba(34,197,94,0.25)' };
+}
 const fmtD = d => {
   if (!d) return '—';
   const str = String(d);
@@ -1287,6 +1292,11 @@ function getExchangeUrl(exchange, ticker, dir) {
       ? `https://www.kucoin.com/trade/${base}-USDT`
       : `https://www.kucoin.com/futures/trade/${base}USDTM`;
   }
+  if (ex === 'IBKR') {
+    return base
+      ? `https://www.interactivebrokers.com/en/trading/products-exchanges.php?symbol=${encodeURIComponent(base)}`
+      : 'https://www.interactivebrokers.com/';
+  }
   return null;
 }
 
@@ -1322,6 +1332,7 @@ function renderWatchlist() {
     const sym = (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
     const currentPrice = G?.getPrice(sym, t.dir) || G?.getPrice(t.ticker, t.dir);
     const lev = t.leverage||1;
+    const isSpot = t.dir === 'spot';
     const margin = t.dir==='spot' ? t.posSize : (t.posSize||0)/lev;
     const slDist = t.entry&&t.sl ? Math.abs(t.sl-t.entry)/t.entry*100 : 0;
     const sign = (t.dir==='short') ? -1 : 1;
@@ -1342,9 +1353,10 @@ function renderWatchlist() {
     const fakeT = {...t, liquidation: t.liquidation||wLiq};
     const isMin = !!cardStates[t.id];
     const invalidAlert = getInvalidationAlert(t, currentPrice);
-    const dirColor  = t.dir==='short' ? '#e05252' : '#22c55e';
-    const dirBg     = t.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
-    const dirBorder = t.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
+    const dirBadge = dirBadgeColors(t.dir);
+    const dirColor  = dirBadge.color;
+    const dirBg     = dirBadge.bg;
+    const dirBorder = dirBadge.border;
     const rrFor = (tp) => {
       if (!tp||!t.sl||!t.entry) return null;
       const reward = Math.abs(tp-t.entry), risk = Math.abs(t.sl-t.entry);
@@ -1389,6 +1401,24 @@ function renderWatchlist() {
 
       ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
 
+      ${isSpot ? `
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'Riesgo a SL' : 'Capital expuesto'}</div>
+          <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${t.sl ? 'var(--red)' : 'var(--blue)'};">${t.sl ? '-$'+fmt(riskUsd||0) : '$'+fmt(t.posSize||0)}</div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${t.sl && slDist ? slDist.toFixed(1)+'% entry' : 'spot sin liquidacion'}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Capital invertido</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Precio actual</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${currentPrice ? '$'+fmtPx(currentPrice) : '-'}</div>
+        </div>
+      </div>` : `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
@@ -1410,7 +1440,7 @@ function renderWatchlist() {
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
         </div>
-      </div>
+      </div>`}
 
       ${tps.length ? `
       <div style="display:grid;grid-template-columns:${tps.map(()=>'1fr').join(' ')};border-bottom:0.5px solid var(--border2);">
@@ -1786,6 +1816,7 @@ function renderPositions() {
     const sign   = (t.dir==='short') ? -1 : 1;
     const contr  = (t.posSize||0) / (t.entry||1);
     const pnl    = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
+    const isSpot = t.dir === 'spot';
     const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps    = [{l:'TP1',v:t.tp1,k:'tp1',pct:t.tp1pct||33},{l:'TP2',v:t.tp2,k:'tp2',pct:t.tp2pct||33},{l:'TP3',v:t.tp3,k:'tp3',pct:t.tp3pct||34}].filter(x=>x.v);
@@ -1805,9 +1836,10 @@ function renderPositions() {
     const priceChg  = price&&t.entry ? (price-t.entry)/t.entry*100*sign : null;
     const isMin = !!cardStates[t.id];
     const alert = getPositionAlert(t, price);
-    const dirColor = t.dir==='short' ? '#e05252' : '#22c55e';
-    const dirBg    = t.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
-    const dirBorder= t.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
+    const dirBadge = dirBadgeColors(t.dir);
+    const dirColor = dirBadge.color;
+    const dirBg    = dirBadge.bg;
+    const dirBorder= dirBadge.border;
     const accentColor = t.status==='zombie' ? '#666' : 'var(--accent)';
 
     // Collapse button — circle
@@ -1861,7 +1893,26 @@ function renderPositions() {
 
       ${t.entry&&(t.sl||t.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, price||0)}</div>` : ''}
 
-      ${(t.sl || margin || t.posSize) ? `
+      ${isSpot && (t.sl || margin || t.posSize) ? `
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'Riesgo a SL' : 'Capital expuesto'}</div>
+          <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${t.sl ? 'var(--red)' : 'var(--blue)'};">${t.sl ? '-$'+fmt(riskUsd||0) : '$'+fmt(t.posSize||0)}</div>
+          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${t.sl && slDistPct ? slDistPct.toFixed(1)+'% entry' : 'spot sin liquidacion'}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Capital invertido</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Precio actual</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${price ? '$'+fmtPx(price) : '-'}</div>
+        </div>
+      </div>` : ''}
+
+      ${(!isSpot && (t.sl || margin || t.posSize)) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
@@ -5118,6 +5169,7 @@ function renderOrders() {
     const distColor = distAbs==null?'var(--t3)':distAbs<1?'var(--accent)':distAbs<3?'var(--amber)':'var(--t2)';
     const exColor = o.exchange==='BINANCE'?'#f0b90b':o.exchange==='BYBIT'?'#f7a600':o.exchange==='MEXC'?'#00b8d9':o.exchange==='KUCOIN'?'#24ae8f':'#00a0ea';
     const lev = o.leverage || 1;
+    const isSpotOrder = o.dir === 'spot';
     const mmrO = 0.005;
     const liqApprox = lev > 1 ? (o.liquidation || (entryPrice ? (o.dir==='short' ? entryPrice/(1-1/lev+mmrO) : entryPrice/(1+1/lev-mmrO)) : null)) : null;
     const sl  = o.sl  || null;
@@ -5137,9 +5189,10 @@ function renderOrders() {
 
     const isMin = !!cardStates[o.exchangeId];
     const cardId = o.exchangeId;
-    const dirColor  = o.dir==='short' ? '#e05252' : '#22c55e';
-    const dirBg     = o.dir==='short' ? 'rgba(224,82,82,0.12)' : 'rgba(34,197,94,0.12)';
-    const dirBorder = o.dir==='short' ? 'rgba(224,82,82,0.25)' : 'rgba(34,197,94,0.25)';
+    const dirBadge = dirBadgeColors(o.dir);
+    const dirColor  = dirBadge.color;
+    const dirBg     = dirBadge.bg;
+    const dirBorder = dirBadge.border;
     const rrFor = (tp) => {
       if (!tp||!sl||!entryPrice) return null;
       const reward = Math.abs(tp-entryPrice), risk = Math.abs(sl-entryPrice);
@@ -5186,7 +5239,31 @@ function renderOrders() {
 
       ${entryPrice&&(sl||tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
 
-      ${(sl || totalSize) ? `
+      ${isSpotOrder && (sl || totalSize) ? `
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:${sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'Riesgo a SL' : 'Capital reservado'}</div>
+          ${sl ? `
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">-$${fmt(riskUsd||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
+          ` : `
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--blue);">$${fmt(totalSize||0)}</div>
+            <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">spot sin liquidacion</div>
+          `}
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Capital de orden</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(totalSize)}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Precio actual</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${currentPrice ? '$'+fmtPx(currentPrice) : '-'}</div>
+        </div>
+      </div>` : ''}
+
+      ${(!isSpotOrder && (sl || totalSize)) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>

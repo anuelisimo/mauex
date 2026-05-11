@@ -18,9 +18,17 @@ if exist firebase.js git add firebase.js
 if exist app.js git add app.js
 if exist README_MAUEX_ESTRUCTURA.txt git add README_MAUEX_ESTRUCTURA.txt
 if exist SUBIR_MAUEX_A_GITHUB.bat git add SUBIR_MAUEX_A_GITHUB.bat
+if exist SUBIR_BACKEND_MAUEX_A_GITHUB.bat git add SUBIR_BACKEND_MAUEX_A_GITHUB.bat
+if exist MAUEX_ACTUALIZAR_TODO.bat git add MAUEX_ACTUALIZAR_TODO.bat
+if exist MAUEX_ACTUALIZAR_TODO_AUTO.bat git add MAUEX_ACTUALIZAR_TODO_AUTO.bat
+if exist COPIAR_WORKER_CLOUDFLARE.bat git add COPIAR_WORKER_CLOUDFLARE.bat
+if exist INSTALAR_IBKR_ORACLE_MAUEX.bat git add INSTALAR_IBKR_ORACLE_MAUEX.bat
+if exist INSTALAR_IBKR_ORACLE_MAUEX.ps1 git add INSTALAR_IBKR_ORACLE_MAUEX.ps1
+if exist PROBAR_IBKR_MAUEX.bat git add PROBAR_IBKR_MAUEX.bat
+if exist PROBAR_IBKR_MAUEX.ps1 git add PROBAR_IBKR_MAUEX.ps1
 
 echo Guardando cambios locales...
-git commit -m "Separate MAUex frontend files"
+git commit -m "Add IBKR dashboard support and spot card cleanup"
 if %ERRORLEVEL% NEQ 0 (
   echo.
   echo Puede que no haya cambios nuevos para guardar. Sigo igual.
@@ -43,7 +51,7 @@ if %ERRORLEVEL% NEQ 0 (
   echo Deja esta ventana abierta y mandale una captura a Codex.
   echo.
   if "%STASHED%"=="1" git stash pop
-  pause
+  if not "%MAUEX_AUTO%"=="1" pause
   exit /b 1
 )
 
@@ -62,7 +70,7 @@ if %ERRORLEVEL% NEQ 0 (
   echo.
   echo No pude subir a GitHub. Puede faltar login de GitHub en esta PC.
   echo Si te aparece una ventana de GitHub, inicia sesion y volve a ejecutar este archivo.
-  pause
+  if not "%MAUEX_AUTO%"=="1" pause
   exit /b 1
 )
 
@@ -70,4 +78,4 @@ echo.
 echo Listo. Cambios subidos a GitHub.
 echo Vercel deberia actualizar la web automaticamente en unos minutos.
 echo.
-pause
+if not "%MAUEX_AUTO%"=="1" pause
