@@ -79,6 +79,6 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 echo Listo. Worker/backend subidos al repo mauex-backend.
 echo Si Cloudflare esta conectado a este repo, deberia desplegarse.
-echo Si Cloudflare NO esta conectado, hay que pegar worker_FINAL_MAUex.js manualmente en Cloudflare.
+echo Si Cloudflare NO esta conectado, hay que pegar el Worker que copia COPIAR_WORKER_CLOUDFLARE.bat.
 echo.
 if not "%MAUEX_AUTO%"=="1" pause

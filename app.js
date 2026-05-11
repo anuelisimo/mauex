@@ -531,11 +531,13 @@ function manualExchangeCapitalOverlay() {
 }
 
 function applyManualCapitalOverlay(data) {
-  if (!data?.balances) return data;
+  if (!data) return data;
   const manual = manualExchangeCapitalOverlay();
+  const sourceBalances = data.balances || {};
+  const balanceErrors = data.errors || data.balanceErrors || {};
   const balances = {};
 
-  Object.entries(data.balances).forEach(([ex, raw]) => {
+  Object.entries(sourceBalances).forEach(([ex, raw]) => {
     const b = normalizeDashboardBalance(raw);
     const m = manual[ex] || { margin: 0, orders: 0 };
     const margin = Math.max(b.margin || 0, m.margin || 0);
@@ -551,6 +553,35 @@ function applyManualCapitalOverlay(data) {
     };
   });
 
+  Object.entries(manual).forEach(([ex, m]) => {
+    if (balances[ex]) return;
+    const margin = Math.round((m.margin || 0) * 100) / 100;
+    const orders = Math.round((m.orders || 0) * 100) / 100;
+    const total = Math.round((margin + orders) * 100) / 100;
+    if (total <= 0 && !balanceErrors[ex]) return;
+    balances[ex] = {
+      total,
+      free: 0,
+      margin,
+      orders,
+      pnl: 0,
+      USDT: total,
+      USDC: 0,
+      manualOnly: true,
+      manualMargin: margin,
+      manualOrders: orders,
+    };
+  });
+
+  Object.entries(balanceErrors).forEach(([ex, err]) => {
+    const key = String(ex || '').toUpperCase();
+    if (!key) return;
+    if (!balances[key]) {
+      balances[key] = { total: 0, free: 0, margin: 0, orders: 0, pnl: 0, USDT: 0, USDC: 0 };
+    }
+    balances[key].error = String(err || 'Error de conexion');
+  });
+
   let USDT = 0, USDC = 0, total = 0;
   Object.values(balances).forEach(b => {
     USDT += b.USDT || 0;
@@ -561,6 +592,7 @@ function applyManualCapitalOverlay(data) {
   return {
     ...data,
     balances,
+    errors: balanceErrors,
     liquidity: {
       ...(data.liquidity || data.totals || {}),
       USDT: Math.round(USDT * 100) / 100,
@@ -589,15 +621,17 @@ async function fetchAndRenderLiquidity() {
       const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
-        data = d;
-        if (d.balances) {
-          _liquidityCache = d;
-          window._liquidityCache = d;
+        data = applyManualCapitalOverlay(d);
+        if (data?.balances) {
+          _liquidityCache = data;
+          window._liquidityCache = data;
           if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
         }
       }
     } catch(e) {}
   }
+
+  data = applyManualCapitalOverlay(data);
 
   if (!data?.balances || Object.keys(data.balances).length === 0) {
     const balanceErrors = data?.errors || data?.balanceErrors || {};
@@ -612,12 +646,12 @@ async function fetchAndRenderLiquidity() {
     return;
   }
 
-  data = applyManualCapitalOverlay(data);
   _liquidityCache = data;
   window._liquidityCache = data;
+  window.syncApiModalStatus?.();
 
   const balances = Object.fromEntries(
-    Object.entries(data.balances).map(([ex, b]) => [ex, normalizeDashboardBalance(b)])
+    Object.entries(data.balances).map(([ex, b]) => [ex, { ...normalizeDashboardBalance(b), error: b?.error, manualOnly: !!b?.manualOnly }])
   );
 
   // Totals — pure exchange data, no Firestore crossing
@@ -636,14 +670,22 @@ async function fetchAndRenderLiquidity() {
     const margin = b.margin || 0;
     const orders = b.orders || 0;
     const pnl    = b.pnl    || 0;
-    if (total === 0) return '';
+    const err    = b.error || data.errors?.[ex] || data.balanceErrors?.[ex];
+    if (total === 0 && margin === 0 && orders === 0 && !err) return '';
 
     const pnlStr = pnl !== 0
       ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
       : '<span style="color:var(--t3);">—</span>';
 
+    const exNote = err
+      ? `<div style="font-size:8px;color:var(--red);font-family:var(--mono);margin-top:2px;">API error</div>`
+      : b.manualOnly
+        ? `<div style="font-size:8px;color:var(--amber);font-family:var(--mono);margin-top:2px;">MAUex manual</div>`
+        : '';
+    const totalStr = total > 0 ? '$' + fmt(total) : '-';
+
     return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
-      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}</span>
+      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);" title="${dashSafe(err || '')}">${ex}${exNote}</span>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
         <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${free>0?'$'+fmt(free):'—'}</div>
@@ -662,7 +704,7 @@ async function fetchAndRenderLiquidity() {
       </div>
       <div style="text-align:right;">
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">TOTAL</div>
-        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">$${fmt(total)}</div>
+        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">${totalStr}</div>
       </div>
     </div>`;
   }).join('');
@@ -722,10 +764,12 @@ async function fetchAndRenderLiquidity() {
 
 // Called after each sync to update liquidity display
 window._updateLiquidityCache = (data) => {
-  if (data?.balances) {
-    _liquidityCache = data;
-    window._liquidityCache = data;
+  const displayData = applyManualCapitalOverlay(data);
+  if (displayData?.balances) {
+    _liquidityCache = displayData;
+    window._liquidityCache = displayData;
     if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
+    window.syncApiModalStatus?.();
   }
   fetchAndRenderLiquidity();
 };
