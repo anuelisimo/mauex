@@ -12,11 +12,12 @@ echo Este archivo intenta hacer todo en una sola corrida:
 echo   1. Revisar archivos principales
 echo   2. Subir frontend a GitHub / Vercel
 echo   3. Subir backend y Worker a GitHub
-echo   4. Desplegar Worker en Cloudflare
+echo   4. Copiar Worker para Cloudflare
 echo   5. Instalar soporte IBKR en Oracle
 echo   6. Probar Oracle y Cloudflare
 echo.
 echo Si algun servicio pide login o una private key, te lo va a pedir en esta misma ventana.
+echo Cloudflare queda manual: el Worker se copia al portapapeles para pegarlo y tocar Deploy.
 echo.
 
 echo Revisando app y Worker...
@@ -47,13 +48,10 @@ echo.
 echo ============================================
 echo   Paso 3/5 - Worker Cloudflare
 echo ============================================
-call "%~dp0DESPLEGAR_WORKER_CLOUDFLARE.bat"
-if %ERRORLEVEL% NEQ 0 (
-  echo.
-  echo No pude desplegar Cloudflare automaticamente.
-  echo Voy a copiar el Worker al portapapeles para que puedas pegarlo manualmente.
-  call "%~dp0COPIAR_WORKER_CLOUDFLARE.bat"
-)
+echo Para evitar que Wrangler bloquee la actualizacion, no intento login automatico.
+echo Copio el Worker al portapapeles para que lo pegues en Cloudflare.
+call "%~dp0COPIAR_WORKER_CLOUDFLARE.bat"
+if %ERRORLEVEL% NEQ 0 goto FAIL
 
 echo.
 echo ============================================
@@ -74,8 +72,8 @@ echo   Listo
 echo ============================================
 echo.
 echo La actualizacion completa termino.
-echo Si Cloudflare no se desplego automatico, el Worker quedo copiado al portapapeles.
-echo En ese caso pegalo en Cloudflare Workers y toca Deploy.
+echo El Worker quedo copiado al portapapeles.
+echo Pegalo en Cloudflare Workers y toca Deploy.
 echo.
 pause
 exit /b 0
