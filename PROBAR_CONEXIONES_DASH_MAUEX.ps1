@@ -37,6 +37,7 @@ $binance = Test-Url "Oracle Binance" "$oracleBase/binance-balance"
 $kucoin = Test-Url "Oracle KuCoin" "$oracleBase/kucoin-balance"
 $ibkrHealth = Test-Url "Oracle IBKR health" "$oracleBase/ibkr-health"
 $ibkrBalance = Test-Url "Oracle IBKR balance" "$oracleBase/ibkr-balance"
+$ibkrDebug = Test-Url "Oracle IBKR debug" "$oracleBase/ibkr-debug"
 
 Write-Host ""
 Write-Host "Diagnostico rapido:"
