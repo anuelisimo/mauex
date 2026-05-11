@@ -159,6 +159,22 @@ window.syncApiModalStatus = () => {
       el.style.color = txt.includes('✅') ? 'var(--accent)' : txt.includes('❌') ? 'var(--red)' : 'var(--t3)';
     }
   });
+  const row = document.getElementById('kucoinStatusBadge')?.parentElement;
+  if (row && !document.getElementById('ibkrStatusBadge')) {
+    const ib = document.createElement('span');
+    ib.id = 'ibkrStatusBadge';
+    ib.style.cssText = 'font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);';
+    ib.textContent = 'IBKR Oracle -';
+    row.appendChild(ib);
+  }
+  const ibkr = document.getElementById('ibkrStatusBadge');
+  if (ibkr) {
+    const hasIbkr = !!window._liquidityCache?.balances?.IBKR;
+    const ibkrErr = window._liquidityCache?.errors?.IBKR || window._liquidityCache?.balanceErrors?.IBKR;
+    ibkr.textContent = hasIbkr ? 'IBKR Oracle ok' : ibkrErr ? 'IBKR Oracle error' : 'IBKR Oracle -';
+    ibkr.style.color = hasIbkr ? 'var(--accent)' : ibkrErr ? 'var(--red)' : 'var(--t3)';
+    ibkr.title = 'IBKR se configura en Oracle con Client Portal Gateway, no con API Key dentro de MAUex.';
+  }
 };
 
 window.showPage = page => {

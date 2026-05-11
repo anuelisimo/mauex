@@ -27,6 +27,8 @@ if exist INSTALAR_IBKR_ORACLE_MAUEX.bat git add INSTALAR_IBKR_ORACLE_MAUEX.bat
 if exist INSTALAR_IBKR_ORACLE_MAUEX.ps1 git add INSTALAR_IBKR_ORACLE_MAUEX.ps1
 if exist PROBAR_IBKR_MAUEX.bat git add PROBAR_IBKR_MAUEX.bat
 if exist PROBAR_IBKR_MAUEX.ps1 git add PROBAR_IBKR_MAUEX.ps1
+if exist PROBAR_CONEXIONES_DASH_MAUEX.bat git add PROBAR_CONEXIONES_DASH_MAUEX.bat
+if exist PROBAR_CONEXIONES_DASH_MAUEX.ps1 git add PROBAR_CONEXIONES_DASH_MAUEX.ps1
 
 echo Guardando cambios locales...
 git commit -m "Add IBKR dashboard support and spot card cleanup"
