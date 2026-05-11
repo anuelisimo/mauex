@@ -494,6 +494,72 @@ function normalizeDashboardBalance(raw = {}) {
   return { total, free, margin, orders, pnl, USDT: usdt, USDC: usdc };
 }
 
+function dashboardTradeCapital(t) {
+  const size = Number(t?.posSize ?? t?.totalSize ?? t?.size ?? 0) || 0;
+  const lev = Math.max(1, Number(t?.leverage) || 1);
+  return (String(t?.dir || '').toLowerCase() === 'spot') ? size : size / lev;
+}
+
+function manualExchangeCapitalOverlay() {
+  const out = {};
+  const trades = window.G?.trades?.() || [];
+  trades.forEach(t => {
+    const ex = ((t.exchange || 'MANUAL') + '').toUpperCase();
+    if (!ex || ex === 'MANUAL') return;
+    if (!out[ex]) out[ex] = { margin: 0, orders: 0 };
+    const capital = dashboardTradeCapital(t);
+    if (t.status === 'active' || t.status === 'zombie') out[ex].margin += capital;
+    if (t.status === 'pending') out[ex].orders += capital;
+  });
+  return out;
+}
+
+function applyManualCapitalOverlay(data) {
+  if (!data?.balances) return data;
+  const manual = manualExchangeCapitalOverlay();
+  const balances = {};
+
+  Object.entries(data.balances).forEach(([ex, raw]) => {
+    const b = normalizeDashboardBalance(raw);
+    const m = manual[ex] || { margin: 0, orders: 0 };
+    const margin = Math.max(b.margin || 0, m.margin || 0);
+    const orders = Math.max(b.orders || 0, m.orders || 0);
+    const total = b.total || 0;
+    balances[ex] = {
+      ...b,
+      margin: Math.round(margin * 100) / 100,
+      orders: Math.round(orders * 100) / 100,
+      free: Math.round(Math.max(0, total - margin - orders) * 100) / 100,
+      manualMargin: Math.round((m.margin || 0) * 100) / 100,
+      manualOrders: Math.round((m.orders || 0) * 100) / 100,
+    };
+  });
+
+  let USDT = 0, USDC = 0, total = 0;
+  Object.values(balances).forEach(b => {
+    USDT += b.USDT || 0;
+    USDC += b.USDC || 0;
+    total += b.total || 0;
+  });
+
+  return {
+    ...data,
+    balances,
+    liquidity: {
+      ...(data.liquidity || data.totals || {}),
+      USDT: Math.round(USDT * 100) / 100,
+      USDC: Math.round(USDC * 100) / 100,
+      total: Math.round(total * 100) / 100,
+    },
+    totals: {
+      ...(data.totals || data.liquidity || {}),
+      USDT: Math.round(USDT * 100) / 100,
+      USDC: Math.round(USDC * 100) / 100,
+      total: Math.round(total * 100) / 100,
+    },
+  };
+}
+
 async function fetchAndRenderLiquidity() {
   const el = document.getElementById('dashLiquidity');
   if (!el) return;
@@ -529,6 +595,10 @@ async function fetchAndRenderLiquidity() {
     el.style.display = 'none';
     return;
   }
+
+  data = applyManualCapitalOverlay(data);
+  _liquidityCache = data;
+  window._liquidityCache = data;
 
   const balances = Object.fromEntries(
     Object.entries(data.balances).map(([ex, b]) => [ex, normalizeDashboardBalance(b)])
@@ -4179,11 +4249,12 @@ window.syncAllExchanges = async () => {
 
       // Cache liquidity data for dashboard
       if (data.balances) {
-        _liquidityCache = data;
-        window._liquidityCache = data;
+        const displayData = applyManualCapitalOverlay(data);
+        _liquidityCache = displayData;
+        window._liquidityCache = displayData;
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 200);
       }
-      if (data.liquidity) window._updateLiquidityCache(data);
+      if (data.liquidity) window._updateLiquidityCache(applyManualCapitalOverlay(data));
 
       try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
@@ -4200,7 +4271,7 @@ window.syncAllExchanges = async () => {
       // Show errors if any
       if(errs.length) {
         errs.forEach(([ex, err]) => console.warn(`${ex}: ${err}`));
-        toast('Sincronización parcial: revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/'), 'error');
+        toast('Sincronización parcial: ' + errs.map(([ex, err]) => `${ex.toUpperCase()} (${String(err).slice(0, 80)})`).join(' | '), 'error');
       }
       return;
     } catch(e) {
