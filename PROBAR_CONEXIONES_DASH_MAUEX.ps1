@@ -36,6 +36,7 @@ $oracleIp = Test-Url "Oracle public IP" "$oracleBase/myip"
 $binance = Test-Url "Oracle Binance" "$oracleBase/binance-balance"
 $kucoin = Test-Url "Oracle KuCoin" "$oracleBase/kucoin-balance"
 $ibkrHealth = Test-Url "Oracle IBKR health" "$oracleBase/ibkr-health"
+$ibkrFlex = Test-Url "Oracle IBKR Flex" "$oracleBase/ibkr-flex-balance"
 $ibkrBalance = Test-Url "Oracle IBKR balance" "$oracleBase/ibkr-balance"
 $ibkrDebug = Test-Url "Oracle IBKR debug" "$oracleBase/ibkr-debug"
 
@@ -62,7 +63,11 @@ if ($workerBalance -and $workerBalance.errors) {
 }
 if ($ibkrBalance -and $ibkrBalance.error) {
   Write-Host "- IBKR devolvio error: $($ibkrBalance.error)"
-  Write-Host "  IBKR requiere Client Portal Gateway abierto y logueado en Oracle."
+  Write-Host "  Si estas usando Flex Web, revisa token/query ID. Si estas usando Gateway, requiere login en Oracle."
+}
+if ($ibkrFlex -and $ibkrFlex.error) {
+  Write-Host "- IBKR Flex devolvio error: $($ibkrFlex.error)"
+  Write-Host "  Revisa que la Flex Query sea XML y tenga Account Information, Net Asset Value, Margin Summary, Cash Report y Open Positions."
 }
 
 Write-Host ""
