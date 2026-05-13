@@ -25,6 +25,12 @@ const fmtPx = n => {
   return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
 };
 const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
+const fmtQty = n => {
+  if(isNaN(n)||n==null) return '—';
+  const a = Math.abs(n);
+  const d = a>=100 ? 2 : a>=10 ? 3 : a>=1 ? 4 : 6;
+  return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:d});
+};
 const APP_CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
   'TRX','IOTA','RSR','KAVA','OMG','WAXP','BLOK','VLX','AKRO','AAVE','ONDO','XMR','ANKR',
@@ -1184,6 +1190,15 @@ function invalidationNotesHtml(t) {
   </div>`;
 }
 
+function positionUnitsLabel(t, size, entry) {
+  const qty = Number(size || 0) && Number(entry || 0) ? Number(size) / Number(entry) : 0;
+  if (!qty) return '—';
+  const ticker = String(t?.ticker || t?.symbol || '')
+    .replace(/USDT|BUSD|USD$/,'')
+    .toUpperCase() || 'u';
+  return `${fmtQty(qty)} ${ticker}`;
+}
+
 function buildPriceBar(t, currentPrice) {
   if (!t?.entry) return '';
   const dir   = t.dir || 'long';
@@ -1528,6 +1543,7 @@ function renderWatchlist() {
     const lev = t.leverage||1;
     const isSpot = t.dir === 'spot';
     const margin = t.dir==='spot' ? t.posSize : (t.posSize||0)/lev;
+    const unitsLabel = positionUnitsLabel(t, t.posSize, t.entry);
     const slDist = t.entry&&t.sl ? Math.abs(t.sl-t.entry)/t.entry*100 : 0;
     const sign = (t.dir==='short') ? -1 : 1;
     const contr = (t.posSize||0)/(t.entry||1);
@@ -1596,7 +1612,7 @@ function renderWatchlist() {
       ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
 
       ${isSpot ? `
-      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'Riesgo a SL' : 'Capital expuesto'}</div>
           <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${t.sl ? 'var(--red)' : 'var(--blue)'};">${t.sl ? '-$'+fmt(riskUsd||0) : '$'+fmt(t.posSize||0)}</div>
@@ -1612,8 +1628,13 @@ function renderWatchlist() {
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Precio actual</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${currentPrice ? '$'+fmtPx(currentPrice) : '-'}</div>
         </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
+        </div>
       </div>` : `
-      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${t.sl ? `
@@ -1633,6 +1654,11 @@ function renderWatchlist() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>`}
 
@@ -1747,6 +1773,80 @@ window.clearInvalidationAlertAndRender = async (id, level='inv1') => {
 };
 function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
 window.hasAlert = hasAlert;
+const EDIT_ALERT_LEVELS = [
+  { level:'entry', label:'Entry' },
+  { level:'sl', label:'SL' },
+  { level:'tp1', label:'TP1' },
+  { level:'tp2', label:'TP2' },
+  { level:'tp3', label:'TP3' },
+  { level:'inv1', label:'Inv 1' },
+  { level:'inv2', label:'Inv 2' },
+];
+function alertLevelHasPrice(t, level) {
+  if (!t) return false;
+  if (level === 'entry') return t.status === 'pending' && !!t.entry;
+  if (level === 'sl') return !!t.sl;
+  if (['tp1','tp2','tp3'].includes(level)) return !!t[level];
+  if (['inv1','inv2'].includes(level)) return tradeInvalidations(t).some(inv => inv.key === level && inv.price);
+  return false;
+}
+function editAlertLevelsFor(t) {
+  if (!t?.id) return [];
+  return EDIT_ALERT_LEVELS.filter(def => alertLevelHasPrice(t, def.level) || hasAlert(t.id, def.level));
+}
+function renderEditAlertState(t) {
+  const panel = document.getElementById('eAlertStatePanel');
+  const chips = document.getElementById('eAlertChips');
+  if (!panel || !chips || !t?.id) return;
+  const levels = editAlertLevelsFor(t);
+  window._editAlertState = {};
+  if (!levels.length) {
+    panel.style.display = 'none';
+    chips.innerHTML = '';
+    return;
+  }
+  panel.style.display = '';
+  chips.innerHTML = levels.map(def => {
+    const checked = hasAlert(t.id, def.level);
+    window._editAlertState[def.level] = checked;
+    const color = checked ? 'var(--accent)' : 'var(--t3)';
+    const bg = checked ? 'rgba(0,196,122,0.12)' : 'var(--bg3)';
+    const border = checked ? 'rgba(0,196,122,0.45)' : 'var(--border2)';
+    return `<label style="display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:6px;border:0.5px solid ${border};background:${bg};color:${color};font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;">
+      <input type="checkbox" ${checked?'checked':''} onchange="toggleEditAlertLevel('${def.level}', this.checked)" style="width:13px;height:13px;accent-color:#00c47a;">
+      ${def.label}
+    </label>`;
+  }).join('');
+}
+window.toggleEditAlertLevel = (level, checked) => {
+  window._editAlertState = window._editAlertState || {};
+  window._editAlertState[level] = !!checked;
+};
+async function applyEditAlertState(id, updatedTrade) {
+  const state = window._editAlertState || {};
+  const levels = Object.keys(state);
+  if (!id || !levels.length) return;
+  const creates = {};
+  for (const level of levels) {
+    const before = hasAlert(id, level);
+    const next = !!state[level];
+    if (!next && before) {
+      await clearAlertLevel(id, level);
+    } else if (next && !before && alertLevelHasPrice(updatedTrade, level)) {
+      const payload = alertPayload(level, { source:'manual_edit' });
+      rememberLocalAlert(id, level, payload);
+      if (updatedTrade) updatedTrade.levelAlerts = { ...(updatedTrade.levelAlerts||{}), [level]: payload };
+      creates['levelAlerts.' + level] = payload;
+    }
+  }
+  if (Object.keys(creates).length && window._fb?.updateDoc) {
+    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+      ...creates,
+      levelAlertCheckedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
 function levelClosureOf(t, level, closedParts) {
   if (!t || !level) return null;
   const fromParent = t.levelClosures?.[level];
@@ -2020,6 +2120,7 @@ function renderPositions() {
     const pnl    = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
     const isSpot = t.dir === 'spot';
     const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
+    const unitsLabel = positionUnitsLabel(t, t.posSize, t.entry);
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps    = [{l:'TP1',v:t.tp1,k:'tp1',pct:t.tp1pct||33},{l:'TP2',v:t.tp2,k:'tp2',pct:t.tp2pct||33},{l:'TP3',v:t.tp3,k:'tp3',pct:t.tp3pct||34}].filter(x=>x.v);
     const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
@@ -2096,7 +2197,7 @@ function renderPositions() {
       ${t.entry&&(t.sl||t.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, price||0)}</div>` : ''}
 
       ${isSpot && (t.sl || margin || t.posSize) ? `
-      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'Riesgo a SL' : 'Capital expuesto'}</div>
           <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${t.sl ? 'var(--red)' : 'var(--blue)'};">${t.sl ? '-$'+fmt(riskUsd||0) : '$'+fmt(t.posSize||0)}</div>
@@ -2112,10 +2213,15 @@ function renderPositions() {
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Precio actual</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${price ? '$'+fmtPx(price) : '-'}</div>
         </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
+        </div>
       </div>` : ''}
 
       ${(!isSpot && (t.sl || margin || t.posSize)) ? `
-      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${t.sl ? `
@@ -2135,6 +2241,11 @@ function renderPositions() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize)}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : ''}
 
@@ -3008,6 +3119,7 @@ window.openEditTrade = id => {
     document.getElementById('eInvNote').value = finalInvs.find(x=>x.note)?.note || '';
   }
 
+  renderEditAlertState(t);
   openModal('editTradeModal');
 };
 
@@ -3029,6 +3141,7 @@ window.saveEditTrade = async () => {
     try {
       await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), { traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, updatedAt:new Date().toISOString() });
       await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
+      await applyEditAlertState(id, { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations });
       // Also update local exchange position
       const pos = exchangePositions.find(p=>p.exchangeId===id||p.id===id);
       if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; pos.liquidation=liquidationOverride || null; pos.invalidations=invalidations; }
@@ -3077,6 +3190,7 @@ window.saveEditTrade = async () => {
       updatedAt: new Date().toISOString(),
     });
     await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
+    await applyEditAlertState(id, { ...existingTrade, id, ticker, exchange, leverage:lev, dir:editDir, entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize, tp1, tp1pct, tp2, tp2pct, tp3, tp3pct, notes, traderId, traderName, invalidations });
     await window._loadTrades();
     closeModal('editTradeModal');
     // Re-render current page
@@ -5367,6 +5481,7 @@ function renderOrders() {
     const currentPrice = G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
     const entryPrice = o.entry || o.price || 0;
     const totalSize  = o.totalSize || o.size || 0;
+    const unitsLabel = positionUnitsLabel(o, totalSize, entryPrice);
     const dist = currentPrice&&entryPrice ? ((entryPrice-currentPrice)/currentPrice*100) : null;
     const distAbs = dist!=null ? Math.abs(dist) : null;
     const distColor = distAbs==null?'var(--t3)':distAbs<1?'var(--accent)':distAbs<3?'var(--amber)':'var(--t2)';
@@ -5443,7 +5558,7 @@ function renderOrders() {
       ${entryPrice&&(sl||tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
 
       ${isSpotOrder && (sl || totalSize) ? `
-      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'Riesgo a SL' : 'Capital reservado'}</div>
           ${sl ? `
@@ -5464,10 +5579,15 @@ function renderOrders() {
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Precio actual</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${currentPrice ? '$'+fmtPx(currentPrice) : '-'}</div>
         </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
+        </div>
       </div>` : ''}
 
       ${(!isSpotOrder && (sl || totalSize)) ? `
-      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
+      <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${sl ? `
@@ -5487,6 +5607,11 @@ function renderOrders() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Margen aprox.</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${lev>1?'$'+fmt(totalSize/lev):'—'}</div>
+        </div>
+        <div style="background:var(--border2);"></div>
+        <div style="padding:8px 14px;">
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : ''}
 
