@@ -1172,10 +1172,15 @@ async function resetInvalidationAlertsIfChanged(id, before=[], after=[]) {
 }
 
 function invalidationNotesHtml(t) {
-  const touched = tradeInvalidations(t).filter(inv => hasAlert(t.id, inv.key) && inv.note);
+  const touched = tradeInvalidations(t).filter(inv => hasAlert(t.id, inv.key));
   if (!touched.length) return '';
   return `<div style="font-size:11px;color:#9bdcff;padding:6px 12px;background:rgba(56,189,248,0.08);border-bottom:0.5px solid rgba(56,189,248,0.25);font-family:var(--mono);">
-    ${touched.map(inv => `<div><strong>${dashSafe(inv.label)} tocada:</strong> ${dashSafe(inv.note)}</div>`).join('')}
+    ${touched.map(inv => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <span><strong>${dashSafe(inv.label)} tocada:</strong> ${dashSafe(inv.note || 'Invalidacion')}</span>
+        <button onclick="window.clearInvalidationAlertAndRender('${t.id}','${inv.key}')" title="Cancelar invalidacion"
+          style="width:22px;height:22px;border-radius:50%;border:0.5px solid rgba(56,189,248,0.35);background:rgba(56,189,248,0.08);color:#9bdcff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;flex-shrink:0;">×</button>
+      </div>`).join('')}
   </div>`;
 }
 
@@ -1444,9 +1449,68 @@ window.toggleCardMin = (id) => {
   renderPositions(); renderOrders(); renderWatchlist();
 };
 
+async function saveWatchlistOrder(ids) {
+  if (!window._fb?.updateDoc || !window._fb?.doc || !window._fb?.db) return;
+  await Promise.all(ids.map((id, index) => window._fb.updateDoc(
+    window._fb.doc(window._fb.db, 'trades', id),
+    { watchOrder: index + 1, updatedAt: new Date().toISOString() }
+  )));
+  (window.G?.trades?.() || []).forEach(t => {
+    const index = ids.indexOf(t.id);
+    if (index >= 0) t.watchOrder = index + 1;
+  });
+}
+
+function attachWatchlistDrag() {
+  const container = document.getElementById('watchCards');
+  if (!container) return;
+  let draggedId = null;
+
+  container.querySelectorAll('[data-watch-card-id]').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      draggedId = card.dataset.watchCardId;
+      card.classList.add('watch-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedId);
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('watch-dragging');
+      draggedId = null;
+    });
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      const dragging = container.querySelector('.watch-dragging');
+      if (!dragging || dragging === card) return;
+      const rect = card.getBoundingClientRect();
+      const placeAfter = e.clientY > rect.top + rect.height / 2;
+      container.insertBefore(dragging, placeAfter ? card.nextSibling : card);
+    });
+    card.addEventListener('drop', async e => {
+      e.preventDefault();
+      const ids = [...container.querySelectorAll('[data-watch-card-id]')].map(el => el.dataset.watchCardId);
+      if (draggedId && ids.includes(draggedId)) {
+        try {
+          await saveWatchlistOrder(ids);
+          toast('Orden de watchlist actualizado.');
+        } catch(err) {
+          toast('No pude guardar el orden: ' + err.message, 'error');
+          renderWatchlist();
+        }
+      }
+    });
+  });
+}
+
 function renderWatchlist() {
   const G = window.G; if(!G) return;
-  const items = G.trades().filter(t=>t.status==='watchlist');
+  const items = G.trades()
+    .filter(t=>t.status==='watchlist')
+    .sort((a,b) => {
+      const ao = Number(a.watchOrder || 0);
+      const bo = Number(b.watchOrder || 0);
+      if (ao || bo) return (ao || 999999) - (bo || 999999);
+      return (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0);
+    });
   const container = document.getElementById('watchCards');
   if (!container) return;
   if (!items.length) {
@@ -1520,13 +1584,13 @@ function renderWatchlist() {
       </div>`;
 
     if (isMin) {
-      return `<div class="${invalidAlert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
+      return `<div class="${invalidAlert.cardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;cursor:grab;">
         ${header}
         ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div class="${invalidAlert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;">
+    return `<div class="${invalidAlert.cardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;cursor:grab;">
       ${header}
 
       ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
@@ -1610,6 +1674,7 @@ function renderWatchlist() {
       </div>
     </div>`;
   }).join('');
+  attachWatchlistDrag();
 }
 
 // ── Positions ──────────────────────────────────────────────────────────────
@@ -1673,6 +1738,13 @@ async function clearAlertLevel(id, level) {
   } catch(e) { console.warn('No pude limpiar alerta:', e.message); }
 }
 window.clearInvalidationAlert = (id, level='inv1') => clearAlertLevel(id, level);
+window.clearInvalidationAlertAndRender = async (id, level='inv1') => {
+  await clearAlertLevel(id, level);
+  renderWatchlist?.();
+  renderOrders?.();
+  renderPositions?.();
+  renderMap?.();
+};
 function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
 window.hasAlert = hasAlert;
 function levelClosureOf(t, level, closedParts) {
@@ -5439,6 +5511,8 @@ function renderOrders() {
           </div>`;
         }).join('')}
       </div>` : ''}
+
+      ${invalidationNotesHtml(o)}
 
       ${o._manual ? `
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">

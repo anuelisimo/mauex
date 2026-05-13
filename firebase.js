@@ -190,6 +190,10 @@ window.saveTrade = async status => {
   const lev = calcState.dir === 'spot' ? 1 : (calcState.lev || 1);
 
   try {
+    const currentWatchOrders = status === 'watchlist'
+      ? trades.filter(t => t.status === 'watchlist').map(t => Number(t.watchOrder || 0)).filter(Boolean)
+      : [];
+    const watchOrder = status === 'watchlist' ? (currentWatchOrders.length ? Math.max(...currentWatchOrders) + 1 : 1) : null;
     await addDoc(collection(db,'trades'), {
       userId: CU.uid, ticker, entry, sl, tp1, tp2, tp3,
       tp1pct, tp2pct, tp3pct, risk, posSize,
@@ -197,6 +201,7 @@ window.saveTrade = async status => {
       exchange: calcState.dir === 'spot' ? 'spot' : calcState.ex,
       leverage: lev,
       traderId, traderName, notes, invalidations, status,
+      ...(watchOrder ? { watchOrder } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
