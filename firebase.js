@@ -446,6 +446,34 @@ function pnlForClose(t, closeSize, closePrice) {
   const sign = (t.dir === 'short') ? -1 : 1;
   return Math.round((closeSize / t.entry) * (closePrice - t.entry) * sign * 100) / 100;
 }
+window.signalExecutionForClose = (t, closeData={}) => {
+  const plan = t?.originalPlan || window.buildOriginalTraderPlan?.(t) || {};
+  const level = closeData.closeLevel || (closeData.closeReason === 'sl' ? 'sl' : '');
+  const realPnl = Number(closeData.pnl) || 0;
+  const closeSize = Number(closeData.posSize) || Number(t?.posSize) || 0;
+  const planEntry = Number(plan.entry || t?.entry) || 0;
+  const planDir = plan.dir || t?.dir || 'long';
+  const levelMap = {
+    tp1: Number(plan.tp1) || 0,
+    tp2: Number(plan.tp2) || 0,
+    tp3: Number(plan.tp3) || 0,
+    sl: Number(plan.sl) || 0,
+  };
+  let signalLevel = levelMap[level] ? level : 'manual';
+  let signalExitPrice = levelMap[level] || Number(closeData.closePrice) || 0;
+  if (!planEntry || !signalExitPrice || !closeSize) {
+    return { signalPnl: realPnl, realPnl, executionDelta: 0, signalExitPrice, signalLevel };
+  }
+  const sign = planDir === 'short' ? -1 : 1;
+  const signalPnl = Math.round((closeSize / planEntry) * (signalExitPrice - planEntry) * sign * 100) / 100;
+  return {
+    signalPnl,
+    realPnl,
+    executionDelta: Math.round((realPnl - signalPnl) * 100) / 100,
+    signalExitPrice,
+    signalLevel,
+  };
+};
 const CLOSE_GOOD_TAGS = [
   'Respete plan','Buena entrada','Espere confirmacion','Buena paciencia','Tome parciales',
   'Movi SL correctamente','Cerre por invalidacion','Buen cierre manual','Buen tamano','Evite sobreoperar'
@@ -522,6 +550,10 @@ function buildCloseChangeEvent(t, closeData, reviewData, extra={}) {
     closePctOriginal: Number(closeData.closePctOriginal) || 0,
     posSize: Number(closeData.posSize) || 0,
     pnl: Number(closeData.pnl) || 0,
+    signalPnl: Number(closeData.signalPnl) || 0,
+    executionDelta: Number(closeData.executionDelta) || 0,
+    signalExitPrice: Number(closeData.signalExitPrice) || 0,
+    signalLevel: closeData.signalLevel || '',
     note: closeData.closeNotes || '',
     reasonTags: [...new Set([...(reviewData?.goodTags || []), ...(reviewData?.errorTags || []), ...(reviewData?.mauexTags || [])])],
     originalPlanSnapshot: t?.originalPlan || window.buildOriginalTraderPlan?.(t) || null,
@@ -673,6 +705,7 @@ async function confirmCascadeClose(t, action, closeDate, closeNotes) {
       daysOpen: Math.round((new Date(closeDateSafe) - new Date(t.createdAt)) / 86400000),
       createdAt: t.createdAt, updatedAt: new Date().toISOString(),
     };
+    Object.assign(closeData, window.signalExecutionForClose(t, closeData));
     closeData.changeEvents = [buildCloseChangeEvent(t, closeData, reviewData, { cascadeLevel: level.k })];
     await addDoc(collection(db,'trades'), { ...closeData, userId: CU.uid, partialClose: true, originalId: t.id });
     updates['levelClosures.'+level.k] = levelClosure;
@@ -771,6 +804,7 @@ window.confirmClose = async () => {
       pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
       daysOpen: days, createdAt: t.createdAt, updatedAt: new Date().toISOString(),
     };
+    Object.assign(closeData, window.signalExecutionForClose(t, closeData));
     const closeChangeEvent = buildCloseChangeEvent(t, closeData, reviewData);
     closeData.changeEvents = [closeChangeEvent];
 

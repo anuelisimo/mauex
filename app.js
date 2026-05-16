@@ -799,6 +799,37 @@ const openRiskOf = t => {
   if (!entry || !sl) return (t?.dir === 'spot') ? size : size / (Number(t?.leverage) || 1);
   return Math.abs((entry - sl) / entry * size);
 };
+const signalExecutionOf = t => {
+  if (Number.isFinite(Number(t?.signalPnl)) || Number.isFinite(Number(t?.executionDelta))) {
+    const signalPnl = Number(t?.signalPnl) || 0;
+    const realPnl = dashPnl(t);
+    return {
+      signalPnl,
+      realPnl,
+      executionDelta: Number.isFinite(Number(t?.executionDelta)) ? Number(t.executionDelta) : Math.round((realPnl - signalPnl) * 100) / 100,
+      signalExitPrice: Number(t?.signalExitPrice) || 0,
+      signalLevel: t?.signalLevel || '',
+    };
+  }
+  if (typeof window.signalExecutionForClose === 'function') {
+    return window.signalExecutionForClose(t, {
+      closeLevel: t?.closeLevel || '',
+      closeReason: t?.closeReason || '',
+      closePrice: t?.closePrice || t?.exitPrice || t?.exit || 0,
+      posSize: t?.posSize || 0,
+      pnl: dashPnl(t),
+    });
+  }
+  const realPnl = dashPnl(t);
+  return { signalPnl: realPnl, realPnl, executionDelta: 0, signalExitPrice: Number(t?.closePrice)||0, signalLevel:'manual' };
+};
+const signalStatsOf = trades => {
+  const rows = trades.map(t => ({ trade:t, ...signalExecutionOf(t) }));
+  const signalPnl = rows.reduce((s,x)=>s+(Number(x.signalPnl)||0),0);
+  const realPnl = rows.reduce((s,x)=>s+(Number(x.realPnl)||0),0);
+  const executionDelta = Math.round((realPnl - signalPnl) * 100) / 100;
+  return { rows, signalPnl, realPnl, executionDelta };
+};
 const dashStatsOf = (trades) => {
   const wins = trades.filter(t => dashPnl(t) > 0);
   const losses = trades.filter(t => dashPnl(t) < 0);
@@ -843,9 +874,16 @@ const dashMetricInfo = {
   'Peor trade':'Trade cerrado con mayor perdida en dolares.',
   'Traders seguidos':'Cantidad de traders distintos asociados a tus operaciones.',
   'Activos operados':'Cantidad de tickers distintos registrados en la app.',
+  'Signal PnL':'Resultado estimado usando el plan original del trader para el nivel cerrado.',
+  'Execution delta':'Diferencia entre tu PnL real y el Signal PnL. Positivo significa que tu gestion agrego valor; negativo significa que capturaste menos que el plan.',
 };
 const dashMetricCard = m => `<div class="metric">${infoDot(m.info || dashMetricInfo[m.l])}<div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div>${m.sub?`<div class="metric-sub">${m.sub}</div>`:''}</div>`;
 const dashMoney = v => `${v>=0?'+':'-'}$${fmt(Math.abs(v))}`;
+const signalGroupStats = (trades, keyFn) => {
+  const grouped = dashGroupStats(trades, keyFn);
+  return grouped.map(row => ({ ...row, signal: signalStatsOf(row.trades) }))
+    .sort((a,b)=>b.signal.executionDelta-a.signal.executionDelta);
+};
 const dashGroupStats = (trades, keyFn) => {
   const map = {};
   trades.forEach(t => {
@@ -877,10 +915,13 @@ function renderProfessionalDashboard(closed) {
     return;
   }
   const s = dashStatsOf(closed);
+  const sig = signalStatsOf(closed);
   const best = closed.reduce((b,t)=>dashPnl(t)>dashPnl(b)?t:b, closed[0]);
   const worst = closed.reduce((w,t)=>dashPnl(t)<dashPnl(w)?t:w, closed[0]);
   metricsEl.innerHTML = [
     {l:'PnL total',v:dashMoney(s.pnl),cls:s.pnl>=0?'green':'red',sub:`${s.count} trades cerrados`},
+    {l:'Signal PnL',v:dashMoney(sig.signalPnl),cls:sig.signalPnl>=0?'green':'red',sub:'Plan original del trader'},
+    {l:'Execution delta',v:dashMoney(sig.executionDelta),cls:sig.executionDelta>=0?'green':'red',sub:'Real - Signal'},
     {l:'Win rate',v:Math.round(s.winRate*100)+'%',cls:s.winRate>=0.5?'green':'red',sub:`${s.wins} wins / ${s.losses} losses`},
     {l:'Profit factor',v:s.profitFactor===Infinity?'INF':s.profitFactor.toFixed(2),cls:s.profitFactor>=1?'green':'red',sub:'Ganancias / perdidas'},
     {l:'Expectancy',v:dashMoney(s.expectancy),cls:s.expectancy>=0?'green':'red',sub:'Promedio por trade'},
@@ -892,6 +933,7 @@ function renderProfessionalDashboard(closed) {
 
   const traderRows = dashGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,8);
   const tickerRows = dashGroupStats(closed, t => (t.ticker || 'Sin ticker').toUpperCase()).slice(0,8);
+  const signalRows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,8);
   const table = (title, rows) => `<div class="card" style="padding:0;overflow:hidden;">
     <div class="sec-label" style="padding:14px 14px 0;">${title}</div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -901,7 +943,27 @@ function renderProfessionalDashboard(closed) {
       </table>
     </div>
   </div>`;
-  tablesEl.innerHTML = `<div class="g2">${table('Ranking por trader', traderRows)}${table('Ranking por activo', tickerRows)}</div>`;
+  const signalTable = `<div class="card" style="padding:0;overflow:hidden;margin-bottom:12px;">
+    <div class="sec-label" style="padding:14px 14px 0;">Signal vs Real por trader ${infoDot('Compara el resultado estimado del plan original del trader contra tu resultado real. Delta positivo = tu gestion sumo valor; delta negativo = capturaste menos que el plan.')}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+      <table class="tbl" style="min-width:620px;">
+        <thead><tr><th>Trader</th><th>Trades</th><th>Signal PnL</th><th>Real PnL</th><th>Delta</th><th>Lectura</th></tr></thead>
+        <tbody>${signalRows.length?signalRows.map(row=>{
+          const delta = row.signal.executionDelta;
+          const label = Math.abs(delta) < 1 ? 'Neutral' : delta > 0 ? 'Tu gestion suma' : 'Se pierde edge';
+          return `<tr>
+            <td><strong>${dashSafe(row.name)}</strong></td>
+            <td>${row.stats.count}</td>
+            <td class="${row.signal.signalPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(row.signal.signalPnl)}</td>
+            <td class="${row.signal.realPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(row.signal.realPnl)}</td>
+            <td class="${delta>=0?'pnl-pos':'pnl-neg'}">${dashMoney(delta)}</td>
+            <td style="color:var(--t2);">${label}</td>
+          </tr>`;
+        }).join(''):`<tr><td colspan="6" style="color:var(--t3);">Sin datos suficientes</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
+  tablesEl.innerHTML = `${signalTable}<div class="g2">${table('Ranking por trader', traderRows)}${table('Ranking por activo', tickerRows)}</div>`;
 }
 
 const dashPlannedR = t => {
@@ -5356,6 +5418,7 @@ window.exportDashboardPdf = async () => {
     };
 
     const stats = dashStatsOf(closed);
+    const signalStats = signalStatsOf(closed);
     const active = all.filter(t => t.status === 'active');
     const pending = all.filter(t => t.status === 'pending');
     const watch = all.filter(t => t.status === 'watchlist');
@@ -5380,6 +5443,8 @@ window.exportDashboardPdf = async () => {
       ['Metrica','Valor','Detalle'],
       [
         ['PnL total cerrado', money(stats.pnl), `${stats.count} trades`],
+        ['Signal PnL', money(signalStats.signalPnl), 'Estimacion con plan original del trader'],
+        ['Execution delta', money(signalStats.executionDelta), 'PnL real menos Signal PnL'],
         ['Win rate', `${Math.round(stats.winRate*100)}%`, `${stats.wins} wins / ${stats.losses} losses`],
         ['Profit factor', stats.profitFactor === Infinity ? 'INF' : stats.profitFactor.toFixed(2), 'Ganancias brutas / perdidas brutas'],
         ['Expectancy', money(stats.expectancy), 'Promedio esperado por trade'],
@@ -5426,6 +5491,16 @@ window.exportDashboardPdf = async () => {
       [145, 52, 78, 55, 55, 90]
     );
 
+    section('Signal vs Real por trader');
+    table(
+      ['Trader','Trades','Signal','Real','Delta','Lectura'],
+      signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').map(r => {
+        const delta = r.signal.executionDelta;
+        return [r.name, r.stats.count, money(r.signal.signalPnl), money(r.signal.realPnl), money(delta), Math.abs(delta) < 1 ? 'Neutral' : delta > 0 ? 'Gestion suma' : 'Se pierde edge'];
+      }),
+      [130, 48, 74, 74, 74, 112]
+    );
+
     section('Ranking por activo');
     table(
       ['Ticker','Trades','PnL','WR','PF','Expectancy'],
@@ -5469,21 +5544,22 @@ window.exportDashboardPdf = async () => {
 
     section('Historial completo');
     table(
-      ['Ticker','Dir','Exchange','Trader','Entry','Exit','PnL','PnL%','Apertura','Cierre','Notas'],
-      closed.sort((a,b)=>(new Date(historyCloseDateOf(a)||0))-(new Date(historyCloseDateOf(b)||0))).map(t => [
+      ['Ticker','Dir','Trader','Exit','Signal','Real','Delta','Cierre','Notas'],
+      closed.sort((a,b)=>(new Date(historyCloseDateOf(a)||0))-(new Date(historyCloseDateOf(b)||0))).map(t => {
+        const se = signalExecutionOf(t);
+        return [
         t.ticker || '',
         String(t.dir || '').toUpperCase(),
-        t.exchange || '',
         t.traderName || '',
-        t.entry ?? '',
         t.closePrice || t.exitPrice || t.exit || '',
-        money(dashPnl(t)),
-        `${Number(t.pnlPct || 0).toFixed(1)}%`,
-        dateOnly(t.createdAt),
+        money(se.signalPnl),
+        money(se.realPnl),
+        money(se.executionDelta),
         dateOnly(historyCloseDateOf(t)),
         historyNotesOf(t),
-      ]),
-      [50, 36, 52, 65, 42, 42, 55, 42, 58, 58, 120]
+        ];
+      }),
+      [50, 34, 70, 48, 62, 62, 62, 58, 160]
     );
 
     doc.save(`mauex_dashboard_${new Date().toISOString().split('T')[0]}.pdf`);
