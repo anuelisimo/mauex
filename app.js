@@ -384,6 +384,7 @@ window.syncEditFields = (changed) => {
 };
 
 window.compute = () => {
+  renderRiskSuggestionPanel();
   const entry = parseFloat(document.getElementById('cEntry').value)||0;
   const sl    = parseFloat(document.getElementById('cSL').value)||0;
   const risk  = parseFloat(document.getElementById('cRisk').value)||0;
@@ -905,6 +906,101 @@ const dashProfessionalRow = (row) => {
     <td class="${s.expectancy>=0?'pnl-pos':'pnl-neg'}">${dashMoney(s.expectancy)}</td>
   </tr>`;
 };
+const traderEdgeScore = row => {
+  const s = row.stats || {};
+  const signal = row.signal || signalStatsOf(row.trades || []);
+  const pf = s.profitFactor === Infinity ? 3 : Math.max(0, Math.min(3, Number(s.profitFactor)||0));
+  const wr = Math.max(0, Math.min(1, Number(s.winRate)||0));
+  const expectancy = Number(s.expectancy)||0;
+  const avgAbs = Math.max(Math.abs(Number(s.avgWin)||0), Math.abs(Number(s.avgLoss)||0), 1);
+  const expectancyScore = Math.max(0, Math.min(1, (expectancy / avgAbs + 1) / 2));
+  const signalScore = Number(signal.signalPnl) > 0 ? 1 : 0;
+  const deltaScore = Number(signal.executionDelta) >= 0 ? 1 : 0.35;
+  return Math.round((pf/3)*30 + wr*25 + expectancyScore*20 + signalScore*15 + deltaScore*10);
+};
+const traderEdgeState = row => {
+  const score = traderEdgeScore(row);
+  const delta = Number(row.signal?.executionDelta)||0;
+  if (score >= 75 && delta >= 0) return { label:'Prioridad', color:'var(--accent)', tone:'good' };
+  if (score >= 60) return { label:'Normal', color:'var(--blue)', tone:'neutral' };
+  if (score >= 45) return { label:'Reducir', color:'var(--amber)', tone:'warn' };
+  return { label:'Observacion', color:'var(--red)', tone:'bad' };
+};
+function renderTraderEdgeVisual(rows) {
+  if (!rows.length) return '';
+  const enriched = rows.map(row => ({ ...row, edgeScore: traderEdgeScore(row), edgeState: traderEdgeState(row) }));
+  const maxAbsPnl = Math.max(1, ...enriched.map(r => Math.abs(Number(r.signal?.realPnl)||0)));
+  const maxTrades = Math.max(1, ...enriched.map(r => Number(r.stats?.count)||0));
+  const xOf = pnl => 360 + (Number(pnl)||0) / maxAbsPnl * 270;
+  const yOf = score => 226 - (Number(score)||0) / 100 * 172;
+  const topSignal = [...enriched].sort((a,b)=>(b.signal?.signalPnl||0)-(a.signal?.signalPnl||0))[0];
+  const topReal = [...enriched].sort((a,b)=>(b.signal?.realPnl||0)-(a.signal?.realPnl||0))[0];
+  const topDelta = [...enriched].sort((a,b)=>(b.signal?.executionDelta||0)-(a.signal?.executionDelta||0))[0];
+  const worstDelta = [...enriched].sort((a,b)=>(a.signal?.executionDelta||0)-(b.signal?.executionDelta||0))[0];
+  const mini = (label, row, val, cls) => `<div style="background:var(--bg3);border-radius:var(--r);padding:12px;min-width:0;">
+    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:5px;">${label}</div>
+    <div style="font-family:var(--mono);font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${dashSafe(row?.name || '-')}</div>
+    <div class="${cls}" style="font-family:var(--mono);font-size:14px;font-weight:800;margin-top:4px;">${dashMoney(val || 0)}</div>
+  </div>`;
+  const points = enriched.map(row => {
+    const pnl = Number(row.signal?.realPnl)||0;
+    const delta = Number(row.signal?.executionDelta)||0;
+    const x = Math.max(62, Math.min(658, xOf(pnl)));
+    const y = Math.max(44, Math.min(235, yOf(row.edgeScore)));
+    const r = 7 + Math.sqrt((Number(row.stats?.count)||0) / maxTrades) * 13;
+    const color = delta >= 0 ? '#00c47a' : '#f03d3d';
+    return `<g>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" opacity="0.18" stroke="${color}" stroke-width="1.4"/>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${color}"/>
+      <text x="${x.toFixed(1)}" y="${(y-r-7).toFixed(1)}" text-anchor="middle" fill="#a8b8cc" font-size="10" font-family="monospace" font-weight="700">${dashSafe(row.name).slice(0,18)}</text>
+    </g>`;
+  }).join('');
+  const tableRows = enriched.slice(0,8).map(row => {
+    const state = row.edgeState;
+    const delta = Number(row.signal?.executionDelta)||0;
+    return `<tr>
+      <td><strong>${dashSafe(row.name)}</strong></td>
+      <td>${row.edgeScore}</td>
+      <td class="${row.signal.signalPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(row.signal.signalPnl)}</td>
+      <td class="${row.signal.realPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(row.signal.realPnl)}</td>
+      <td class="${delta>=0?'pnl-pos':'pnl-neg'}">${dashMoney(delta)}</td>
+      <td><span style="display:inline-flex;padding:3px 7px;border-radius:4px;background:rgba(255,255,255,0.04);color:${state.color};font-family:var(--mono);font-size:9px;font-weight:800;">${state.label}</span></td>
+    </tr>`;
+  }).join('');
+  return `<div class="card" style="padding:16px;margin-bottom:12px;">
+    <div class="fxb" style="gap:12px;align-items:flex-start;margin-bottom:14px;">
+      <div>
+        <div class="sec-label" style="margin-bottom:5px;">Trader Edge Dashboard ${infoDot('Mapa visual de traders. Derecha = mas PnL real. Arriba = mejor score de edge. Punto mas grande = mas trades. Verde = tu ejecucion suma contra la senal; rojo = se pierde parte del edge.')}</div>
+        <div style="font-size:11px;color:var(--t2);font-family:var(--mono);">Matriz visual para decidir a que traders mirar con mas prioridad.</div>
+      </div>
+    </div>
+    <div class="g4" style="margin-bottom:12px;">
+      ${mini('Mejor senal', topSignal, topSignal?.signal?.signalPnl, (topSignal?.signal?.signalPnl||0)>=0?'pnl-pos':'pnl-neg')}
+      ${mini('Mejor real', topReal, topReal?.signal?.realPnl, (topReal?.signal?.realPnl||0)>=0?'pnl-pos':'pnl-neg')}
+      ${mini('Tu gestion suma', topDelta, topDelta?.signal?.executionDelta, (topDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
+      ${mini('Edge perdido', worstDelta, worstDelta?.signal?.executionDelta, (worstDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
+    </div>
+    <div class="trader-edge-layout">
+      <div style="background:var(--bg3);border-radius:var(--r);padding:10px;min-height:280px;overflow:hidden;">
+        <svg viewBox="0 0 720 270" style="width:100%;height:270px;display:block;">
+          <line x1="360" y1="34" x2="360" y2="240" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+          <line x1="48" y1="226" x2="672" y2="226" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+          <line x1="48" y1="140" x2="672" y2="140" stroke="rgba(255,255,255,.055)" stroke-width="1"/>
+          <text x="48" y="24" fill="#6a7888" font-size="10" font-family="monospace">EDGE SCORE</text>
+          <text x="580" y="258" fill="#6a7888" font-size="10" font-family="monospace">PNL REAL +</text>
+          <text x="48" y="258" fill="#6a7888" font-size="10" font-family="monospace">PNL REAL -</text>
+          ${points}
+        </svg>
+      </div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--bg3);border-radius:var(--r);">
+        <table class="tbl" style="min-width:460px;">
+          <thead><tr><th>Trader</th><th>Score</th><th>Signal</th><th>Real</th><th>Delta</th><th>Estado</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
 function renderProfessionalDashboard(closed) {
   const metricsEl = document.getElementById('dashProMetrics');
   const tablesEl = document.getElementById('dashProTables');
@@ -933,7 +1029,8 @@ function renderProfessionalDashboard(closed) {
 
   const traderRows = dashGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,8);
   const tickerRows = dashGroupStats(closed, t => (t.ticker || 'Sin ticker').toUpperCase()).slice(0,8);
-  const signalRows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,8);
+  const allSignalRows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader');
+  const signalRows = allSignalRows.slice(0,8);
   const table = (title, rows) => `<div class="card" style="padding:0;overflow:hidden;">
     <div class="sec-label" style="padding:14px 14px 0;">${title}</div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -963,7 +1060,7 @@ function renderProfessionalDashboard(closed) {
       </table>
     </div>
   </div>`;
-  tablesEl.innerHTML = `${signalTable}<div class="g2">${table('Ranking por trader', traderRows)}${table('Ranking por activo', tickerRows)}</div>`;
+  tablesEl.innerHTML = `${renderTraderEdgeVisual(allSignalRows)}${signalTable}<div class="g2">${table('Ranking por trader', traderRows)}${table('Ranking por activo', tickerRows)}</div>`;
 }
 
 const dashPlannedR = t => {
@@ -1128,6 +1225,7 @@ function renderDashboard() {
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
   fetchAndRenderLiquidity();
   renderProfessionalDashboard(closed);
+  renderIntelligenceDashboard(closed, all);
   renderQualityDashboard(closed);
   // Render equity curve + stats + capital pie (same as historial)
   setTimeout(() => renderHistCharts(closed), 50);
@@ -1251,6 +1349,313 @@ function invalidationNotesHtml(t) {
           style="width:22px;height:22px;border-radius:50%;border:0.5px solid rgba(56,189,248,0.35);background:rgba(56,189,248,0.08);color:#9bdcff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;flex-shrink:0;">×</button>
       </div>`).join('')}
   </div>`;
+}
+
+// ---- AI Risk Engine + Performance Intelligence ----
+function baseTickerSymbol(ticker) {
+  return String(ticker || '').trim().toUpperCase().replace(/[-_/ ]?(USDT|USDC|BUSD|USD|PERP)$/,'');
+}
+
+function assetRiskMultiplier(ticker) {
+  const sym = baseTickerSymbol(ticker);
+  if (!sym) return { mult:0.45, label:'Sin ticker', tier:'unknown' };
+  if (sym === 'BTC') return { mult:1, label:'BTC core', tier:'core' };
+  if (sym === 'ETH') return { mult:.8, label:'ETH core', tier:'core' };
+  if (['GLD','IAUM','PSLV','SILVER','GOLD','OIL','USO','SLV'].includes(sym)) return { mult:.7, label:'Commodity / ETF', tier:'defensive' };
+  if (['SOL','BNB','XRP','LINK','AAVE','DOGE','ADA','AVAX','DOT','LTC','XMR'].includes(sym)) return { mult:.5, label:'Large cap alt', tier:'large-alt' };
+  if (['HYPE','CAKE','ONDO','TAO','NEAR','UNI','ATOM','POL','MATIC'].includes(sym)) return { mult:.35, label:'Altcoin media', tier:'mid-alt' };
+  return { mult:.25, label:'Activo chico / sin clasificar', tier:'small-alt' };
+}
+
+function traderRiskRow(traderId, traderName) {
+  const closed = (window.G?.trades?.() || []).filter(t => t.status === 'closed');
+  const name = traderName || (window.G?.traders?.() || []).find(t => t.id === traderId)?.name || '';
+  if (!name && !traderId) return null;
+  const rows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader');
+  return rows.find(r => r.name === name || r.name === traderId) || null;
+}
+
+function riskSuggestionForInput(input = {}) {
+  const ticker = input.ticker || document.getElementById('cTicker')?.value || '';
+  const traderId = input.traderId || document.getElementById('cTrader')?.value || '';
+  const traderName = input.traderName || (window.G?.traders?.() || []).find(t => t.id === traderId)?.name || '';
+  const dir = input.dir || calcState.dir || 'long';
+  const leverage = Math.max(1, Number(input.leverage || calcState.lev || userPrefs?.lev || 1) || 1);
+  const baseRisk = Math.max(10, Number(input.baseRisk || document.getElementById('cRisk')?.value || userPrefs?.risk || 200) || 200);
+  const entry = Number(input.entry ?? document.getElementById('cEntry')?.value) || 0;
+  const sl = Number(input.sl ?? document.getElementById('cSL')?.value) || 0;
+  const tp1 = Number(input.tp1 ?? document.getElementById('cTP1')?.value) || 0;
+  const tp2 = Number(input.tp2 ?? document.getElementById('cTP2')?.value) || 0;
+  const tp3 = Number(input.tp3 ?? document.getElementById('cTP3')?.value) || 0;
+  const hasSL = sl > 0;
+  const row = traderRiskRow(traderId, traderName);
+  const confidence = row ? traderEdgeScore(row) : 50;
+  const state = row ? traderEdgeState(row) : { label:'Sin historial', color:'var(--t3)', tone:'neutral' };
+  const asset = assetRiskMultiplier(ticker);
+  const traderMult = confidence >= 78 ? 1 : confidence >= 62 ? .75 : confidence >= 45 ? .45 : .2;
+  let executionMult = 1;
+  const warnings = [];
+  if (!row) warnings.push('Trader sin historial suficiente en MAUex.');
+  if (!ticker) warnings.push('Falta ticker para ajustar el riesgo por activo.');
+  if (!hasSL && dir !== 'spot') { executionMult *= .2; warnings.push('Sin SL: MAUex reduce fuerte el riesgo sugerido.'); }
+  if (hasSL && entry && [tp1,tp2,tp3].every(tp => !tp)) { executionMult *= .65; warnings.push('Sin TP cargado: menor calidad de plan.'); }
+  if (asset.mult <= .35 && leverage > 7 && dir !== 'spot') { executionMult *= .45; warnings.push('Altcoin + leverage alto concentra perdidas historicas.'); }
+  if (leverage > 20 && dir !== 'spot') { executionMult *= .55; warnings.push('Leverage muy alto para una senal discrecional.'); }
+
+  const capByAsset = asset.mult >= .8 ? 15 : asset.mult >= .5 ? 8 : asset.mult >= .35 ? 5 : 3;
+  const capByTrader = confidence >= 75 ? capByAsset : confidence >= 55 ? Math.min(capByAsset, 7) : Math.min(capByAsset, 4);
+  const finalRisk = Math.max(0, Math.round(baseRisk * traderMult * asset.mult * executionMult));
+  const suggestedRisk = finalRisk < 10 ? 10 : finalRisk;
+  const severity = confidence < 45 || executionMult < .5 ? 'red' : confidence >= 75 && executionMult >= .8 ? 'green' : 'amber';
+  return {
+    ticker: baseTickerSymbol(ticker),
+    traderName: traderName || 'Sin trader',
+    confidence,
+    state,
+    asset,
+    baseRisk,
+    suggestedRisk,
+    leverageCap: dir === 'spot' ? 1 : capByTrader,
+    warnings,
+    severity,
+    traderMult,
+    executionMult,
+  };
+}
+window.riskSuggestionForInput = riskSuggestionForInput;
+
+function renderRiskSuggestionPanel() {
+  const el = document.getElementById('riskSuggestionPanel');
+  if (!el) return;
+  const s = riskSuggestionForInput();
+  window._lastRiskSuggestion = s;
+  const color = s.severity === 'green' ? 'var(--accent)' : s.severity === 'red' ? 'var(--red)' : 'var(--amber)';
+  const warnHtml = s.warnings.length
+    ? `<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">${s.warnings.slice(0,3).map(w=>`<span style="font-size:9px;font-family:var(--mono);color:var(--amber);background:rgba(245,158,11,.12);padding:3px 6px;border-radius:4px;">${dashSafe(w)}</span>`).join('')}</div>`
+    : `<div style="margin-top:8px;font-size:10px;color:var(--t2);font-family:var(--mono);">Sin alertas fuertes para esta combinacion.</div>`;
+  el.innerHTML = `
+    <div class="sec-label" style="display:flex;align-items:center;gap:6px;">Riesgo sugerido ${infoDot('Estimacion automatica segun performance del trader, activo, leverage, SL/TP y calidad del plan. No bloquea: solo te da un punto de partida disciplinado.')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+      <div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">Sugerido</div>
+        <div style="font-family:var(--mono);font-size:24px;font-weight:800;color:${color};">$${fmt(s.suggestedRisk)}</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">Confianza</div>
+        <div style="font-family:var(--mono);font-size:24px;font-weight:800;color:${s.state.color};">${s.confidence}</div>
+      </div>
+      <div style="font-size:10px;color:var(--t2);font-family:var(--mono);">Trader<br><strong style="color:var(--t1);">${dashSafe(s.traderName)}</strong></div>
+      <div style="font-size:10px;color:var(--t2);font-family:var(--mono);">Leverage max<br><strong style="color:var(--t1);">${s.leverageCap}x</strong></div>
+    </div>
+    <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:8px;">${dashSafe(s.asset.label)} x${s.asset.mult}</div>
+    ${warnHtml}
+    <button class="btn sm" style="width:100%;margin-top:10px;" onclick="window.applySuggestedRisk()">Usar riesgo sugerido</button>
+  `;
+}
+
+window.applySuggestedRisk = () => {
+  const s = window._lastRiskSuggestion || riskSuggestionForInput();
+  const riskEl = document.getElementById('cRisk');
+  if (riskEl && s?.suggestedRisk) {
+    riskEl.value = s.suggestedRisk;
+    compute();
+  }
+};
+
+function portfolioExposureStats(all) {
+  const open = all.filter(t => ['active','pending','watchlist'].includes(t.status));
+  const out = { open, long:0, short:0, spot:0, risk:0, byExchange:{}, byTicker:{}, byTrader:{}, byStatus:{} };
+  open.forEach(t => {
+    const capital = dashboardTradeCapital(t);
+    const risk = t.status === 'active' ? openRiskOf(t) : capital;
+    const dir = String(t.dir || '').toLowerCase();
+    if (dir === 'short') out.short += capital;
+    else if (dir === 'spot') out.spot += capital;
+    else out.long += capital;
+    out.risk += t.status === 'active' ? openRiskOf(t) : 0;
+    const add = (obj, key, val) => { key = key || 'Sin dato'; obj[key] = (obj[key] || 0) + val; };
+    add(out.byExchange, String(t.exchange || 'MANUAL').toUpperCase(), capital);
+    add(out.byTicker, baseTickerSymbol(t.ticker) || 'Sin ticker', capital);
+    add(out.byTrader, t.traderName || 'Sin trader', capital);
+    add(out.byStatus, t.status, capital);
+  });
+  out.total = out.long + out.short + out.spot;
+  out.net = out.long + out.spot - out.short;
+  return out;
+}
+window.portfolioExposureStats = portfolioExposureStats;
+
+function topExposureRows(obj, limit=6) {
+  return Object.entries(obj || {}).sort((a,b)=>b[1]-a[1]).slice(0, limit);
+}
+
+function renderExposureBars(obj, total) {
+  return topExposureRows(obj, 6).map(([k,v]) => `
+    <div style="margin-bottom:8px;">
+      <div class="fxb" style="font-size:10px;font-family:var(--mono);color:var(--t2);"><span>${dashSafe(k)}</span><span>$${fmt(v)}</span></div>
+      <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.min(100, total ? v/total*100 : 0)}%;background:var(--blue);"></div></div>
+    </div>`).join('') || `<div style="font-size:11px;color:var(--t3);">Sin exposicion abierta.</div>`;
+}
+
+function aiReviewStatus(closed) {
+  const raw = localStorage.getItem('mauex_last_ai_review');
+  let last = null;
+  try { last = raw ? JSON.parse(raw) : null; } catch(e) {}
+  const lastAt = last?.at ? new Date(last.at) : null;
+  const days = lastAt && !Number.isNaN(lastAt.getTime()) ? Math.floor((Date.now() - lastAt.getTime()) / 86400000) : null;
+  const tradesSince = Math.max(0, closed.length - (Number(last?.closedCount) || 0));
+  const stats = dashStatsOf(closed);
+  const needsReview = days == null || days >= 7 || tradesSince >= 15 || stats.profitFactor < 1 || stats.maxDd > Math.abs(stats.avgLoss || 0) * 3;
+  const reason = days == null ? 'Nunca marcaste una revision IA.' :
+    tradesSince >= 15 ? `${tradesSince} trades cerrados desde la ultima revision.` :
+    days >= 7 ? `${days} dias desde la ultima revision.` :
+    stats.profitFactor < 1 ? 'Profit factor debajo de 1.' :
+    stats.maxDd > Math.abs(stats.avgLoss || 0) * 3 ? 'Drawdown alto contra perdida promedio.' :
+    'Revision al dia.';
+  return { lastAt, days, tradesSince, needsReview, reason };
+}
+window.aiReviewStatus = aiReviewStatus;
+
+window.markAiReviewDone = () => {
+  const closedCount = (window.G?.trades?.() || []).filter(t => t.status === 'closed').length;
+  localStorage.setItem('mauex_last_ai_review', JSON.stringify({ at:new Date().toISOString(), closedCount }));
+  renderDashboard();
+  toast('Revision IA marcada como realizada.');
+};
+
+function smartAlertsForDashboard(all, closed) {
+  const alerts = [];
+  const stats = dashStatsOf(closed);
+  const exposure = portfolioExposureStats(all);
+  const active = all.filter(t => t.status === 'active');
+  const noSl = active.filter(t => !Number(t.sl));
+  if (noSl.length) alerts.push({ tone:'red', title:'Posiciones sin SL', text:`${noSl.length} posicion(es) activas sin SL. MAUex toma el margen como riesgo.` });
+  if (exposure.total && Math.abs(exposure.net) / exposure.total > .65) alerts.push({ tone:'amber', title:'Exposicion direccional alta', text:`El portfolio abierto esta ${exposure.net >= 0 ? 'net long' : 'net short'} en ${Math.round(Math.abs(exposure.net)/exposure.total*100)}%.` });
+  const topEx = topExposureRows(exposure.byExchange, 1)[0];
+  if (topEx && exposure.total && topEx[1] / exposure.total > .55) alerts.push({ tone:'amber', title:'Concentracion por exchange', text:`${topEx[0]} concentra ${Math.round(topEx[1]/exposure.total*100)}% del capital abierto.` });
+  signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').forEach(r => {
+    if (r.stats.count >= 3 && traderEdgeScore(r) < 45) alerts.push({ tone:'red', title:'Trader en observacion', text:`${r.name} tiene score ${traderEdgeScore(r)} y PF ${r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2)}.` });
+    if (r.stats.count >= 3 && r.signal.executionDelta < -Math.max(50, Math.abs(r.signal.signalPnl) * .2)) alerts.push({ tone:'amber', title:'Edge no capturado', text:`Con ${r.name}, tu delta vs senal es ${dashMoney(r.signal.executionDelta)}.` });
+  });
+  dashGroupStats(closed, t => baseTickerSymbol(t.ticker)).forEach(r => {
+    const last = [...r.trades].sort((a,b)=>(new Date(dashClosedAt(b))-new Date(dashClosedAt(a)))).slice(0,4);
+    if (last.length >= 3 && last.every(t => dashPnl(t) < 0)) alerts.push({ tone:'red', title:'Racha negativa por activo', text:`${r.name} tiene ${last.length} cierres negativos recientes.` });
+  });
+  if (stats.profitFactor && stats.profitFactor < 1) alerts.push({ tone:'red', title:'PF debajo de 1', text:'El historial cerrado esta perdiendo mas de lo que gana.' });
+  return alerts.slice(0, 8);
+}
+window.smartAlertsForDashboard = smartAlertsForDashboard;
+
+function capitalAllocationRows(closed) {
+  const rows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').filter(r => r.stats.count >= 1);
+  const weighted = rows.map(r => {
+    const score = traderEdgeScore(r);
+    const state = traderEdgeState(r);
+    const weight = state.label === 'Prioridad' ? 1.5 : state.label === 'Normal' ? 1 : state.label === 'Reducir' ? .5 : .15;
+    return { ...r, score, state, weight };
+  });
+  const totalW = weighted.reduce((s,r)=>s+r.weight,0) || 1;
+  return weighted.sort((a,b)=>b.weight-a.weight || b.score-a.score).map(r => ({ ...r, allocationPct: Math.round(r.weight / totalW * 100) }));
+}
+window.capitalAllocationRows = capitalAllocationRows;
+
+function signalBacktestRows(closed) {
+  const rows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader');
+  return rows.map(r => {
+    const tp = r.trades.filter(t => /^tp/i.test(String(t.closeLevel || t.closeReason || ''))).length;
+    const sl = r.trades.filter(t => /sl|stop/i.test(String(t.closeLevel || t.closeReason || ''))).length;
+    const manual = Math.max(0, r.stats.count - tp - sl);
+    const capture = r.signal.signalPnl > 0 ? Math.round(r.signal.realPnl / r.signal.signalPnl * 100) : null;
+    return { ...r, tp, sl, manual, capture };
+  }).sort((a,b)=>b.signal.signalPnl-a.signal.signalPnl);
+}
+window.signalBacktestRows = signalBacktestRows;
+
+function renderIntelligenceDashboard(closed, all) {
+  const el = document.getElementById('dashIntelligence');
+  if (!el) return;
+  const exposure = portfolioExposureStats(all);
+  const alerts = smartAlertsForDashboard(all, closed);
+  const review = aiReviewStatus(closed);
+  const alloc = capitalAllocationRows(closed).slice(0, 8);
+  const backtest = signalBacktestRows(closed).slice(0, 8);
+  const riskRows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,4).map(r => {
+    const st = traderEdgeState(r);
+    const sample = riskSuggestionForInput({ ticker:'BTC', traderName:r.name, dir:'long', leverage:5, baseRisk:userPrefs?.risk || 200, entry:100, sl:95, tp1:110 });
+    return `<tr><td><strong>${dashSafe(r.name)}</strong></td><td>${traderEdgeScore(r)}</td><td style="color:${st.color};">${st.label}</td><td>$${fmt(sample.suggestedRisk)}</td><td>${sample.leverageCap}x</td></tr>`;
+  }).join('');
+  const alertHtml = alerts.length ? alerts.map(a => `
+    <div style="padding:9px 0;border-bottom:0.5px solid var(--border);">
+      <div style="font-family:var(--mono);font-size:11px;font-weight:800;color:${a.tone === 'red' ? 'var(--red)' : 'var(--amber)'};">${dashSafe(a.title)}</div>
+      <div style="font-size:11px;color:var(--t2);margin-top:3px;">${dashSafe(a.text)}</div>
+    </div>`).join('') : `<div style="font-size:11px;color:var(--t3);">Sin alertas criticas ahora.</div>`;
+  const allocRows = alloc.map(r => `
+    <tr><td><strong>${dashSafe(r.name)}</strong></td><td>${r.score}</td><td style="color:${r.state.color};">${r.state.label}</td><td>${r.allocationPct}%</td><td class="${r.signal.executionDelta>=0?'pnl-pos':'pnl-neg'}">${dashMoney(r.signal.executionDelta)}</td></tr>
+  `).join('');
+  const backRows = backtest.map(r => `
+    <tr><td><strong>${dashSafe(r.name)}</strong></td><td>${r.stats.count}</td><td class="${r.signal.signalPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(r.signal.signalPnl)}</td><td class="${r.signal.realPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(r.signal.realPnl)}</td><td>${r.capture == null ? '-' : r.capture + '%'}</td><td>${r.tp}/${r.sl}/${r.manual}</td></tr>
+  `).join('');
+  el.innerHTML = `
+    <div class="card" style="padding:16px;margin-bottom:12px;">
+      <div class="sec-label" style="margin-bottom:10px;">Risk Suggestion Engine ${infoDot('Sugiere riesgo y leverage maximo usando trader, activo, leverage y calidad del setup. En la calculadora aparece en tiempo real antes de cargar el trade.')}</div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        <table class="tbl" style="min-width:520px;">
+          <thead><tr><th>Trader</th><th>Score</th><th>Estado</th><th>Riesgo BTC base</th><th>Lev max</th></tr></thead>
+          <tbody>${riskRows || `<tr><td colspan="5" style="color:var(--t3);">Falta historial cerrado para calibrar traders.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="g2" style="margin-bottom:12px;">
+      <div class="card" style="padding:16px;">
+        <div class="sec-label" style="margin-bottom:10px;">Portfolio Exposure Engine ${infoDot('Resume capital abierto por direccion, exchange y ticker para que veas concentracion antes de sumar otra senal.')}</div>
+        <div class="g4" style="margin-bottom:12px;">
+          ${dashMetricCard({l:'Long + Spot',v:'$'+fmt(exposure.long+exposure.spot),cls:'green',info:'Capital abierto long y spot.'})}
+          ${dashMetricCard({l:'Short',v:'$'+fmt(exposure.short),cls:'red',info:'Capital abierto en shorts.'})}
+          ${dashMetricCard({l:'Net exposure',v:(exposure.net>=0?'+':'-')+'$'+fmt(Math.abs(exposure.net)),cls:exposure.net>=0?'green':'red',info:'Long + spot menos shorts.'})}
+          ${dashMetricCard({l:'Riesgo abierto',v:'$'+fmt(exposure.risk),cls:'red',info:'Riesgo estimado por SL o margen si no hay SL.'})}
+        </div>
+        <div class="g2">
+          <div><div class="sec-label">Por exchange</div>${renderExposureBars(exposure.byExchange, exposure.total)}</div>
+          <div><div class="sec-label">Por ticker</div>${renderExposureBars(exposure.byTicker, exposure.total)}</div>
+        </div>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div class="sec-label" style="margin-bottom:10px;">Alertas inteligentes ${infoDot('Cruza riesgo, concentracion, traders y rachas para avisarte cuando algo merece atencion antes de operar mas.')}</div>
+        ${alertHtml}
+      </div>
+    </div>
+    <div class="g2" style="margin-bottom:12px;">
+      <div class="card" style="padding:16px;">
+        <div class="fxb" style="align-items:flex-start;gap:12px;margin-bottom:10px;">
+          <div>
+            <div class="sec-label">AI Review System ${infoDot('Te recuerda cuando conviene exportar el dashboard y pedir una revision IA de rendimiento, riesgo y ejecucion.')}</div>
+            <div style="font-size:11px;color:var(--t2);font-family:var(--mono);margin-top:5px;">${dashSafe(review.reason)}</div>
+          </div>
+          <div style="font-family:var(--mono);font-size:22px;font-weight:800;color:${review.needsReview?'var(--amber)':'var(--accent)'};">${review.needsReview?'Revisar':'OK'}</div>
+        </div>
+        <div class="g2" style="gap:8px;margin-bottom:10px;">
+          ${dashMetricCard({l:'Dias',v:review.days == null ? '-' : String(review.days),info:'Dias desde la ultima revision IA marcada.'})}
+          ${dashMetricCard({l:'Trades desde review',v:String(review.tradesSince),info:'Trades cerrados desde la ultima revision IA.'})}
+        </div>
+        <button class="btn sm" onclick="window.markAiReviewDone()">Marcar revision hecha</button>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div class="sec-label" style="margin-bottom:10px;">Asignacion de capital por trader ${infoDot('Primera version de ranking de allocation. Prioridad recibe mas peso; Observacion recibe peso minimo.')}</div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+          <table class="tbl" style="min-width:480px;"><thead><tr><th>Trader</th><th>Score</th><th>Estado</th><th>Allocation</th><th>Delta</th></tr></thead><tbody>${allocRows || `<tr><td colspan="5" style="color:var(--t3);">Sin datos suficientes.</td></tr>`}</tbody></table>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div class="sec-label" style="margin-bottom:10px;">Backtesting de senales ${infoDot('Compara lo que hubieran dado las senales segun el plan original contra lo que capturaste realmente.')}</div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        <table class="tbl" style="min-width:650px;">
+          <thead><tr><th>Trader</th><th>Trades</th><th>Signal</th><th>Real</th><th>Captura</th><th>TP/SL/Manual</th></tr></thead>
+          <tbody>${backRows || `<tr><td colspan="6" style="color:var(--t3);">Sin historial cerrado para backtest.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function positionUnitsLabel(t, size, entry) {
@@ -5499,6 +5904,84 @@ window.exportDashboardPdf = async () => {
         return [r.name, r.stats.count, money(r.signal.signalPnl), money(r.signal.realPnl), money(delta), Math.abs(delta) < 1 ? 'Neutral' : delta > 0 ? 'Gestion suma' : 'Se pierde edge'];
       }),
       [130, 48, 74, 74, 74, 112]
+    );
+
+    section('Trader Edge Dashboard');
+    table(
+      ['Trader','Score','Estado','Signal','Real','Delta','PF','WR'],
+      signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').map(r => {
+        const state = traderEdgeState(r);
+        return [
+          r.name,
+          traderEdgeScore(r),
+          state.label,
+          money(r.signal.signalPnl),
+          money(r.signal.realPnl),
+          money(r.signal.executionDelta),
+          r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2),
+          `${Math.round(r.stats.winRate*100)}%`,
+        ];
+      }),
+      [100, 42, 72, 62, 62, 62, 42, 42]
+    );
+
+    section('Portfolio Exposure Engine');
+    const exposure = portfolioExposureStats(all);
+    table(
+      ['Metrica','Valor','Detalle'],
+      [
+        ['Long + Spot', moneyPlain(exposure.long + exposure.spot), 'Capital abierto long y spot'],
+        ['Short', moneyPlain(exposure.short), 'Capital abierto short'],
+        ['Net exposure', money(exposure.net), 'Long + spot menos shorts'],
+        ['Riesgo abierto', moneyPlain(exposure.risk), 'SL o margen si no hay SL'],
+      ],
+      [150, 110, 250]
+    );
+    table(
+      ['Exchange','Capital'],
+      topExposureRows(exposure.byExchange, 10).map(([k,v]) => [k, moneyPlain(v)]),
+      [160, 110]
+    );
+
+    section('Alertas inteligentes');
+    const alerts = smartAlertsForDashboard(all, closed);
+    table(
+      ['Alerta','Detalle'],
+      alerts.length ? alerts.map(a => [a.title, a.text]) : [['Sin alertas criticas', 'No se detectaron alertas fuertes al exportar.']],
+      [160, 360]
+    );
+
+    section('AI Review System');
+    const review = aiReviewStatus(closed);
+    table(
+      ['Estado','Valor','Detalle'],
+      [
+        ['Revision recomendada', review.needsReview ? 'SI' : 'NO', review.reason],
+        ['Dias desde review', review.days == null ? '-' : review.days, 'Segun marca local en MAUex'],
+        ['Trades desde review', review.tradesSince, 'Trades cerrados desde ultima revision marcada'],
+      ],
+      [150, 90, 280]
+    );
+
+    section('Asignacion de capital por trader');
+    table(
+      ['Trader','Score','Estado','Allocation','Delta'],
+      capitalAllocationRows(closed).map(r => [r.name, r.score, r.state.label, `${r.allocationPct}%`, money(r.signal.executionDelta)]),
+      [145, 52, 90, 75, 90]
+    );
+
+    section('Backtesting de senales');
+    table(
+      ['Trader','Trades','Signal','Real','Captura','TP/SL/Manual'],
+      signalBacktestRows(closed).map(r => [
+        r.name,
+        r.stats.count,
+        money(r.signal.signalPnl),
+        money(r.signal.realPnl),
+        r.capture == null ? '-' : `${r.capture}%`,
+        `${r.tp}/${r.sl}/${r.manual}`,
+      ]),
+      [130, 48, 78, 78, 70, 110]
     );
 
     section('Ranking por activo');

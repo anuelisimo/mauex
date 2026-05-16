@@ -231,6 +231,8 @@ body{background:var(--bg0);color:var(--t1);font-family:var(--sans);font-size:14p
 .review-chip.selected.good{background:rgba(0,196,122,0.13);border-color:rgba(0,196,122,0.45);color:var(--accent);}
 .review-chip.selected.warn{background:rgba(245,158,11,0.13);border-color:rgba(245,158,11,0.45);color:var(--amber);}
 .review-chip.selected.bad{background:rgba(224,82,82,0.13);border-color:rgba(224,82,82,0.45);color:var(--red);}
+.trader-edge-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(360px,.75fr);gap:12px;align-items:stretch;}
+@media(max-width:900px){.trader-edge-layout{grid-template-columns:1fr;}.trader-edge-layout svg{height:240px!important;}}
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;font-family:var(--mono);}
 .bl{background:var(--accent-dim);color:var(--accent);}
 .bs{background:var(--red-dim);color:var(--red);}
