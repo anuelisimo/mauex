@@ -3276,7 +3276,12 @@ window.saveEditTrade = async () => {
   // Exchange trade: only update trader, notes and liquidation override
   if(window._editFromExchange) {
     try {
-      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), { traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, updatedAt:new Date().toISOString() });
+      const originalPlan = existingBeforeEdit.originalPlan || window.buildOriginalTraderPlan?.(existingBeforeEdit) || null;
+      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+        traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations,
+        ...(originalPlan ? { originalPlan } : {}),
+        updatedAt:new Date().toISOString()
+      });
       await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
       await applyEditAlertState(id, { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations });
       // Also update local exchange position
@@ -3318,12 +3323,14 @@ window.saveEditTrade = async () => {
   const calcRisk = slDist && posSize ? Math.round(posSize*slDist*100)/100 : risk;
 
   try {
+    const originalPlan = existingTrade.originalPlan || window.buildOriginalTraderPlan?.(existingTrade) || null;
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
       ticker, exchange, leverage:lev, dir:editDir,
       entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize,
       ...(eDate ? { createdAt: eDate+'T00:00:00.000Z' } : {}),
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName, invalidations,
+      ...(originalPlan ? { originalPlan } : {}),
       updatedAt: new Date().toISOString(),
     });
     await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);

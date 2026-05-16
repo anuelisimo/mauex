@@ -163,6 +163,41 @@ function fillTraderDropdowns() {
 
 // ── Trades CRUD ────────────────────────────────────────────────────────────
 let _savingTrade = false;
+window.buildOriginalTraderPlan = t => {
+  const entry = Number(t?.entry) || 0;
+  const sl = Number(t?.sl) || 0;
+  const lev = Number(t?.leverage) || 1;
+  const posSize = Number(t?.posSize) || 0;
+  const tp1 = Number(t?.tp1) || 0;
+  const tp2 = Number(t?.tp2) || 0;
+  const tp3 = Number(t?.tp3) || 0;
+  const tp1pct = Number(t?.tp1pct) || 0;
+  const tp2pct = Number(t?.tp2pct) || 0;
+  const tp3pct = Number(t?.tp3pct) || 0;
+  return {
+    source: 'trader_signal',
+    capturedAt: t?.createdAt || new Date().toISOString(),
+    ticker: String(t?.ticker || '').toUpperCase(),
+    dir: t?.dir || '',
+    exchange: t?.exchange || '',
+    traderId: t?.traderId || '',
+    traderName: t?.traderName || '',
+    entry,
+    sl,
+    liquidation: Number(t?.liquidation) || 0,
+    tp1,
+    tp1pct,
+    tp2,
+    tp2pct,
+    tp3,
+    tp3pct,
+    leverage: lev,
+    posSize,
+    risk: Number(t?.risk) || 0,
+    invalidations: Array.isArray(t?.invalidations) ? t.invalidations : [],
+  };
+};
+
 window.saveTrade = async status => {
   if (_savingTrade) return;
   _savingTrade = true;
@@ -195,7 +230,7 @@ window.saveTrade = async status => {
       ? trades.filter(t => t.status === 'watchlist').map(t => Number(t.watchOrder || 0)).filter(Boolean)
       : [];
     const watchOrder = status === 'watchlist' ? (currentWatchOrders.length ? Math.max(...currentWatchOrders) + 1 : 1) : null;
-    await addDoc(collection(db,'trades'), {
+    const baseTrade = {
       userId: CU.uid, ticker, entry, sl, tp1, tp2, tp3,
       tp1pct, tp2pct, tp3pct, risk, posSize,
       dir: calcState.dir,
@@ -205,6 +240,10 @@ window.saveTrade = async status => {
       ...(watchOrder ? { watchOrder } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    };
+    await addDoc(collection(db,'trades'), {
+      ...baseTrade,
+      originalPlan: window.buildOriginalTraderPlan(baseTrade),
     });
     await loadTrades();
     const dest = status==='watchlist' ? 'watchlist' : status==='pending' ? 'orders' : 'positions';
@@ -354,6 +393,7 @@ window.saveDirectTrade = async (editId) => {
   const days   = openDate ? Math.round((new Date(closeDate)-new Date(openDate))/86400000) : 0;
 
   try {
+    const previousTrade = editId ? getTradeById(editId) : null;
     const tradeData = {
       ticker, dir, exchange, leverage: lev, traderId, traderName,
       entry, closePrice: exit, posSize: notional, marginSize: margin,
@@ -364,6 +404,7 @@ window.saveDirectTrade = async (editId) => {
       updatedAt: new Date().toISOString(),
       source: 'manual_direct',
     };
+    tradeData.originalPlan = previousTrade?.originalPlan || window.buildOriginalTraderPlan(tradeData);
     if (editId) {
       const {updateDoc, doc} = window._fb;
       await updateDoc(doc(db,'trades',editId), tradeData);
@@ -608,6 +649,7 @@ async function confirmCascadeClose(t, action, closeDate, closeNotes) {
       leverage: t.leverage, traderId: t.traderId, traderName: t.traderName,
       entry: t.entry, sl: t.sl, tp1: t.tp1, tp1pct: t.tp1pct, tp2: t.tp2, tp2pct: t.tp2pct, tp3: t.tp3, tp3pct: t.tp3pct,
       posSize: closeSize, originalPosSize: originalSize, risk: riskForSize(t, closeSize),
+      originalPlan: t.originalPlan || window.buildOriginalTraderPlan(t),
       status: 'closed', closePrice, closeDate: closeDateSafe, closeNotes: level.l+' cerrado',
       closeReason:'tp', closeLevel: level.k, closePctOriginal: pctOriginal,
       ...reviewData,
@@ -703,6 +745,7 @@ window.confirmClose = async () => {
       leverage: t.leverage, traderId: t.traderId, traderName: t.traderName,
       entry: t.entry, sl: t.sl, tp1: t.tp1, tp1pct: t.tp1pct, tp2: t.tp2, tp2pct: t.tp2pct, tp3: t.tp3, tp3pct: t.tp3pct,
       posSize: closeSize, originalPosSize: originalSize, risk: riskForSize(t, closeSize),
+      originalPlan: t.originalPlan || window.buildOriginalTraderPlan(t),
       status: 'closed', closePrice, closeDate, closeNotes: note,
       closeReason, closeLevel, closePctOriginal: pctOriginal,
       ...reviewData,
@@ -786,7 +829,7 @@ window.saveManualTrade = async () => {
   const date      = document.getElementById('mDate').value;
   const invalidations = readInvalidationFields('m');
   try {
-    await addDoc(collection(db,'trades'), {
+    const manualTrade = {
       userId: CU.uid, ticker,
       dir: manualDir, exchange: document.getElementById('mExchange').value.trim().toUpperCase(),
       leverage: lev, traderId, traderName,
@@ -799,6 +842,10 @@ window.saveManualTrade = async () => {
       status: 'active',
       createdAt: date ? date+'T00:00:00.000Z' : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    };
+    await addDoc(collection(db,'trades'), {
+      ...manualTrade,
+      originalPlan: window.buildOriginalTraderPlan(manualTrade),
     });
     await loadTrades();
     closeModal('manualTradeModal');
