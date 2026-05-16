@@ -34,7 +34,7 @@ const fmtQty = n => {
 const APP_CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
   'TRX','IOTA','RSR','KAVA','OMG','WAXP','BLOK','VLX','AKRO','AAVE','ONDO','XMR','ANKR',
-  'HYPE','CAKE','LINEA','XVG','POL'];
+  'HYPE','CAKE','LINEA','XVG','POL','TAO'];
 const APP_CRYPTO_EXCHANGES = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','GATE','KRAKEN','COINBASE','HUOBI'];
 function appIsCryptoTicker(ticker, exchange) {
   if (window.isCryptoTicker) return window.isCryptoTicker(ticker, exchange);
@@ -204,6 +204,7 @@ window.showPage = page => {
     traders:   renderTraders,
   };
   if (renders[page]) renders[page]();
+  markNavAlertsSeen(page);
   if (page === 'settings') { loadProxyUrlField(); }
 
   // Sync orders when entering orders page
@@ -1269,6 +1270,15 @@ function buildPriceBar(t, currentPrice) {
     if (w <= 0) return '';
     return `<div style="position:absolute;left:${l}%;width:${w}%;height:6px;background:${color};opacity:${opacity};border-radius:3px;"></div>`;
   };
+  const touched = level => !!(t?.id && hasAlert(t.id, level));
+  const memorySegment = (fromP, toP, color, opacity=.82) => {
+    if (!fromP || !toP) return '';
+    const l = Math.min(pctN(fromP), pctN(toP));
+    const r = Math.max(pctN(fromP), pctN(toP));
+    const w = r - l;
+    if (w <= 0) return '';
+    return `<div style="position:absolute;left:${l}%;width:${w}%;height:100%;background:${color};opacity:${opacity};border-radius:inherit;box-shadow:0 0 10px ${color};"></div>`;
+  };
 
   // ── Collision detection — ALL labels including current price ─────────────
   const BAR_PX  = 500;
@@ -1350,32 +1360,42 @@ function buildPriceBar(t, currentPrice) {
   // ── Build dot+gradient meter ─────────────────────────────────────────────
   // Zones as gradients
   const zones = [];
+  const memoryZones = [];
 
   // Liq → SL: amber gradient
   if (liq && sl && !isBreakeven) {
     const l = Math.min(pctN(liq), pctN(sl));
     const r = Math.max(pctN(liq), pctN(sl));
-    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(245,158,11,0.15),rgba(245,158,11,0.55));border-radius:inherit;"></div>`);
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(245,158,11,0.08),rgba(245,158,11,0.22));border-radius:inherit;"></div>`);
   }
   // Liq → Entry: amber (no SL)
   if (liq && (!sl || isBreakeven)) {
     const l = Math.min(pctN(liq), pctN(entry));
     const r = Math.max(pctN(liq), pctN(entry));
-    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(90deg,rgba(245,158,11,0.1),rgba(245,158,11,0.45));border-radius:inherit;"></div>`);
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(90deg,rgba(245,158,11,0.07),rgba(245,158,11,0.2));border-radius:inherit;"></div>`);
   }
   // SL → Entry: red gradient
   if (sl && !isBreakeven) {
     const l = Math.min(pctN(sl), pctN(entry));
     const r = Math.max(pctN(sl), pctN(entry));
-    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(224,82,82,0.2),rgba(224,82,82,0.55));border-radius:inherit;"></div>`);
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(224,82,82,0.08),rgba(224,82,82,0.22));border-radius:inherit;"></div>`);
   }
   // Entry → TPs: green gradient
   const lastTp = tp3||tp2||tp1;
   if (lastTp) {
     const l = Math.min(pctN(entry), pctN(lastTp));
     const r = Math.max(pctN(entry), pctN(lastTp));
-    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(74,222,128,0.1),rgba(22,163,74,0.55));border-radius:inherit;"></div>`);
+    if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(74,222,128,0.06),rgba(22,163,74,0.2));border-radius:inherit;"></div>`);
   }
+
+  if (touched('tp1') && tp1) memoryZones.push(memorySegment(entry, tp1, '#22c55e'));
+  if (touched('tp2') && tp2) memoryZones.push(memorySegment(tp1 || entry, tp2, '#22c55e'));
+  if (touched('tp3') && tp3) memoryZones.push(memorySegment(tp2 || tp1 || entry, tp3, '#16a34a'));
+  if (touched('sl') && sl && !isBreakeven) memoryZones.push(memorySegment(entry, sl, '#e05252', .86));
+  if (touched('liq') && liq) memoryZones.push(memorySegment(entry, liq, '#f59e0b', .86));
+  invs.forEach(inv => {
+    if (touched(inv.key)) memoryZones.push(memorySegment(entry, inv.price, '#38bdf8', .8));
+  });
 
   // Dots
   const dotHtml = (leftPct, color, size, glow='') =>
@@ -1399,6 +1419,7 @@ function buildPriceBar(t, currentPrice) {
   <div style="position:relative;margin:20px 0 28px;">
     <div style="position:relative;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:visible;">
       ${zones.join('')}
+      ${memoryZones.join('')}
       ${dots}
       ${allMarkersHtml}
       ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-22px;font-size:13px;line-height:1;" title="Sin Stop Loss">⚠️</div>` : ''}
@@ -1563,6 +1584,10 @@ function renderWatchlist() {
     const fakeT = {...t, liquidation: t.liquidation||wLiq};
     const isMin = !!cardStates[t.id];
     const invalidAlert = getInvalidationAlert(t, currentPrice);
+    const entryTouched = hasAlert(t.id, 'entry');
+    const entryBadge = entryTouched ? alertBadge('entry', 'badge-alert-slow') : '';
+    const watchCardClass = entryTouched ? 'hit-entry' : invalidAlert.cardClass;
+    const watchBorderColor = entryTouched ? 'var(--amber)' : 'var(--red)';
     const dirBadge = dirBadgeColors(t.dir);
     const dirColor  = dirBadge.color;
     const dirBg     = dirBadge.bg;
@@ -1586,6 +1611,7 @@ function renderWatchlist() {
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
             ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+            ${entryBadge}
             ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
             ${currentPrice&&distToEntry!=null?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry>=0?'▲':'▼'} ${Math.abs(distToEntry).toFixed(2)}% al entry</span>`:''}
           </div>
@@ -1600,13 +1626,13 @@ function renderWatchlist() {
       </div>`;
 
     if (isMin) {
-      return `<div class="${invalidAlert.cardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;cursor:grab;">
+      return `<div class="${watchCardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${watchBorderColor};margin-bottom:8px;overflow:hidden;cursor:grab;">
         ${header}
         ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div class="${invalidAlert.cardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid var(--red);margin-bottom:8px;overflow:hidden;cursor:grab;">
+    return `<div class="${watchCardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${watchBorderColor};margin-bottom:8px;overflow:hidden;cursor:grab;">
       ${header}
 
       ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
@@ -1742,6 +1768,13 @@ function setAlert(id, level, meta={}) {
   const payload = alertPayload(level, meta);
   rememberLocalAlert(id, level, payload);
   persistCloudAlert(id, level, payload);
+  const activePage = document.querySelector('.bnav-btn.active')?.dataset.page || '';
+  if (sectionOfTrade(tradeForAlert(id)) === activePage) {
+    const seen = navAlertSeen();
+    seen[activePage] = Date.now();
+    saveNavAlertSeen(seen);
+  }
+  updateNavAlertBadges?.();
 }
 window.setAlert = setAlert;
 function clearAlerts(id) { const a=getAlerts(); delete a[id]; localStorage.setItem(ALERT_KEY, JSON.stringify(a)); }
@@ -1762,6 +1795,7 @@ async function clearAlertLevel(id, level) {
       });
     }
   } catch(e) { console.warn('No pude limpiar alerta:', e.message); }
+  updateNavAlertBadges?.();
 }
 window.clearInvalidationAlert = (id, level='inv1') => clearAlertLevel(id, level);
 window.clearInvalidationAlertAndRender = async (id, level='inv1') => {
@@ -1773,9 +1807,106 @@ window.clearInvalidationAlertAndRender = async (id, level='inv1') => {
 };
 function hasAlert(id, level) { return !!(cloudAlertOf(id, level) || getAlerts()[id]?.[level]); }
 window.hasAlert = hasAlert;
+const NAV_ALERT_SEEN_KEY = 'mauex_nav_alert_seen';
+const NAV_ALERT_SECTIONS = {
+  watchlist: ['entry','inv1','inv2'],
+  orders: ['entry','inv1','inv2'],
+  positions: ['sl','liq','tp1','tp2','tp3','inv1','inv2'],
+};
+function navAlertSeen() {
+  try { return JSON.parse(localStorage.getItem(NAV_ALERT_SEEN_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+function saveNavAlertSeen(seen) {
+  localStorage.setItem(NAV_ALERT_SEEN_KEY, JSON.stringify(seen || {}));
+}
+function alertTimeOf(t, level) {
+  const cloud = t?.levelAlerts?.[level];
+  const local = getAlerts()[t?.id]?.[level];
+  const raw = cloud?.hitAt || cloud?.confirmedAt || local;
+  if (!raw) return 0;
+  if (typeof raw === 'number') return raw;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function alertSeverityOf(level) {
+  if (level === 'sl') return { key:'red', rank:4 };
+  if (/^inv\d+$/.test(level)) return { key:'blue', rank:3 };
+  if (level === 'entry' || level === 'liq') return { key:'amber', rank:2 };
+  if (/^tp\d+$/.test(level)) return { key:'green', rank:1 };
+  return { key:'amber', rank:0 };
+}
+function sectionOfTrade(t) {
+  if (t?.status === 'watchlist') return 'watchlist';
+  if (t?.status === 'pending') return 'orders';
+  if (['active','zombie'].includes(t?.status)) return 'positions';
+  return '';
+}
+function navAlertSummary() {
+  const seen = navAlertSeen();
+  const summary = {
+    watchlist: { count:0, color:'amber', rank:0 },
+    orders: { count:0, color:'amber', rank:0 },
+    positions: { count:0, color:'green', rank:0 },
+  };
+  (window.G?.trades?.() || []).forEach(t => {
+    const section = sectionOfTrade(t);
+    const levels = NAV_ALERT_SECTIONS[section];
+    if (!levels) return;
+    let cardUnread = false;
+    let cardRank = 0;
+    let cardColor = 'amber';
+    levels.forEach(level => {
+      if (!hasAlert(t.id, level)) return;
+      const hitAt = alertTimeOf(t, level) || Date.now();
+      if (hitAt <= (Number(seen[section]) || 0)) return;
+      cardUnread = true;
+      const sev = alertSeverityOf(level);
+      if (sev.rank > cardRank) { cardRank = sev.rank; cardColor = sev.key; }
+    });
+    if (!cardUnread) return;
+    summary[section].count += 1;
+    if (cardRank > summary[section].rank) {
+      summary[section].rank = cardRank;
+      summary[section].color = cardColor;
+    }
+  });
+  return summary;
+}
+function updateNavAlertBadges() {
+  const summary = navAlertSummary();
+  Object.entries(summary).forEach(([page, data]) => {
+    const btn = document.querySelector(`.bnav-btn[data-page="${page}"]`);
+    if (!btn) return;
+    let badge = btn.querySelector('.nav-alert-badge');
+    if (!data.count) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'nav-alert-badge';
+      btn.appendChild(badge);
+    }
+    badge.textContent = data.count > 9 ? '9+' : String(data.count);
+    badge.dataset.color = data.color;
+  });
+}
+function markNavAlertsSeen(page) {
+  if (!NAV_ALERT_SECTIONS[page]) {
+    updateNavAlertBadges();
+    return;
+  }
+  const seen = navAlertSeen();
+  seen[page] = Date.now();
+  saveNavAlertSeen(seen);
+  updateNavAlertBadges();
+}
+window.updateNavAlertBadges = updateNavAlertBadges;
 const EDIT_ALERT_LEVELS = [
   { level:'entry', label:'Entry' },
   { level:'sl', label:'SL' },
+  { level:'liq', label:'Liq' },
   { level:'tp1', label:'TP1' },
   { level:'tp2', label:'TP2' },
   { level:'tp3', label:'TP3' },
@@ -1784,8 +1915,9 @@ const EDIT_ALERT_LEVELS = [
 ];
 function alertLevelHasPrice(t, level) {
   if (!t) return false;
-  if (level === 'entry') return t.status === 'pending' && !!t.entry;
+  if (level === 'entry') return ['pending','watchlist'].includes(t.status) && !!t.entry;
   if (level === 'sl') return !!t.sl;
+  if (level === 'liq') return !!t.liquidation;
   if (['tp1','tp2','tp3'].includes(level)) return !!t[level];
   if (['inv1','inv2'].includes(level)) return tradeInvalidations(t).some(inv => inv.key === level && inv.price);
   return false;
@@ -1874,7 +2006,7 @@ async function syncLocalAlertsToCloud() {
   const trackable = (window.G?.trades?.()||[]).filter(t => t.status === 'active' || t.status === 'pending' || t.status === 'watchlist');
   for (const t of trackable) {
     const invLevels = tradeInvalidations(t).map(x => x.key);
-    const levels = t.status === 'pending' ? ['entry', ...invLevels] : ['sl','tp1','tp2','tp3', ...invLevels];
+    const levels = ['pending','watchlist'].includes(t.status) ? ['entry', ...invLevels] : ['sl','tp1','tp2','tp3', ...invLevels];
     for (const level of levels) {
       if (!local[t.id]?.[level] || cloudAlertOf(t.id, level)) continue;
       const payload = alertPayload(level, { hitAt: typeof local[t.id][level] === 'string' ? local[t.id][level] : new Date().toISOString(), source:'local_migration' });
@@ -1888,7 +2020,7 @@ function alertBadge(level, blinkClass) {
   const isSL = level === 'sl';
   const isEntry = level === 'entry';
   const isInv = /^inv\d+$/.test(level);
-  const colors = { sl:'#e05252', entry:'#f59e0b', inv1:'#38bdf8', inv2:'#38bdf8', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
+  const colors = { sl:'#e05252', liq:'#f59e0b', entry:'#f59e0b', inv1:'#38bdf8', inv2:'#38bdf8', tp1:'#4ade80', tp2:'#22c55e', tp3:'#16a34a' };
   const color  = colors[level] || '#4ade80';
   const icon   = isSL
     ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="${color}" stroke-width="2" stroke-linecap="round"/></svg>`
@@ -1897,7 +2029,7 @@ function alertBadge(level, blinkClass) {
     : isInv
     ? `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 1.5L10.5 10H1.5L6 1.5Z" stroke="${color}" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 4.4V6.8" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="8.6" r=".7" fill="${color}"/></svg>`
     : `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><polyline points="1.5,6 4.5,9.5 10.5,2" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const label  = isEntry ? 'ENTRY TOCADO' : isInv ? 'INVALIDACION' : level.toUpperCase();
+  const label  = isEntry ? 'ENTRY TOCADO' : isInv ? 'INVALIDACION' : level === 'liq' ? 'LIQ TOCADA' : level.toUpperCase();
   return `<span class="${blinkClass}" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:${color}22;color:${color};">${icon}${label}</span>`;
 }
 
@@ -1935,6 +2067,10 @@ function getPositionAlert(t, price) {
     const hitSL = (t.dir==='short') ? price >= t.sl : price <= t.sl;
     if (hitSL) { setAlert(t.id,'sl'); hitBadges.push(badgeFor('sl')); }
   }
+  if (!t.sl && t.liquidation && !hasAlert(t.id,'liq')) {
+    const hitLiq = (t.dir==='short') ? price >= t.liquidation : price <= t.liquidation;
+    if (hitLiq) { setAlert(t.id,'liq'); hitBadges.push(badgeFor('liq')); }
+  }
   ['tp1','tp2','tp3'].forEach(k => {
     if (t[k] && !hasAlert(t.id,k)) {
       const hitTP = (t.dir==='short') ? price <= t[k] : price >= t[k];
@@ -1943,7 +2079,7 @@ function getPositionAlert(t, price) {
   });
 
   const hasInv = tradeInvalidations(t).some(inv => hasAlert(t.id, inv.key || 'inv1'));
-  const cardClass = hasAlert(t.id,'sl') ? 'hit-sl' : hasInv ? 'hit-invalidation' : hitBadges.length ? 'hit-tp' : '';
+  const cardClass = hasAlert(t.id,'sl') ? 'hit-sl' : hasInv ? 'hit-invalidation' : hasAlert(t.id,'liq') ? 'hit-entry' : hitBadges.length ? 'hit-tp' : '';
   return { cardClass, badges: hitBadges.join('') };
 }
 
@@ -1984,7 +2120,7 @@ function candleHitForLevel(t, level, value, candles) {
       if (inv.side === 'down' ? c.low <= value : c.high >= value) return { hitAt:new Date(c.time).toISOString(), price:value };
       continue;
     }
-    if (level === 'sl' || level === 'entry') {
+    if (level === 'sl' || level === 'entry' || level === 'liq') {
       if (isLong ? c.low <= value : c.high >= value) return { hitAt:new Date(c.time).toISOString(), price:value };
     } else if (isLong ? c.high >= value : c.low <= value) {
       return { hitAt:new Date(c.time).toISOString(), price:value };
@@ -1994,10 +2130,10 @@ function candleHitForLevel(t, level, value, candles) {
 }
 window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
   await syncLocalAlertsToCloud();
-  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active' && t.entry && (t.sl || t.tp1 || t.tp2 || t.tp3 || tradeInvalidations(t).length));
+  const active = (window.G?.trades?.()||[]).filter(t => t.status === 'active' && t.entry && (t.sl || (!t.sl && t.liquidation) || t.tp1 || t.tp2 || t.tp3 || tradeInvalidations(t).length));
   const pendingOrders = (window.G?.trades?.()||[]).filter(t => t.status === 'pending' && t.entry && !hasAlert(t.id, 'entry'));
-  const watchInvalidations = (window.G?.trades?.()||[]).filter(t => t.status === 'watchlist' && t.entry && tradeInvalidations(t).length);
-  const trackable = [...active, ...pendingOrders, ...watchInvalidations];
+  const watchEntries = (window.G?.trades?.()||[]).filter(t => t.status === 'watchlist' && t.entry && (!hasAlert(t.id, 'entry') || tradeInvalidations(t).some(inv => !hasAlert(t.id, inv.key))));
+  const trackable = [...active, ...pendingOrders, ...watchEntries];
   if (!trackable.length || !window._fb?.updateDoc) return;
   let touched = 0;
   let touchedEntries = 0;
@@ -2005,9 +2141,9 @@ window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
     const {start, end} = getLevelCheckWindow(t);
     if (end - start < 60 * 1000) continue;
     const invLevels = tradeInvalidations(t).map(inv => [inv.key, inv.price]);
-    const pendingLevels = t.status === 'pending'
+    const pendingLevels = ['pending','watchlist'].includes(t.status)
       ? [['entry', t.entry], ...invLevels].filter(([level,value]) => value && !hasAlert(t.id, level))
-      : [['sl', t.sl], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3], ...invLevels].filter(([level,value]) => value && !hasAlert(t.id, level));
+      : [['sl', t.sl], ['liq', !t.sl ? t.liquidation : 0], ['tp1', t.tp1], ['tp2', t.tp2], ['tp3', t.tp3], ...invLevels].filter(([level,value]) => value && !hasAlert(t.id, level));
     if (!pendingLevels.length) continue;
     try {
       const candles = await fetchLevelCandles(t, start, end);
@@ -2029,10 +2165,11 @@ window.checkMissedTradeLevels = async function checkMissedTradeLevels() {
     }
   }
   if (touched) {
+    renderWatchlist?.();
     renderPositions?.();
     renderOrders?.();
     const msg = touchedEntries
-      ? 'Detecte '+touchedEntries+' orden(es) que tocaron entry mientras no estabas.'
+      ? 'Detecte '+touchedEntries+' setup(s) u orden(es) que tocaron entry mientras no estabas.'
       : 'Detecte '+touched+' nivel(es) tocados mientras no estabas.';
     toast(msg, 'warning');
   }

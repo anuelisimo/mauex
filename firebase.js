@@ -129,6 +129,7 @@ async function loadTrades() {
     trades = [];
     snap.forEach(d => trades.push({ id: d.id, ...d.data() }));
     trades.sort((a,b) => new Date(b.createdAt||0) - new Date(a.createdAt||0));
+    window.updateNavAlertBadges?.();
   } catch(e) {
     console.error('loadTrades:', e);
     toast('Error cargando trades: ' + e.message, 'error');
@@ -904,7 +905,7 @@ let kucoinPollTimer = null;
 const CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
   'TRX','IOTA','RSR','KAVA','OMG','WAXP','BLOK','VLX','AKRO','AAVE','ONDO','XMR','ANKR',
-  'HYPE','CAKE','LINEA','XVG','POL','POLUSDT'];
+  'HYPE','CAKE','LINEA','XVG','POL','POLUSDT','TAO'];
 
 const CRYPTO_EXCHANGES = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','GATE','KRAKEN','COINBASE','HUOBI'];
 
@@ -1026,15 +1027,16 @@ function checkPriceAlerts(sym, price) {
     }
 
     // ── ORDENES: precio toco el entry — UNA VEZ ──
-    if (t.status === 'pending' && entry) {
+    if ((t.status === 'pending' || t.status === 'watchlist') && entry) {
       const key = _alertKey(t.id, 'entry_hit');
       const alreadyMarked = !!(t.levelAlerts?.entry || window.hasAlert?.(t.id, 'entry'));
       const hit = isLong ? price <= entry : price >= entry;
       if (hit && !alreadyMarked && _shouldAlert(key, false)) {
         _recordAlert(key, false);
         window.setAlert?.(t.id, 'entry', { price, source:'live' });
-        _notify(`${t.ticker} Orden ejecutada`, `Precio $${price.toFixed(4)} toco el entry $${entry}`, false);
-        try { renderOrders?.(); } catch(e) {}
+        const title = t.status === 'watchlist' ? `${t.ticker} entry tocado` : `${t.ticker} Orden ejecutada`;
+        _notify(title, `Precio $${price.toFixed(4)} toco el entry $${entry}`, false);
+        try { renderWatchlist?.(); renderOrders?.(); } catch(e) {}
       }
     }
 
@@ -1052,6 +1054,17 @@ function checkPriceAlerts(sym, price) {
       }
 
       // TP1 tocado — UNA VEZ
+      if (!sl && t.liquidation) {
+        const liqHit = isLong ? price <= t.liquidation : price >= t.liquidation;
+        const liqKey = _alertKey(t.id, 'liq_hit');
+        const alreadyMarked = !!(t.levelAlerts?.liq || window.hasAlert?.(t.id, 'liq'));
+        if (liqHit && !alreadyMarked && _shouldAlert(liqKey, false)) {
+          _recordAlert(liqKey, false);
+          window.setAlert?.(t.id, 'liq', { price, source:'live' });
+          _notify(`${t.ticker} liquidacion tocada`, `Precio ${price.toFixed(4)} toco LIQ ${t.liquidation}`, false);
+        }
+      }
+
       if (tp1) {
         const tp1Hit = isLong ? price >= tp1 : price <= tp1;
         const tp1Key = _alertKey(t.id, 'tp1_hit');
