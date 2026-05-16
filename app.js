@@ -1478,11 +1478,13 @@ function renderRiskSuggestionPanel() {
   const s = riskSuggestionForInput();
   window._lastRiskSuggestion = s;
   const color = s.severity === 'green' ? 'var(--accent)' : s.severity === 'red' ? 'var(--red)' : 'var(--amber)';
+  const confidence10 = Math.max(1, Math.min(10, Math.round((Number(s.confidence) || 0) / 10)));
+  const riskFormulaInfo = 'Riesgo sugerido = riesgo base x factor trader x factor activo x factor ejecucion. Factor trader: score 78+ = 1, 62-77 = 0.75, 45-61 = 0.45, menos de 45 = 0.2. Factor activo: BTC 1, ETH 0.8, commodities/ETF 0.7, large caps 0.5, alts medias 0.35, activos chicos 0.25. Factor ejecucion baja si no hay SL, no hay TP, el leverage es alto o es altcoin con leverage alto.';
   const warnHtml = s.warnings.length
     ? `<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">${s.warnings.slice(0,3).map(w=>`<span style="font-size:9px;font-family:var(--mono);color:var(--amber);background:rgba(245,158,11,.12);padding:3px 6px;border-radius:4px;">${dashSafe(w)}</span>`).join('')}</div>`
     : `<div style="margin-top:8px;font-size:10px;color:var(--t2);font-family:var(--mono);">Sin alertas fuertes para esta combinacion.</div>`;
   el.innerHTML = `
-    <div class="sec-label" style="display:flex;align-items:center;gap:6px;">Riesgo sugerido ${infoDot('Estimacion automatica segun performance del trader, activo, leverage, SL/TP y calidad del plan. No bloquea: solo te da un punto de partida disciplinado.')}</div>
+    <div class="sec-label" style="display:flex;align-items:center;gap:6px;">Riesgo sugerido ${infoDot(riskFormulaInfo)}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">Sugerido</div>
@@ -1490,7 +1492,7 @@ function renderRiskSuggestionPanel() {
       </div>
       <div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;">Confianza</div>
-        <div style="font-family:var(--mono);font-size:24px;font-weight:800;color:${s.state.color};">${s.confidence}</div>
+        <div style="font-family:var(--mono);font-size:24px;font-weight:800;color:${s.state.color};">${confidence10}<span style="font-size:11px;color:var(--t3);">/10</span></div>
       </div>
       <div style="font-size:10px;color:var(--t2);font-family:var(--mono);">Trader<br><strong style="color:var(--t1);">${dashSafe(s.traderName)}</strong></div>
       <div style="font-size:10px;color:var(--t2);font-family:var(--mono);">Leverage max<br><strong style="color:var(--t1);">${s.leverageCap}x</strong></div>
@@ -1695,7 +1697,7 @@ function renderIntelligenceDashboard(closed, all) {
       </div>
     </div>
     <div class="card" style="padding:16px;">
-      <div class="sec-label" style="margin-bottom:10px;">Backtesting de senales ${infoDot('Compara lo que hubieran dado las senales segun el plan original contra lo que capturaste realmente.')}</div>
+      <div class="sec-label" style="margin-bottom:10px;">Backtesting de se&ntilde;ales ${infoDot('Compara lo que hubieran dado las senales segun el plan original contra lo que capturaste realmente.')}</div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <table class="tbl" style="min-width:650px;">
           <thead><tr><th>Trader</th><th>Trades</th><th>Signal</th><th>Real</th><th>Captura</th><th>TP/SL/Manual</th></tr></thead>
@@ -2716,11 +2718,11 @@ function renderPositions() {
     summaryPnl += Math.round((t.posSize/t.entry)*(price-t.entry)*sign*100)/100;
   });
   if (summaryEl) {
-    summaryEl.innerHTML = `${activeOnly.length} pos Â· ${pendingCount} ord Â· <span class="${summaryPnl>=0?'pnl-pos':'pnl-neg'}">${summaryPnl>=0?'+':'-'}$${fmt(Math.abs(summaryPnl))}</span>${missingPrices?` <span style="color:var(--amber);">(${missingPrices} sin precio)</span>`:''} Â· riesgo <span style="color:var(--red);">$${fmt(summaryRisk)}</span>`;
+    summaryEl.innerHTML = `${activeOnly.length} pos &middot; ${pendingCount} ord &middot; <span class="${summaryPnl>=0?'pnl-pos':'pnl-neg'}">${summaryPnl>=0?'+':'-'}$${fmt(Math.abs(summaryPnl))}</span>${missingPrices?` <span style="color:var(--amber);">(${missingPrices} sin precio)</span>`:''} &middot; riesgo <span style="color:var(--red);">$${fmt(summaryRisk)}</span>`;
   }
 
   if (!allActive.filter(t=>t.status==='active').length && !showZombies) {
-    if (summaryEl) summaryEl.textContent = `${pendingCount} ord Â· sin posiciones`;
+    if (summaryEl) summaryEl.textContent = `${pendingCount} ord - sin posiciones`;
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◻</div>
       <div class="empty-text">No hay posiciones abiertas</div>
@@ -5544,7 +5546,7 @@ window.showTickerSuggestions = async (val) => {
 
   const exactKnown = [...cryptoMatches, ...stockMatches, ...mexcMatches].some(x => x.ticker === q);
   const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
-    ? [{label:`${q} â€” Buscar en Yahoo Finance`, ticker:q, source:'yahoo', type:'etf'}]
+    ? [{label:`${q} - Buscar en Yahoo Finance`, ticker:q, source:'yahoo', type:'etf'}]
     : [];
   if (genericYahoo[0]) genericYahoo[0].label = `${q} - Buscar en Yahoo Finance`;
   const all = [...cryptoMatches, ...stockMatches, ...genericYahoo, ...mexcMatches];
