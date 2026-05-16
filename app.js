@@ -5117,6 +5117,271 @@ window.exportHistoryForChatGPT = (context='history') => {
   toast('Historial exportado para ChatGPT.');
 };
 
+const loadJsPdf = () => new Promise((resolve, reject) => {
+  if (window.jspdf?.jsPDF) return resolve(window.jspdf.jsPDF);
+  const existing = document.querySelector('script[data-mauex-jspdf="1"]');
+  if (existing) {
+    existing.addEventListener('load', () => resolve(window.jspdf.jsPDF), { once:true });
+    existing.addEventListener('error', reject, { once:true });
+    return;
+  }
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  s.async = true;
+  s.dataset.mauexJspdf = '1';
+  s.onload = () => resolve(window.jspdf.jsPDF);
+  s.onerror = () => reject(new Error('No pude cargar el generador de PDF.'));
+  document.head.appendChild(s);
+});
+
+async function getDashboardExportLiquidity() {
+  if (window._liquidityCache?.balances) return window._liquidityCache;
+  if (!PROXY_URL) return null;
+  try {
+    const r = await fetch(`${PROXY_URL}/balance?live=1&t=${Date.now()}`, { cache:'no-store' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const data = applyManualCapitalOverlay(await r.json());
+    _liquidityCache = data;
+    window._liquidityCache = data;
+    return data;
+  } catch (e) {
+    console.warn('Dashboard PDF liquidity failed', e);
+    return window._liquidityCache || null;
+  }
+}
+
+function monthlyPnlRows(trades) {
+  const months = {};
+  trades.forEach(t => {
+    const d = new Date(historyCloseDateOf(t) || t.closeDate || t.createdAt || 0);
+    if (Number.isNaN(d.getTime())) return;
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    months[k] = (months[k] || 0) + dashPnl(t);
+  });
+  return Object.keys(months).sort().map(k => ({ month:k, pnl:months[k] }));
+}
+
+window.exportDashboardPdf = async () => {
+  const G = window.G;
+  if (!G) return;
+  const all = G.trades();
+  const closed = all.filter(t => t.status === 'closed');
+  if (!closed.length) {
+    toast('No hay historial cerrado para exportar.','error');
+    return;
+  }
+
+  try {
+    toast('Preparando PDF del dashboard...');
+    const [jsPDF, liquidity] = await Promise.all([loadJsPdf(), getDashboardExportLiquidity()]);
+    const doc = new jsPDF({ unit:'pt', format:'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 36;
+    let y = 42;
+
+    const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const money = v => `${Number(v||0) >= 0 ? '+' : '-'}$${fmt(Math.abs(Number(v||0)))}`;
+    const moneyPlain = v => `$${fmt(Math.abs(Number(v||0)))}`;
+    const dateOnly = v => {
+      if (!v) return '';
+      const s = String(v);
+      return s.includes('T') ? s.split('T')[0] : s;
+    };
+    const addPageIfNeeded = (need=42) => {
+      if (y + need <= pageH - margin) return;
+      doc.addPage();
+      y = margin;
+    };
+    const text = (value, x, opts={}) => {
+      const size = opts.size || 9;
+      const maxWidth = opts.maxWidth || pageW - margin - x;
+      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+      doc.setFontSize(size);
+      doc.setTextColor(opts.color || '#111827');
+      const lines = doc.splitTextToSize(clean(value), maxWidth);
+      addPageIfNeeded(lines.length * (size + 3));
+      doc.text(lines, x, y);
+      y += lines.length * (size + 3);
+    };
+    const section = title => {
+      addPageIfNeeded(54);
+      y += y === margin ? 0 : 14;
+      doc.setDrawColor(210, 216, 226);
+      doc.line(margin, y, pageW - margin, y);
+      y += 18;
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(13);
+      doc.setTextColor('#0f172a');
+      doc.text(title, margin, y);
+      y += 18;
+    };
+    const table = (headers, rows, widths) => {
+      const rowH = 17;
+      addPageIfNeeded(rowH * 2);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor('#64748b');
+      let x = margin;
+      headers.forEach((h,i) => { doc.text(clean(h), x, y); x += widths[i]; });
+      y += 9;
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, y, pageW - margin, y);
+      y += 10;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor('#111827');
+      rows.forEach(row => {
+        addPageIfNeeded(rowH);
+        x = margin;
+        row.forEach((cell,i) => {
+          const cellText = doc.splitTextToSize(clean(cell), Math.max(20, widths[i] - 4))[0] || '';
+          doc.text(cellText, x, y);
+          x += widths[i];
+        });
+        y += rowH;
+      });
+    };
+
+    const stats = dashStatsOf(closed);
+    const active = all.filter(t => t.status === 'active');
+    const pending = all.filter(t => t.status === 'pending');
+    const watch = all.filter(t => t.status === 'watchlist');
+    const activePnl = active.reduce((s,t) => {
+      const p = G.getPrice(t.ticker, t.dir);
+      if (p == null || !Number(t.entry) || !Number(t.posSize)) return s;
+      return s + Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100;
+    }, 0);
+    const activeRisk = active.reduce((s,t)=>s+openRiskOf(t),0);
+    const best = closed.reduce((b,t)=>dashPnl(t)>dashPnl(b)?t:b, closed[0]);
+    const worst = closed.reduce((w,t)=>dashPnl(t)<dashPnl(w)?t:w, closed[0]);
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(20);
+    doc.setTextColor('#0f172a');
+    doc.text('MAUex - Dashboard + Historial', margin, y);
+    y += 22;
+    text(`Generado: ${new Date().toLocaleString('es-AR')} | Trades cerrados: ${closed.length} | Posiciones: ${active.length} | Ordenes: ${pending.length} | Watchlist: ${watch.length}`, margin, { size:9, color:'#475569' });
+
+    section('Resumen ejecutivo');
+    table(
+      ['Metrica','Valor','Detalle'],
+      [
+        ['PnL total cerrado', money(stats.pnl), `${stats.count} trades`],
+        ['Win rate', `${Math.round(stats.winRate*100)}%`, `${stats.wins} wins / ${stats.losses} losses`],
+        ['Profit factor', stats.profitFactor === Infinity ? 'INF' : stats.profitFactor.toFixed(2), 'Ganancias brutas / perdidas brutas'],
+        ['Expectancy', money(stats.expectancy), 'Promedio esperado por trade'],
+        ['Max drawdown', `-$${fmt(stats.maxDd)}`, 'Mayor caida acumulada'],
+        ['Avg win / Avg loss', `+$${fmt(stats.avgWin)} / -$${fmt(Math.abs(stats.avgLoss))}`, 'Promedios de ganadores y perdedores'],
+        ['R promedio', `${stats.avgR >= 0 ? '+' : ''}${stats.avgR.toFixed(2)}R`, 'Solo trades con riesgo cargado'],
+        ['Sharpe simple', stats.sharpe.toFixed(2), `Best ${best?.ticker || '-'} / Worst ${worst?.ticker || '-'}`],
+        ['PnL abierto', money(activePnl), 'Posiciones activas con precio disponible'],
+        ['Capital en riesgo abierto', moneyPlain(activeRisk), 'Riesgo por SL o margen si no hay SL'],
+      ],
+      [145, 115, 260]
+    );
+
+    section('Capital en exchanges');
+    const rawBalances = liquidity?.balances || {};
+    const balances = Object.entries(rawBalances).map(([ex,b]) => [ex, normalizeDashboardBalance(b)]);
+    if (balances.length) {
+      table(
+        ['Exchange','Libre','Margen','Ordenes','PnL','Total'],
+        balances.map(([ex,b]) => [
+          ex,
+          moneyPlain(b.free),
+          moneyPlain(b.margin),
+          moneyPlain(b.orders),
+          money(b.pnl),
+          moneyPlain(b.total || (b.free+b.margin+b.orders)),
+        ]),
+        [90, 82, 82, 82, 82, 100]
+      );
+    } else {
+      text('No habia datos de capital sincronizados al momento de exportar.', margin, { color:'#64748b' });
+    }
+
+    section('PnL mensual');
+    table(['Mes','PnL'], monthlyPnlRows(closed).map(r => [r.month, money(r.pnl)]), [130, 130]);
+
+    section('Ranking por trader');
+    table(
+      ['Trader','Trades','PnL','WR','PF','Expectancy'],
+      dashGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').map(r => {
+        const s = r.stats;
+        return [r.name, s.count, money(s.pnl), `${Math.round(s.winRate*100)}%`, s.profitFactor === Infinity ? 'INF' : s.profitFactor.toFixed(2), money(s.expectancy)];
+      }),
+      [145, 52, 78, 55, 55, 90]
+    );
+
+    section('Ranking por activo');
+    table(
+      ['Ticker','Trades','PnL','WR','PF','Expectancy'],
+      dashGroupStats(closed, t => (t.ticker || 'Sin ticker').toUpperCase()).map(r => {
+        const s = r.stats;
+        return [r.name, s.count, money(s.pnl), `${Math.round(s.winRate*100)}%`, s.profitFactor === Infinity ? 'INF' : s.profitFactor.toFixed(2), money(s.expectancy)];
+      }),
+      [145, 52, 78, 55, 55, 90]
+    );
+
+    section('Calidad de ejecucion');
+    const scored = closed.map(t => ({ trade:t, quality:tradeQualityOf(t, stats) })).sort((a,b)=>a.quality.score-b.quality.score);
+    const tagCounts = {};
+    scored.forEach(x => x.quality.tags.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }));
+    const avgScore = Math.round(scored.reduce((s,x)=>s+x.quality.score,0) / scored.length);
+    text(`Score promedio: ${avgScore}/100`, margin, { bold:true });
+    table(
+      ['Error repetido','Veces'],
+      Object.keys(tagCounts).sort((a,b)=>tagCounts[b]-tagCounts[a]).map(tag => [tag, tagCounts[tag]]),
+      [220, 70]
+    );
+    table(
+      ['A revisar','Score','PnL','Tags'],
+      scored.slice(0,10).map(x => [x.trade.ticker || '-', x.quality.score, money(dashPnl(x.trade)), x.quality.tags.slice(0,4).join(', ')]),
+      [85, 55, 75, 305]
+    );
+
+    section('Posiciones y ordenes abiertas');
+    const openRows = [...active, ...pending, ...watch].map(t => [
+      t.status === 'active' ? 'Posicion' : t.status === 'pending' ? 'Orden' : 'Watch',
+      t.ticker || '',
+      String(t.dir || '').toUpperCase(),
+      t.exchange || '',
+      t.traderName || '',
+      t.entry || '',
+      t.sl || '',
+      [t.tp1,t.tp2,t.tp3].filter(Boolean).join(' / '),
+      moneyPlain(t.posSize || 0),
+    ]);
+    table(['Tipo','Ticker','Dir','Exchange','Trader','Entry','SL','TPs','Nominal'], openRows, [58, 60, 44, 62, 82, 58, 58, 100, 70]);
+
+    section('Historial completo');
+    table(
+      ['Ticker','Dir','Exchange','Trader','Entry','Exit','PnL','PnL%','Apertura','Cierre','Notas'],
+      closed.sort((a,b)=>(new Date(historyCloseDateOf(a)||0))-(new Date(historyCloseDateOf(b)||0))).map(t => [
+        t.ticker || '',
+        String(t.dir || '').toUpperCase(),
+        t.exchange || '',
+        t.traderName || '',
+        t.entry ?? '',
+        t.closePrice || t.exitPrice || t.exit || '',
+        money(dashPnl(t)),
+        `${Number(t.pnlPct || 0).toFixed(1)}%`,
+        dateOnly(t.createdAt),
+        dateOnly(historyCloseDateOf(t)),
+        historyNotesOf(t),
+      ]),
+      [50, 36, 52, 65, 42, 42, 55, 42, 58, 58, 120]
+    );
+
+    doc.save(`mauex_dashboard_${new Date().toISOString().split('T')[0]}.pdf`);
+    toast('PDF del dashboard descargado.');
+  } catch (e) {
+    console.error(e);
+    toast('No pude generar el PDF: '+(e.message || e),'error');
+  }
+};
+
 window.deleteExchangeTrades = async () => {
   if(!confirm('¿Borrar todos los trades importados automáticamente del exchange? Los trades manuales y del watchlist se mantienen.')) return;
   const G = window.G; if(!G) return;
