@@ -99,6 +99,54 @@ window.toast = (msg, type='success') => {
   setTimeout(()=>el.remove(), 3500);
 };
 
+function installGlobalTooltips() {
+  let tipEl = null;
+  let touchOpen = false;
+  const hide = () => {
+    if (tipEl) tipEl.remove();
+    tipEl = null;
+    touchOpen = false;
+  };
+  const show = (target, isTouch=false) => {
+    const text = target?.dataset?.tip;
+    if (!text) return;
+    hide();
+    tipEl = document.createElement('div');
+    tipEl.className = 'mauex-tooltip' + (isTouch ? ' open-touch' : '');
+    tipEl.textContent = text;
+    (document.body || document.documentElement).appendChild(tipEl);
+    const r = target.getBoundingClientRect();
+    const tr = tipEl.getBoundingClientRect();
+    let left = r.left + r.width / 2 - tr.width / 2;
+    left = Math.max(12, Math.min(left, window.innerWidth - tr.width - 12));
+    let top = r.bottom + 9;
+    if (top + tr.height > window.innerHeight - 12) top = r.top - tr.height - 9;
+    if (top < 12) top = 12;
+    tipEl.style.left = left + 'px';
+    tipEl.style.top = top + 'px';
+    touchOpen = isTouch;
+  };
+  document.addEventListener('mouseover', e => {
+    const target = e.target.closest?.('.info-dot[data-tip]');
+    if (target) show(target, false);
+  });
+  document.addEventListener('mouseout', e => {
+    if (e.target.closest?.('.info-dot[data-tip]') && !touchOpen) hide();
+  });
+  document.addEventListener('click', e => {
+    const target = e.target.closest?.('.info-dot[data-tip]');
+    if (target) {
+      e.preventDefault();
+      e.stopPropagation();
+      show(target, true);
+      return;
+    }
+    if (touchOpen) hide();
+  });
+  window.addEventListener?.('scroll', hide, true);
+  window.addEventListener?.('resize', hide);
+}
+
 window.openModal  = id => document.getElementById(id).classList.add('open');
 window.closeModal = id => document.getElementById(id).classList.remove('open');
 
@@ -3196,6 +3244,20 @@ function getFilteredHistoryRows(context='history') {
   return sortHistoryRows(rows, context === 'dashboard' ? _dashHistSort : _histSort);
 }
 
+let _equityVisible = {};
+try { _equityVisible = JSON.parse(localStorage.getItem('mauex_equity_visible') || '{}') || {}; } catch(e) { _equityVisible = {}; }
+const EQUITY_COLORS = ['#3d9cf0','#00c47a','#f59e0b','#e040fb','#38bdf8','#ff4d6d','#a78bfa','#22c55e','#f97316','#14b8a6'];
+function equityColorFor(name, idx) {
+  if (name === '__total') return '#3d9cf0';
+  return EQUITY_COLORS[(idx + 1) % EQUITY_COLORS.length];
+}
+window.toggleEquitySeries = (key, checked) => {
+  _equityVisible[key] = checked;
+  localStorage.setItem('mauex_equity_visible', JSON.stringify(_equityVisible));
+  const closed = window.G?.trades?.().filter(t => t.status === 'closed') || [];
+  renderHistCharts(closed);
+};
+
 function renderHistCharts(trades) {
   const el = document.getElementById('histCharts');
   if (!el) return;
@@ -3204,9 +3266,13 @@ function renderHistCharts(trades) {
   // Helper: info tooltip on chart titles
   const info = (text) => `<span class="info-dot" data-tip="${dashSafe(text)}" title="${dashSafe(text)}" style="margin-left:5px;vertical-align:middle;">i</span>`;
 
-  const sorted = [...trades].sort((a,b)=>new Date(a.closeDate)-new Date(b.closeDate));
+  const sorted = [...trades].sort((a,b)=>new Date(historyCloseDateOf(a)||a.closeDate||a.createdAt)-new Date(historyCloseDateOf(b)||b.closeDate||b.createdAt));
   let cum = 0;
-  const equityPoints = sorted.map(t=>{ cum+=t.pnl||0; return { v: cum, date: t.closeDate||'', pnl: t.pnl||0 }; });
+  const equityPoints = sorted.map(t=>{
+    const date = historyCloseDateOf(t) || t.closeDate || t.createdAt || '';
+    cum+=t.pnl||0;
+    return { v: cum, date, pnl: t.pnl||0, trader: t.traderName || 'Sin trader', ticker: t.ticker || '' };
+  });
   const eqVals = equityPoints.map(p=>p.v);
   const maxEq = Math.max(...eqVals, 0);
   const minEq = Math.min(...eqVals, 0);
@@ -3239,6 +3305,17 @@ function renderHistCharts(trades) {
   });
   const trKeys = Object.keys(byTrader).sort((a,b)=>byTrader[b].pnl-byTrader[a].pnl);
   const maxTrPnl = Math.max(...trKeys.map(k=>Math.abs(byTrader[k].pnl)),1);
+  const equityTraderKeys = trKeys;
+  if (_equityVisible.__total == null) _equityVisible.__total = true;
+  equityTraderKeys.forEach(name => { if (_equityVisible[name] == null) _equityVisible[name] = true; });
+  const equityControls = [
+    { key:'__total', label:'Total', color:equityColorFor('__total', 0) },
+    ...equityTraderKeys.map((name,i)=>({ key:name, label:name, color:equityColorFor(name, i) })),
+  ].map(item => `<label class="equity-toggle" title="${dashSafe(item.label)}">
+    <input type="checkbox" ${_equityVisible[item.key] ? 'checked' : ''} onchange="window.toggleEquitySeries(${dashSafe(JSON.stringify(item.key))}, this.checked)">
+    <span class="equity-color" style="background:${item.color};"></span>
+    <span>${dashSafe(item.label)}</span>
+  </label>`).join('');
 
   // Drawdown
   let peak=0, maxDd=0;
@@ -3324,6 +3401,7 @@ function renderHistCharts(trades) {
         <span style="font-size:10px;color:var(--t3);">Max DD: <span style="color:var(--red);">-$${fmt(maxDd)}</span></span>
         <span style="font-size:12px;font-family:var(--mono);font-weight:600;color:${totPnl>=0?'var(--accent)':'var(--red)'};">${totPnl>=0?'+':''}$${fmt(Math.abs(totPnl))}</span>
       </div>
+      <div class="equity-controls">${equityControls}</div>
     </div>
     <div style="display:grid;grid-template-rows:auto 1fr;gap:12px;">
       <div class="card" style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;">
@@ -3379,20 +3457,59 @@ function renderHistCharts(trades) {
     const canvas = document.getElementById('eqCanvas');
     if (canvas && equityPoints.length >= 2) {
       if (canvas._chartInstance) canvas._chartInstance.destroy();
+      const labels = equityPoints.map(p => String(p.date || '').slice(0,10));
+      const monthLabel = value => {
+        const idx = Number(value) || 0;
+        const cur = labels[idx] || '';
+        if (!cur) return '';
+        const curMonth = cur.slice(0,7);
+        const prevMonth = idx > 0 ? (labels[idx-1] || '').slice(0,7) : '';
+        if (idx === 0 || curMonth !== prevMonth) {
+          const [y,m] = curMonth.split('-');
+          return new Date(Number(y), Number(m)-1, 1).toLocaleDateString('es',{month:'short'});
+        }
+        return '';
+      };
+      const traderSeries = equityTraderKeys.map((name, i) => {
+        let traderCum = 0;
+        const deltas = [];
+        const data = sorted.map(t => {
+          const pnl = (t.traderName || 'Sin trader') === name ? Number(t.pnl)||0 : 0;
+          traderCum += pnl;
+          deltas.push(pnl);
+          return Math.round(traderCum * 100)/100;
+        });
+        return {
+          key:name,
+          label:name,
+          data,
+          deltas,
+          borderColor: equityColorFor(name, i),
+          borderWidth: 1.3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+          fill: false,
+          hidden: !_equityVisible[name],
+        };
+      });
       canvas._chartInstance = new Chart(canvas, {
         type: 'line',
         data: {
-          labels: equityPoints.map(p => p.date?.slice(0,7)||''),
+          labels,
           datasets: [{
+            key:'__total',
+            label:'Total',
             data: equityPoints.map(p => Math.round(p.v * 100)/100),
             borderColor: '#3d9cf0',
             borderWidth: 1.5,
             pointRadius: 0,
             pointHoverRadius: 4,
             pointHoverBackgroundColor: '#3d9cf0',
-            tension: 0.3,
+            tension: 0.25,
             fill: false,
-          }]
+            hidden: !_equityVisible.__total,
+          }, ...traderSeries]
         },
         options: {
           responsive: true,
@@ -3402,11 +3519,16 @@ function renderHistCharts(trades) {
             legend: { display: false },
             tooltip: {
               callbacks: {
-                title: items => items[0]?.label || '',
+                title: items => {
+                  const label = items[0]?.label || '';
+                  const d = new Date(label + 'T00:00:00');
+                  return Number.isNaN(d.getTime()) ? label : d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
+                },
                 label: ctx => {
                   const v = ctx.parsed.y;
-                  const pt = equityPoints[ctx.dataIndex];
-                  return ` $${fmt(Math.abs(v))} (${pt?.pnl>=0?'+':''}$${fmt(pt?.pnl||0)})`;
+                  const ds = ctx.dataset || {};
+                  const delta = ds.key === '__total' ? equityPoints[ctx.dataIndex]?.pnl || 0 : ds.deltas?.[ctx.dataIndex] || 0;
+                  return ` ${ds.label}: ${v>=0?'+':'-'}$${fmt(Math.abs(v))} (${delta>=0?'+':'-'}$${fmt(Math.abs(delta))})`;
                 }
               },
               backgroundColor: 'rgba(22,27,34,0.95)',
@@ -3422,10 +3544,14 @@ function renderHistCharts(trades) {
             x: {
               ticks: {
                 color: '#6a7888', font: { size: 9, family: 'monospace' },
-                maxTicksLimit: 5,
                 maxRotation: 0,
+                autoSkip: false,
+                callback: monthLabel,
               },
-              grid: { color: 'rgba(255,255,255,0.04)' },
+              grid: {
+                color: ctx => monthLabel(ctx.tick?.value) ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.015)',
+                lineWidth: ctx => monthLabel(ctx.tick?.value) ? 1 : 0.5,
+              },
             },
             y: {
               ticks: {
@@ -7008,5 +7134,6 @@ async function fetchExchangeHistory(exchange, keys, startTs, endTs) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 buildLevGrid();
+installGlobalTooltips();
 loadUserPrefs();
 document.getElementById('dashDate').textContent = new Date().toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
