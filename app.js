@@ -3122,6 +3122,90 @@ window.toggleHistNote = id => {
 
 // ── Edit trade ─────────────────────────────────────────────────────────────
 let editDir = 'long';
+const EDIT_CHANGE_REASONS = [
+  'Actualizacion del trader',
+  'Ajuste tecnico',
+  'Reduccion de riesgo',
+  'Subi SL',
+  'Baje SL',
+  'Movi TP',
+  'Cierre emocional',
+  'Toma de ganancia manual',
+  'Invalidacion',
+  'Error de carga',
+  'Cambio de contexto',
+  'Otro'
+];
+
+window.toggleEditChangeReason = btn => btn?.classList?.toggle('selected');
+
+function renderEditChangeReasons() {
+  const chips = document.getElementById('eChangeReasonChips');
+  const note = document.getElementById('eChangeReasonNote');
+  if (!chips) return;
+  chips.innerHTML = EDIT_CHANGE_REASONS.map(reason => `
+    <button type="button" class="review-chip warn" data-edit-change-reason="${dashSafe(reason)}" onclick="toggleEditChangeReason(this)">${dashSafe(reason)}</button>
+  `).join('');
+  if (note) note.value = '';
+}
+
+function numberish(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 100000000) / 100000000 : (v || '');
+}
+
+function invalidationComparable(list) {
+  return JSON.stringify((Array.isArray(list) ? list : []).map(x => ({
+    key: x.key || '',
+    price: numberish(x.price),
+    side: x.side || 'up',
+    note: x.note || '',
+  })));
+}
+
+function changedTradeFields(before={}, after={}) {
+  const fields = [
+    ['dir','direccion'],
+    ['exchange','exchange'],
+    ['leverage','apalancamiento'],
+    ['entry','entry'],
+    ['sl','stop loss'],
+    ['liquidation','liquidacion'],
+    ['risk','riesgo'],
+    ['posSize','tamano'],
+    ['tp1','tp1'],
+    ['tp1pct','tp1 %'],
+    ['tp2','tp2'],
+    ['tp2pct','tp2 %'],
+    ['tp3','tp3'],
+    ['tp3pct','tp3 %'],
+    ['traderId','trader'],
+  ];
+  const changes = fields
+    .map(([key,label]) => ({ key, label, from: before?.[key], to: after?.[key] }))
+    .filter(c => numberish(c.from) !== numberish(c.to));
+  if (invalidationComparable(before?.invalidations) !== invalidationComparable(after?.invalidations)) {
+    changes.push({ key:'invalidations', label:'invalidacion', from: before?.invalidations || [], to: after?.invalidations || [] });
+  }
+  return changes;
+}
+
+function getEditChangeAudit(before={}, after={}) {
+  const changes = changedTradeFields(before, after);
+  const reasonTags = [...document.querySelectorAll('[data-edit-change-reason].selected')]
+    .map(x => x.dataset.editChangeReason)
+    .filter(Boolean);
+  const note = document.getElementById('eChangeReasonNote')?.value?.trim() || '';
+  if (!changes.length && !reasonTags.length && !note) return null;
+  return {
+    at: new Date().toISOString(),
+    type: 'edit',
+    reasonTags: [...new Set(reasonTags)],
+    note,
+    fields: changes,
+    originalPlanSnapshot: before?.originalPlan || window.buildOriginalTraderPlan?.(before) || null,
+  };
+}
 
 window.setEditDir = d => {
   editDir = d;
@@ -3257,6 +3341,7 @@ window.openEditTrade = id => {
   }
 
   renderEditAlertState(t);
+  renderEditChangeReasons();
   openModal('editTradeModal');
 };
 
@@ -3277,9 +3362,16 @@ window.saveEditTrade = async () => {
   if(window._editFromExchange) {
     try {
       const originalPlan = existingBeforeEdit.originalPlan || window.buildOriginalTraderPlan?.(existingBeforeEdit) || null;
+      const nextTrade = { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, ...(originalPlan ? { originalPlan } : {}) };
+      const changeAudit = getEditChangeAudit(existingBeforeEdit, nextTrade);
       await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
         traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations,
         ...(originalPlan ? { originalPlan } : {}),
+        ...(changeAudit ? {
+          changeEvents: [...(Array.isArray(existingBeforeEdit.changeEvents) ? existingBeforeEdit.changeEvents : []), changeAudit],
+          lastChangeReasonTags: changeAudit.reasonTags,
+          lastChangedAt: changeAudit.at,
+        } : {}),
         updatedAt:new Date().toISOString()
       });
       await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
@@ -3324,6 +3416,14 @@ window.saveEditTrade = async () => {
 
   try {
     const originalPlan = existingTrade.originalPlan || window.buildOriginalTraderPlan?.(existingTrade) || null;
+    const nextTrade = {
+      ...existingTrade, id, ticker, exchange, leverage:lev, dir:editDir, entry, sl,
+      liquidation: liquidation || null, risk: calcRisk, posSize,
+      tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
+      notes, traderId, traderName, invalidations,
+      ...(originalPlan ? { originalPlan } : {}),
+    };
+    const changeAudit = getEditChangeAudit(existingTrade, nextTrade);
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
       ticker, exchange, leverage:lev, dir:editDir,
       entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize,
@@ -3331,6 +3431,11 @@ window.saveEditTrade = async () => {
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName, invalidations,
       ...(originalPlan ? { originalPlan } : {}),
+      ...(changeAudit ? {
+        changeEvents: [...(Array.isArray(existingTrade.changeEvents) ? existingTrade.changeEvents : []), changeAudit],
+        lastChangeReasonTags: changeAudit.reasonTags,
+        lastChangedAt: changeAudit.at,
+      } : {}),
       updatedAt: new Date().toISOString(),
     });
     await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);

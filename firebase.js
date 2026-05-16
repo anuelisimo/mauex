@@ -512,6 +512,22 @@ function getCloseReviewData() {
     reviewedAt: new Date().toISOString(),
   };
 }
+function buildCloseChangeEvent(t, closeData, reviewData, extra={}) {
+  return {
+    at: new Date().toISOString(),
+    type: 'close',
+    closeReason: closeData.closeReason || '',
+    closeLevel: closeData.closeLevel || '',
+    closePrice: Number(closeData.closePrice) || 0,
+    closePctOriginal: Number(closeData.closePctOriginal) || 0,
+    posSize: Number(closeData.posSize) || 0,
+    pnl: Number(closeData.pnl) || 0,
+    note: closeData.closeNotes || '',
+    reasonTags: [...new Set([...(reviewData?.goodTags || []), ...(reviewData?.errorTags || []), ...(reviewData?.mauexTags || [])])],
+    originalPlanSnapshot: t?.originalPlan || window.buildOriginalTraderPlan?.(t) || null,
+    ...extra,
+  };
+}
 
 window.openPartialClose = id => {
   window.openCloseTrade(id);
@@ -657,6 +673,7 @@ async function confirmCascadeClose(t, action, closeDate, closeNotes) {
       daysOpen: Math.round((new Date(closeDateSafe) - new Date(t.createdAt)) / 86400000),
       createdAt: t.createdAt, updatedAt: new Date().toISOString(),
     };
+    closeData.changeEvents = [buildCloseChangeEvent(t, closeData, reviewData, { cascadeLevel: level.k })];
     await addDoc(collection(db,'trades'), { ...closeData, userId: CU.uid, partialClose: true, originalId: t.id });
     updates['levelClosures.'+level.k] = levelClosure;
     updates['levelAlerts.'+level.k+'.confirmed'] = true;
@@ -671,21 +688,23 @@ async function confirmCascadeClose(t, action, closeDate, closeNotes) {
   if(!totalClosed){ toast('No hay tamaño abierto para cerrar.','error'); return; }
   const isFullClose = remaining <= Math.max(0.01, (originalSize||0) * 0.0001);
   if(isFullClose) {
-    await updateDoc(doc(db,'trades',t.id), {
-      status:'closed_parent', posSize:0, risk:0,
-      closePrice:lastPrice, closeDate: closeDateSafe, closeNotes:'Posicion cerrada por parciales',
-      closeReason:'partial_sequence', closeLevel:lastLevel,
-      ...reviewData,
-      realizedPnl: Math.round(((Number(t.realizedPnl)||0) + totalPnl)*100)/100,
-      ...updates,
-    });
+      await updateDoc(doc(db,'trades',t.id), {
+        status:'closed_parent', posSize:0, risk:0,
+        closePrice:lastPrice, closeDate: closeDateSafe, closeNotes:'Posicion cerrada por parciales',
+        closeReason:'partial_sequence', closeLevel:lastLevel,
+        ...reviewData,
+        changeEvents: [...(Array.isArray(t.changeEvents) ? t.changeEvents : []), buildCloseChangeEvent(t, { closeReason:'partial_sequence', closeLevel:lastLevel, closePrice:lastPrice, closePctOriginal:100, posSize:totalClosed, pnl:totalPnl, closeNotes:'Posicion cerrada por parciales' }, reviewData)],
+        realizedPnl: Math.round(((Number(t.realizedPnl)||0) + totalPnl)*100)/100,
+        ...updates,
+      });
   } else {
-    await updateDoc(doc(db,'trades',t.id), {
-      posSize: remaining, risk: riskForSize(t, remaining),
-      ...reviewData,
-      realizedPnl: Math.round(((Number(t.realizedPnl)||0) + totalPnl)*100)/100,
-      ...updates,
-    });
+      await updateDoc(doc(db,'trades',t.id), {
+        posSize: remaining, risk: riskForSize(t, remaining),
+        ...reviewData,
+        changeEvents: [...(Array.isArray(t.changeEvents) ? t.changeEvents : []), buildCloseChangeEvent(t, { closeReason:'tp', closeLevel:lastLevel, closePrice:lastPrice, closePctOriginal: originalSize ? Math.round(totalClosed/originalSize*10000)/100 : 0, posSize:totalClosed, pnl:totalPnl, closeNotes: closeNotes || 'Cierre parcial por TPs' }, reviewData)],
+        realizedPnl: Math.round(((Number(t.realizedPnl)||0) + totalPnl)*100)/100,
+        ...updates,
+      });
   }
   await loadTrades();
   closeModal('closeTradeModal');
@@ -752,12 +771,15 @@ window.confirmClose = async () => {
       pnl, pnlPct: Math.round(pnl/(margin||1)*10000)/100,
       daysOpen: days, createdAt: t.createdAt, updatedAt: new Date().toISOString(),
     };
+    const closeChangeEvent = buildCloseChangeEvent(t, closeData, reviewData);
+    closeData.changeEvents = [closeChangeEvent];
 
     if (isFullClose && !closedPartsForPosition(id).length) {
       await updateDoc(doc(db,'trades',id), {
         ...closeData,
         status:'closed',
         posSize: closeSize,
+        changeEvents: [...(Array.isArray(t.changeEvents) ? t.changeEvents : []), closeChangeEvent],
         updatedAt: new Date().toISOString(),
       });
     } else if (isFullClose) {
@@ -767,6 +789,7 @@ window.confirmClose = async () => {
         closePrice, closeDate, closeNotes:'Posicion cerrada por parciales',
         closeReason:'partial_sequence', updatedAt: new Date().toISOString(),
         ...reviewData,
+        changeEvents: [...(Array.isArray(t.changeEvents) ? t.changeEvents : []), closeChangeEvent],
         ...levelCloseUpdates,
       });
     } else {
@@ -774,6 +797,7 @@ window.confirmClose = async () => {
       await updateDoc(doc(db,'trades',id), {
         posSize: remainSize, risk: riskForSize(t, remainSize), originalPosSize: originalSize,
         ...reviewData,
+        changeEvents: [...(Array.isArray(t.changeEvents) ? t.changeEvents : []), closeChangeEvent],
         realizedPnl: Math.round(((Number(t.realizedPnl)||0) + pnl)*100)/100,
         updatedAt: new Date().toISOString(),
         ...levelCloseUpdates,
