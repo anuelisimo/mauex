@@ -933,6 +933,7 @@ const signalGroupStats = (trades, keyFn) => {
   return grouped.map(row => ({ ...row, signal: signalStatsOf(row.trades) }))
     .sort((a,b)=>b.signal.executionDelta-a.signal.executionDelta);
 };
+window.signalGroupStats = signalGroupStats;
 const dashGroupStats = (trades, keyFn) => {
   const map = {};
   trades.forEach(t => {
@@ -954,7 +955,14 @@ const dashProfessionalRow = (row) => {
     <td class="${s.expectancy>=0?'pnl-pos':'pnl-neg'}">${dashMoney(s.expectancy)}</td>
   </tr>`;
 };
-const traderEdgeScore = row => {
+const sampleConfidenceOf = count => {
+  const n = Number(count) || 0;
+  if (n >= 12) return { mult:1, label:'Alta', note:'muestra alta' };
+  if (n >= 7) return { mult:.88, label:'Media', note:'muestra media' };
+  if (n >= 4) return { mult:.72, label:'Baja', note:'muestra baja' };
+  return { mult:.55, label:'Insuficiente', note:'muestra insuficiente' };
+};
+const traderSignalScore = row => {
   const s = row.stats || {};
   const signal = row.signal || signalStatsOf(row.trades || []);
   const pf = s.profitFactor === Infinity ? 3 : Math.max(0, Math.min(3, Number(s.profitFactor)||0));
@@ -962,21 +970,45 @@ const traderEdgeScore = row => {
   const expectancy = Number(s.expectancy)||0;
   const avgAbs = Math.max(Math.abs(Number(s.avgWin)||0), Math.abs(Number(s.avgLoss)||0), 1);
   const expectancyScore = Math.max(0, Math.min(1, (expectancy / avgAbs + 1) / 2));
-  const signalScore = Number(signal.signalPnl) > 0 ? 1 : 0;
-  const deltaScore = Number(signal.executionDelta) >= 0 ? 1 : 0.35;
-  return Math.round((pf/3)*30 + wr*25 + expectancyScore*20 + signalScore*15 + deltaScore*10);
+  const signalPnlScore = Number(signal.signalPnl) > 0 ? 1 : Number(signal.signalPnl) === 0 ? .45 : 0;
+  const avgSignal = (Number(signal.signalPnl)||0) / Math.max(1, Number(s.count)||1);
+  const signalExpectancyScore = Math.max(0, Math.min(1, (avgSignal / avgAbs + 1) / 2));
+  const raw = (pf/3)*24 + wr*22 + expectancyScore*18 + signalPnlScore*20 + signalExpectancyScore*16;
+  const sample = sampleConfidenceOf(s.count);
+  return Math.round(raw * sample.mult);
 };
+const executionCaptureScore = row => {
+  const signal = row.signal || signalStatsOf(row.trades || []);
+  if (Number(signal.signalPnl) <= 0) return Number(signal.executionDelta) >= 0 ? 70 : 45;
+  const capture = Math.max(0, Math.min(1.25, Number(signal.realPnl || 0) / Number(signal.signalPnl || 1)));
+  return Math.round(Math.min(100, capture * 100));
+};
+const traderEdgeScore = row => traderSignalScore(row);
+const traderScoreMeta = row => {
+  const signalScore = traderSignalScore(row);
+  const executionScore = executionCaptureScore(row);
+  const sample = sampleConfidenceOf(row?.stats?.count || 0);
+  const capture = row?.signal?.signalPnl > 0 ? Math.round((row.signal.realPnl / row.signal.signalPnl) * 100) : null;
+  return { signalScore, executionScore, sample, capture };
+};
+window.traderSignalScore = traderSignalScore;
+window.executionCaptureScore = executionCaptureScore;
+window.traderEdgeScore = traderEdgeScore;
+window.traderScoreMeta = traderScoreMeta;
 const traderEdgeState = row => {
-  const score = traderEdgeScore(row);
-  const delta = Number(row.signal?.executionDelta)||0;
-  if (score >= 75 && delta >= 0) return { label:'Prioridad', color:'var(--accent)', tone:'good' };
+  const score = traderSignalScore(row);
+  const sample = sampleConfidenceOf(row?.stats?.count || 0);
+  if (sample.label === 'Insuficiente') return { label:'Muestra baja', color:'var(--amber)', tone:'warn' };
+  if (score >= 75) return { label:'Prioridad', color:'var(--accent)', tone:'good' };
   if (score >= 60) return { label:'Normal', color:'var(--blue)', tone:'neutral' };
   if (score >= 45) return { label:'Reducir', color:'var(--amber)', tone:'warn' };
   return { label:'Observacion', color:'var(--red)', tone:'bad' };
 };
+window.traderEdgeState = traderEdgeState;
 function renderTraderEdgeVisual(rows) {
   if (!rows.length) return '';
-  const enriched = rows.map(row => ({ ...row, edgeScore: traderEdgeScore(row), edgeState: traderEdgeState(row) }));
+  const enriched = rows.map(row => ({ ...row, edgeScore: traderSignalScore(row), executionScore: executionCaptureScore(row), scoreMeta: traderScoreMeta(row), edgeState: traderEdgeState(row) }))
+    .sort((a,b)=>b.edgeScore-a.edgeScore || b.stats.count-a.stats.count);
   const maxAbsPnl = Math.max(1, ...enriched.map(r => Math.abs(Number(r.signal?.realPnl)||0)));
   const maxTrades = Math.max(1, ...enriched.map(r => Number(r.stats?.count)||0));
   const xOf = pnl => 360 + (Number(pnl)||0) / maxAbsPnl * 270;
@@ -1006,11 +1038,12 @@ function renderTraderEdgeVisual(rows) {
   const tableRows = enriched.slice(0,8).map(row => {
     const state = row.edgeState;
     const delta = Number(row.signal?.executionDelta)||0;
+    const meta = row.scoreMeta || traderScoreMeta(row);
     return `<tr>
       <td><strong>${dashSafe(row.name)}</strong></td>
-      <td>${row.edgeScore}</td>
-      <td class="${row.signal.signalPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(row.signal.signalPnl)}</td>
-      <td class="${row.signal.realPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(row.signal.realPnl)}</td>
+      <td>${meta.signalScore}</td>
+      <td>${meta.capture == null ? '-' : meta.capture + '%'}</td>
+      <td style="color:${meta.sample.label === 'Insuficiente' ? 'var(--amber)' : 'var(--t2)'};">${meta.sample.label}</td>
       <td class="${delta>=0?'pnl-pos':'pnl-neg'}">${dashMoney(delta)}</td>
       <td><span style="display:inline-flex;padding:3px 7px;border-radius:4px;background:rgba(255,255,255,0.04);color:${state.color};font-family:var(--mono);font-size:9px;font-weight:800;">${state.label}</span></td>
     </tr>`;
@@ -1018,15 +1051,15 @@ function renderTraderEdgeVisual(rows) {
   return `<div class="card" style="padding:16px;margin-bottom:12px;">
     <div class="fxb" style="gap:12px;align-items:flex-start;margin-bottom:14px;">
       <div>
-        <div class="sec-label" style="margin-bottom:5px;">Trader Edge Dashboard ${infoDot('Mapa visual de traders. Derecha = mas PnL real. Arriba = mejor score de edge. Punto mas grande = mas trades. Verde = tu ejecucion suma contra la senal; rojo = se pierde parte del edge.')}</div>
-        <div style="font-size:11px;color:var(--t2);font-family:var(--mono);">Matriz visual para decidir a que traders mirar con mas prioridad.</div>
+        <div class="sec-label" style="margin-bottom:5px;">Trader Signal Dashboard ${infoDot('Separa calidad de senal del trader de tu ejecucion. Arriba = mejor Signal Score ajustado por cantidad de trades. Derecha = mas PnL real. Verde/rojo muestra si tu gestion capturo mas o menos que el plan.')}</div>
+        <div style="font-size:11px;color:var(--t2);font-family:var(--mono);">Prioriza traders por calidad de senal, dejando la ejecucion como lectura separada.</div>
       </div>
     </div>
     <div class="g4" style="margin-bottom:12px;">
       ${mini('Mejor senal', topSignal, topSignal?.signal?.signalPnl, (topSignal?.signal?.signalPnl||0)>=0?'pnl-pos':'pnl-neg')}
       ${mini('Mejor real', topReal, topReal?.signal?.realPnl, (topReal?.signal?.realPnl||0)>=0?'pnl-pos':'pnl-neg')}
       ${mini('Tu gestion suma', topDelta, topDelta?.signal?.executionDelta, (topDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
-      ${mini('Edge perdido', worstDelta, worstDelta?.signal?.executionDelta, (worstDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
+      ${mini('Captura perdida', worstDelta, worstDelta?.signal?.executionDelta, (worstDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
     </div>
     <div class="trader-edge-layout">
       <div style="background:var(--bg3);border-radius:var(--r);padding:10px;min-height:280px;overflow:hidden;">
@@ -1034,7 +1067,7 @@ function renderTraderEdgeVisual(rows) {
           <line x1="360" y1="34" x2="360" y2="240" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
           <line x1="48" y1="226" x2="672" y2="226" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
           <line x1="48" y1="140" x2="672" y2="140" stroke="rgba(255,255,255,.055)" stroke-width="1"/>
-          <text x="48" y="24" fill="#6a7888" font-size="10" font-family="monospace">EDGE SCORE</text>
+          <text x="48" y="24" fill="#6a7888" font-size="10" font-family="monospace">SIGNAL SCORE</text>
           <text x="580" y="258" fill="#6a7888" font-size="10" font-family="monospace">PNL REAL +</text>
           <text x="48" y="258" fill="#6a7888" font-size="10" font-family="monospace">PNL REAL -</text>
           ${points}
@@ -1042,7 +1075,7 @@ function renderTraderEdgeVisual(rows) {
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--bg3);border-radius:var(--r);">
         <table class="tbl" style="min-width:460px;">
-          <thead><tr><th>Trader</th><th>Score</th><th>Signal</th><th>Real</th><th>Delta</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Trader</th><th>Signal</th><th>Captura</th><th>Muestra</th><th>Delta</th><th>Estado</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -1437,7 +1470,7 @@ function riskSuggestionForInput(input = {}) {
   const tp3 = Number(input.tp3 ?? document.getElementById('cTP3')?.value) || 0;
   const hasSL = sl > 0;
   const row = traderRiskRow(traderId, traderName);
-  const confidence = row ? traderEdgeScore(row) : 50;
+  const confidence = row ? traderSignalScore(row) : 50;
   const state = row ? traderEdgeState(row) : { label:'Sin historial', color:'var(--t3)', tone:'neutral' };
   const asset = assetRiskMultiplier(ticker);
   const traderMult = confidence >= 78 ? 1 : confidence >= 62 ? .75 : confidence >= 45 ? .45 : .2;
@@ -1479,7 +1512,7 @@ function renderRiskSuggestionPanel() {
   window._lastRiskSuggestion = s;
   const color = s.severity === 'green' ? 'var(--accent)' : s.severity === 'red' ? 'var(--red)' : 'var(--amber)';
   const confidence10 = Math.max(1, Math.min(10, Math.round((Number(s.confidence) || 0) / 10)));
-  const riskFormulaInfo = 'Riesgo sugerido = riesgo base x factor trader x factor activo x factor ejecucion. Factor trader: score 78+ = 1, 62-77 = 0.75, 45-61 = 0.45, menos de 45 = 0.2. Factor activo: BTC 1, ETH 0.8, commodities/ETF 0.7, large caps 0.5, alts medias 0.35, activos chicos 0.25. Factor ejecucion baja si no hay SL, no hay TP, el leverage es alto o es altcoin con leverage alto.';
+  const riskFormulaInfo = 'Riesgo sugerido = riesgo base x factor trader x factor activo x factor ejecucion. Factor trader usa Signal Score, que mide calidad de senal del trader y ajusta por cantidad de trades. No castiga fuerte al trader por tu Execution Delta; eso se muestra aparte como captura del edge. Factor activo: BTC 1, ETH 0.8, commodities/ETF 0.7, large caps 0.5, alts medias 0.35, activos chicos 0.25. Factor ejecucion baja si no hay SL, no hay TP, leverage alto o altcoin con leverage alto.';
   const warnHtml = s.warnings.length
     ? `<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">${s.warnings.slice(0,3).map(w=>`<span style="font-size:9px;font-family:var(--mono);color:var(--amber);background:rgba(245,158,11,.12);padding:3px 6px;border-radius:4px;">${dashSafe(w)}</span>`).join('')}</div>`
     : `<div style="margin-top:8px;font-size:10px;color:var(--t2);font-family:var(--mono);">Sin alertas fuertes para esta combinacion.</div>`;
@@ -1584,7 +1617,7 @@ function smartAlertsForDashboard(all, closed) {
   const topEx = topExposureRows(exposure.byExchange, 1)[0];
   if (topEx && exposure.total && topEx[1] / exposure.total > .55) alerts.push({ tone:'amber', title:'Concentracion por exchange', text:`${topEx[0]} concentra ${Math.round(topEx[1]/exposure.total*100)}% del capital abierto.` });
   signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').forEach(r => {
-    if (r.stats.count >= 3 && traderEdgeScore(r) < 45) alerts.push({ tone:'red', title:'Trader en observacion', text:`${r.name} tiene score ${traderEdgeScore(r)} y PF ${r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2)}.` });
+    if (r.stats.count >= 3 && traderSignalScore(r) < 45) alerts.push({ tone:'red', title:'Trader en observacion', text:`${r.name} tiene Signal Score ${traderSignalScore(r)} y PF ${r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2)}.` });
     if (r.stats.count >= 3 && r.signal.executionDelta < -Math.max(50, Math.abs(r.signal.signalPnl) * .2)) alerts.push({ tone:'amber', title:'Edge no capturado', text:`Con ${r.name}, tu delta vs senal es ${dashMoney(r.signal.executionDelta)}.` });
   });
   dashGroupStats(closed, t => baseTickerSymbol(t.ticker)).forEach(r => {
@@ -1599,10 +1632,12 @@ window.smartAlertsForDashboard = smartAlertsForDashboard;
 function capitalAllocationRows(closed) {
   const rows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').filter(r => r.stats.count >= 1);
   const weighted = rows.map(r => {
-    const score = traderEdgeScore(r);
+    const score = traderSignalScore(r);
     const state = traderEdgeState(r);
-    const weight = state.label === 'Prioridad' ? 1.5 : state.label === 'Normal' ? 1 : state.label === 'Reducir' ? .5 : .15;
-    return { ...r, score, state, weight };
+    const sample = sampleConfidenceOf(r.stats.count);
+    const captureScore = executionCaptureScore(r);
+    const weight = state.label === 'Prioridad' ? 1.6 : state.label === 'Normal' ? 1.1 : state.label === 'Reducir' ? .55 : state.label === 'Muestra baja' ? .35 : .15;
+    return { ...r, score, captureScore, sample, state, weight };
   });
   const totalW = weighted.reduce((s,r)=>s+r.weight,0) || 1;
   return weighted.sort((a,b)=>b.weight-a.weight || b.score-a.score).map(r => ({ ...r, allocationPct: Math.round(r.weight / totalW * 100) }));
@@ -1632,7 +1667,7 @@ function renderIntelligenceDashboard(closed, all) {
   const riskRows = signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').slice(0,4).map(r => {
     const st = traderEdgeState(r);
     const sample = riskSuggestionForInput({ ticker:'BTC', traderName:r.name, dir:'long', leverage:5, baseRisk:userPrefs?.risk || 200, entry:100, sl:95, tp1:110 });
-    return `<tr><td><strong>${dashSafe(r.name)}</strong></td><td>${traderEdgeScore(r)}</td><td style="color:${st.color};">${st.label}</td><td>$${fmt(sample.suggestedRisk)}</td><td>${sample.leverageCap}x</td></tr>`;
+    return `<tr><td><strong>${dashSafe(r.name)}</strong></td><td>${traderSignalScore(r)}</td><td style="color:${st.color};">${st.label}</td><td>$${fmt(sample.suggestedRisk)}</td><td>${sample.leverageCap}x</td></tr>`;
   }).join('');
   const alertHtml = alerts.length ? alerts.map(a => `
     <div style="padding:9px 0;border-bottom:0.5px solid var(--border);">
@@ -1640,17 +1675,17 @@ function renderIntelligenceDashboard(closed, all) {
       <div style="font-size:11px;color:var(--t2);margin-top:3px;">${dashSafe(a.text)}</div>
     </div>`).join('') : `<div style="font-size:11px;color:var(--t3);">Sin alertas criticas ahora.</div>`;
   const allocRows = alloc.map(r => `
-    <tr><td><strong>${dashSafe(r.name)}</strong></td><td>${r.score}</td><td style="color:${r.state.color};">${r.state.label}</td><td>${r.allocationPct}%</td><td class="${r.signal.executionDelta>=0?'pnl-pos':'pnl-neg'}">${dashMoney(r.signal.executionDelta)}</td></tr>
+    <tr><td><strong>${dashSafe(r.name)}</strong></td><td>${r.score}</td><td style="color:${r.state.color};">${r.state.label}</td><td>${r.allocationPct}%</td><td>${r.sample.label}</td></tr>
   `).join('');
   const backRows = backtest.map(r => `
     <tr><td><strong>${dashSafe(r.name)}</strong></td><td>${r.stats.count}</td><td class="${r.signal.signalPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(r.signal.signalPnl)}</td><td class="${r.signal.realPnl>=0?'pnl-pos':'pnl-neg'}">${dashMoney(r.signal.realPnl)}</td><td>${r.capture == null ? '-' : r.capture + '%'}</td><td>${r.tp}/${r.sl}/${r.manual}</td></tr>
   `).join('');
   el.innerHTML = `
     <div class="card" style="padding:16px;margin-bottom:12px;">
-      <div class="sec-label" style="margin-bottom:10px;">Risk Suggestion Engine ${infoDot('Sugiere riesgo y leverage maximo usando trader, activo, leverage y calidad del setup. En la calculadora aparece en tiempo real antes de cargar el trade.')}</div>
+      <div class="sec-label" style="margin-bottom:10px;">Risk Suggestion Engine ${infoDot('Sugiere riesgo y leverage maximo usando Signal Score del trader, activo, leverage y calidad del setup. El Signal Score mide calidad de senal; la captura de ejecucion se muestra aparte.')}</div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <table class="tbl" style="min-width:520px;">
-          <thead><tr><th>Trader</th><th>Score</th><th>Estado</th><th>Riesgo BTC base</th><th>Lev max</th></tr></thead>
+          <thead><tr><th>Trader</th><th>Signal</th><th>Estado</th><th>Riesgo BTC base</th><th>Lev max</th></tr></thead>
           <tbody>${riskRows || `<tr><td colspan="5" style="color:var(--t3);">Falta historial cerrado para calibrar traders.</td></tr>`}</tbody>
         </table>
       </div>
@@ -1690,9 +1725,9 @@ function renderIntelligenceDashboard(closed, all) {
         <button class="btn sm" onclick="window.markAiReviewDone()">Marcar revision hecha</button>
       </div>
       <div class="card" style="padding:16px;">
-        <div class="sec-label" style="margin-bottom:10px;">Asignacion de capital por trader ${infoDot('Primera version de ranking de allocation. Prioridad recibe mas peso; Observacion recibe peso minimo.')}</div>
+        <div class="sec-label" style="margin-bottom:10px;">Asignacion de capital por trader ${infoDot('Allocation basada principalmente en Signal Score del trader y ajustada por cantidad de trades. La ejecucion personal no hunde al trader; se analiza aparte como captura del edge.')}</div>
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
-          <table class="tbl" style="min-width:480px;"><thead><tr><th>Trader</th><th>Score</th><th>Estado</th><th>Allocation</th><th>Delta</th></tr></thead><tbody>${allocRows || `<tr><td colspan="5" style="color:var(--t3);">Sin datos suficientes.</td></tr>`}</tbody></table>
+          <table class="tbl" style="min-width:480px;"><thead><tr><th>Trader</th><th>Signal</th><th>Estado</th><th>Allocation</th><th>Muestra</th></tr></thead><tbody>${allocRows || `<tr><td colspan="5" style="color:var(--t3);">Sin datos suficientes.</td></tr>`}</tbody></table>
         </div>
       </div>
     </div>
@@ -6036,14 +6071,15 @@ window.exportDashboardPdf = async () => {
 
     section('Trader Edge Dashboard');
     table(
-      ['Trader','Score','Estado','Signal','Real','Delta','PF','WR'],
+      ['Trader','Signal','Estado','Captura','Real','Delta','PF','WR'],
       signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').map(r => {
         const state = traderEdgeState(r);
+        const meta = traderScoreMeta(r);
         return [
           r.name,
-          traderEdgeScore(r),
+          meta.signalScore,
           state.label,
-          money(r.signal.signalPnl),
+          meta.capture == null ? '-' : `${meta.capture}%`,
           money(r.signal.realPnl),
           money(r.signal.executionDelta),
           r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2),
@@ -6093,8 +6129,8 @@ window.exportDashboardPdf = async () => {
 
     section('Asignacion de capital por trader');
     table(
-      ['Trader','Score','Estado','Allocation','Delta'],
-      capitalAllocationRows(closed).map(r => [r.name, r.score, r.state.label, `${r.allocationPct}%`, money(r.signal.executionDelta)]),
+      ['Trader','Signal','Estado','Allocation','Muestra'],
+      capitalAllocationRows(closed).map(r => [r.name, r.score, r.state.label, `${r.allocationPct}%`, r.sample.label]),
       [145, 52, 90, 75, 90]
     );
 
