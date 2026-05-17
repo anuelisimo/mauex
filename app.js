@@ -962,8 +962,33 @@ const sampleConfidenceOf = count => {
   if (n >= 4) return { mult:.72, label:'Baja', note:'muestra baja' };
   return { mult:.55, label:'Insuficiente', note:'muestra insuficiente' };
 };
+const signalPerformanceStatsOf = trades => {
+  const rows = (trades || []).map(t => ({ trade:t, ...signalExecutionOf(t) }));
+  const wins = rows.filter(x => Number(x.signalPnl) > 0);
+  const losses = rows.filter(x => Number(x.signalPnl) < 0);
+  const grossWin = wins.reduce((s,x)=>s+(Number(x.signalPnl)||0),0);
+  const grossLoss = Math.abs(losses.reduce((s,x)=>s+(Number(x.signalPnl)||0),0));
+  const avgWin = wins.length ? grossWin / wins.length : 0;
+  const avgLoss = losses.length ? -grossLoss / losses.length : 0;
+  const signalPnl = rows.reduce((s,x)=>s+(Number(x.signalPnl)||0),0);
+  const count = rows.length;
+  const winRate = count ? wins.length / count : 0;
+  const expectancy = count ? signalPnl / count : 0;
+  return {
+    count,
+    wins:wins.length,
+    losses:losses.length,
+    signalPnl,
+    winRate,
+    avgWin,
+    avgLoss,
+    profitFactor:grossLoss ? grossWin / grossLoss : (grossWin ? Infinity : 0),
+    expectancy,
+  };
+};
+window.signalPerformanceStatsOf = signalPerformanceStatsOf;
 const traderSignalScore = row => {
-  const s = row.stats || {};
+  const s = signalPerformanceStatsOf(row.trades || []);
   const signal = row.signal || signalStatsOf(row.trades || []);
   const pf = s.profitFactor === Infinity ? 3 : Math.max(0, Math.min(3, Number(s.profitFactor)||0));
   const wr = Math.max(0, Math.min(1, Number(s.winRate)||0));
@@ -1617,7 +1642,10 @@ function smartAlertsForDashboard(all, closed) {
   const topEx = topExposureRows(exposure.byExchange, 1)[0];
   if (topEx && exposure.total && topEx[1] / exposure.total > .55) alerts.push({ tone:'amber', title:'Concentracion por exchange', text:`${topEx[0]} concentra ${Math.round(topEx[1]/exposure.total*100)}% del capital abierto.` });
   signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').forEach(r => {
-    if (r.stats.count >= 3 && traderSignalScore(r) < 45) alerts.push({ tone:'red', title:'Trader en observacion', text:`${r.name} tiene Signal Score ${traderSignalScore(r)} y PF ${r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2)}.` });
+    if (r.stats.count >= 3 && traderSignalScore(r) < 45) {
+      const ss = signalPerformanceStatsOf(r.trades);
+      alerts.push({ tone:'red', title:'Trader en observacion', text:`${r.name} tiene Signal Score ${traderSignalScore(r)} y Signal PF ${ss.profitFactor === Infinity ? 'INF' : ss.profitFactor.toFixed(2)}.` });
+    }
     if (r.stats.count >= 3 && r.signal.executionDelta < -Math.max(50, Math.abs(r.signal.signalPnl) * .2)) alerts.push({ tone:'amber', title:'Edge no capturado', text:`Con ${r.name}, tu delta vs senal es ${dashMoney(r.signal.executionDelta)}.` });
   });
   dashGroupStats(closed, t => baseTickerSymbol(t.ticker)).forEach(r => {
@@ -6069,12 +6097,13 @@ window.exportDashboardPdf = async () => {
       [130, 48, 74, 74, 74, 112]
     );
 
-    section('Trader Edge Dashboard');
+    section('Trader Signal Dashboard');
     table(
-      ['Trader','Signal','Estado','Captura','Real','Delta','PF','WR'],
+      ['Trader','Signal','Estado','Captura','Real','Delta','Signal PF','Signal WR'],
       signalGroupStats(closed, t => t.traderName || t.traderId || 'Sin trader').map(r => {
         const state = traderEdgeState(r);
         const meta = traderScoreMeta(r);
+        const ss = signalPerformanceStatsOf(r.trades);
         return [
           r.name,
           meta.signalScore,
@@ -6082,8 +6111,8 @@ window.exportDashboardPdf = async () => {
           meta.capture == null ? '-' : `${meta.capture}%`,
           money(r.signal.realPnl),
           money(r.signal.executionDelta),
-          r.stats.profitFactor === Infinity ? 'INF' : r.stats.profitFactor.toFixed(2),
-          `${Math.round(r.stats.winRate*100)}%`,
+          ss.profitFactor === Infinity ? 'INF' : ss.profitFactor.toFixed(2),
+          `${Math.round(ss.winRate*100)}%`,
         ];
       }),
       [100, 42, 72, 62, 62, 62, 42, 42]
