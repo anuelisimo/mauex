@@ -1041,11 +1041,17 @@ function renderTraderEdgeVisual(rows) {
   const topSignal = [...enriched].sort((a,b)=>(b.signal?.signalPnl||0)-(a.signal?.signalPnl||0))[0];
   const topReal = [...enriched].sort((a,b)=>(b.signal?.realPnl||0)-(a.signal?.realPnl||0))[0];
   const topDelta = [...enriched].sort((a,b)=>(b.signal?.executionDelta||0)-(a.signal?.executionDelta||0))[0];
-  const worstDelta = [...enriched].sort((a,b)=>(a.signal?.executionDelta||0)-(b.signal?.executionDelta||0))[0];
+  const topScore = enriched[0];
+  const topCapture = [...enriched].filter(r => r.scoreMeta?.capture != null).sort((a,b)=>(b.scoreMeta.capture||0)-(a.scoreMeta.capture||0))[0];
   const mini = (label, row, val, cls) => `<div style="background:var(--bg3);border-radius:var(--r);padding:12px;min-width:0;">
     <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:5px;">${label}</div>
     <div style="font-family:var(--mono);font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${dashSafe(row?.name || '-')}</div>
     <div class="${cls}" style="font-family:var(--mono);font-size:14px;font-weight:800;margin-top:4px;">${dashMoney(val || 0)}</div>
+  </div>`;
+  const miniText = (label, row, val, color='var(--accent)') => `<div style="background:var(--bg3);border-radius:var(--r);padding:12px;min-width:0;">
+    <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:5px;">${label}</div>
+    <div style="font-family:var(--mono);font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${dashSafe(row?.name || '-')}</div>
+    <div style="font-family:var(--mono);font-size:14px;font-weight:800;margin-top:4px;color:${color};">${val}</div>
   </div>`;
   const points = enriched.map(row => {
     const pnl = Number(row.signal?.realPnl)||0;
@@ -1053,9 +1059,12 @@ function renderTraderEdgeVisual(rows) {
     const x = Math.max(62, Math.min(658, xOf(pnl)));
     const y = Math.max(44, Math.min(235, yOf(row.edgeScore)));
     const r = 7 + Math.sqrt((Number(row.stats?.count)||0) / maxTrades) * 13;
-    const color = delta >= 0 ? '#00c47a' : '#f03d3d';
+    const state = row.edgeState || traderEdgeState(row);
+    const color = state.tone === 'good' ? '#00c47a' : state.tone === 'neutral' ? '#3d9cf0' : state.tone === 'warn' ? '#f59e0b' : '#f03d3d';
+    const deltaRing = delta < 0 ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="#f03d3d" stroke-width="1" stroke-dasharray="3 4" opacity="0.45"/>` : '';
     return `<g>
-      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" opacity="0.18" stroke="${color}" stroke-width="1.4"/>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" opacity="0.20" stroke="${color}" stroke-width="1.4"/>
+      ${deltaRing}
       <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${color}"/>
       <text x="${x.toFixed(1)}" y="${(y-r-7).toFixed(1)}" text-anchor="middle" fill="#a8b8cc" font-size="10" font-family="monospace" font-weight="700">${dashSafe(row.name).slice(0,18)}</text>
     </g>`;
@@ -1076,15 +1085,15 @@ function renderTraderEdgeVisual(rows) {
   return `<div class="card" style="padding:16px;margin-bottom:12px;">
     <div class="fxb" style="gap:12px;align-items:flex-start;margin-bottom:14px;">
       <div>
-        <div class="sec-label" style="margin-bottom:5px;">Trader Signal Dashboard ${infoDot('Separa calidad de senal del trader de tu ejecucion. Arriba = mejor Signal Score ajustado por cantidad de trades. Derecha = mas PnL real. Verde/rojo muestra si tu gestion capturo mas o menos que el plan.')}</div>
+        <div class="sec-label" style="margin-bottom:5px;">Trader Signal Dashboard ${infoDot('Separa calidad de senal del trader de tu ejecucion. El color del punto representa calidad de senal: verde prioridad, azul normal, ambar muestra/reducir, rojo observacion. El anillo rojo punteado solo marca captura negativa, no mala senal.')}</div>
         <div style="font-size:11px;color:var(--t2);font-family:var(--mono);">Prioriza traders por calidad de senal, dejando la ejecucion como lectura separada.</div>
       </div>
     </div>
     <div class="g4" style="margin-bottom:12px;">
       ${mini('Mejor senal', topSignal, topSignal?.signal?.signalPnl, (topSignal?.signal?.signalPnl||0)>=0?'pnl-pos':'pnl-neg')}
       ${mini('Mejor real', topReal, topReal?.signal?.realPnl, (topReal?.signal?.realPnl||0)>=0?'pnl-pos':'pnl-neg')}
-      ${mini('Tu gestion suma', topDelta, topDelta?.signal?.executionDelta, (topDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
-      ${mini('Captura perdida', worstDelta, worstDelta?.signal?.executionDelta, (worstDelta?.signal?.executionDelta||0)>=0?'pnl-pos':'pnl-neg')}
+      ${miniText('Mejor Signal Score', topScore, topScore ? topScore.edgeScore : '-', topScore?.edgeState?.color || 'var(--accent)')}
+      ${miniText('Mejor captura', topCapture, topCapture?.scoreMeta?.capture == null ? '-' : topCapture.scoreMeta.capture + '%', 'var(--accent)')}
     </div>
     <div class="trader-edge-layout">
       <div style="background:var(--bg3);border-radius:var(--r);padding:10px;min-height:280px;overflow:hidden;">
