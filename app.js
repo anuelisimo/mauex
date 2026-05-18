@@ -2561,11 +2561,11 @@ async function applyEditAlertState(id, updatedTrade) {
     }
   }
   if (Object.keys(creates).length && window._fb?.updateDoc) {
-    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), firestoreSafeObject({
       ...creates,
       levelAlertCheckedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }));
   }
 }
 function levelClosureOf(t, level, closedParts) {
@@ -3821,6 +3821,25 @@ function numberish(v) {
   return Number.isFinite(n) ? Math.round(n * 100000000) / 100000000 : (v || '');
 }
 
+function firestoreSafeValue(value) {
+  if (value === undefined) return null;
+  if (Array.isArray(value)) return value.map(firestoreSafeValue);
+  if (value && typeof value === 'object') {
+    if (value instanceof Date) return value;
+    const cleaned = {};
+    Object.entries(value).forEach(([key, val]) => {
+      cleaned[key] = firestoreSafeValue(val);
+    });
+    return cleaned;
+  }
+  return value;
+}
+
+function firestoreSafeObject(obj={}) {
+  const cleaned = firestoreSafeValue(obj);
+  return cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned) ? cleaned : {};
+}
+
 function invalidationComparable(list) {
   return JSON.stringify((Array.isArray(list) ? list : []).map(x => ({
     key: x.key || '',
@@ -3849,10 +3868,15 @@ function changedTradeFields(before={}, after={}) {
     ['traderId','trader'],
   ];
   const changes = fields
-    .map(([key,label]) => ({ key, label, from: before?.[key], to: after?.[key] }))
+    .map(([key,label]) => ({ key, label, from: firestoreSafeValue(before?.[key]), to: firestoreSafeValue(after?.[key]) }))
     .filter(c => numberish(c.from) !== numberish(c.to));
   if (invalidationComparable(before?.invalidations) !== invalidationComparable(after?.invalidations)) {
-    changes.push({ key:'invalidations', label:'invalidacion', from: before?.invalidations || [], to: after?.invalidations || [] });
+    changes.push({
+      key:'invalidations',
+      label:'invalidacion',
+      from: firestoreSafeValue(before?.invalidations || []),
+      to: firestoreSafeValue(after?.invalidations || []),
+    });
   }
   return changes;
 }
@@ -3864,14 +3888,14 @@ function getEditChangeAudit(before={}, after={}) {
     .filter(Boolean);
   const note = document.getElementById('eChangeReasonNote')?.value?.trim() || '';
   if (!changes.length && !reasonTags.length && !note) return null;
-  return {
+  return firestoreSafeObject({
     at: new Date().toISOString(),
     type: 'edit',
     reasonTags: [...new Set(reasonTags)],
     note,
     fields: changes,
     originalPlanSnapshot: before?.originalPlan || window.buildOriginalTraderPlan?.(before) || null,
-  };
+  });
 }
 
 window.setEditDir = d => {
@@ -4031,7 +4055,7 @@ window.saveEditTrade = async () => {
       const originalPlan = existingBeforeEdit.originalPlan || window.buildOriginalTraderPlan?.(existingBeforeEdit) || null;
       const nextTrade = { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, ...(originalPlan ? { originalPlan } : {}) };
       const changeAudit = getEditChangeAudit(existingBeforeEdit, nextTrade);
-      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+      await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), firestoreSafeObject({
         traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations,
         ...(originalPlan ? { originalPlan } : {}),
         ...(changeAudit ? {
@@ -4040,7 +4064,7 @@ window.saveEditTrade = async () => {
           lastChangedAt: changeAudit.at,
         } : {}),
         updatedAt:new Date().toISOString()
-      });
+      }));
       await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
       await applyEditAlertState(id, { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations });
       // Also update local exchange position
@@ -4091,7 +4115,7 @@ window.saveEditTrade = async () => {
       ...(originalPlan ? { originalPlan } : {}),
     };
     const changeAudit = getEditChangeAudit(existingTrade, nextTrade);
-    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), {
+    await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), firestoreSafeObject({
       ticker, exchange, leverage:lev, dir:editDir,
       entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize,
       ...(eDate ? { createdAt: eDate+'T00:00:00.000Z' } : {}),
@@ -4104,7 +4128,7 @@ window.saveEditTrade = async () => {
         lastChangedAt: changeAudit.at,
       } : {}),
       updatedAt: new Date().toISOString(),
-    });
+    }));
     await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
     await applyEditAlertState(id, { ...existingTrade, id, ticker, exchange, leverage:lev, dir:editDir, entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize, tp1, tp1pct, tp2, tp2pct, tp3, tp3pct, notes, traderId, traderName, invalidations });
     await window._loadTrades();
