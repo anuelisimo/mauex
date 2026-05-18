@@ -358,6 +358,54 @@ window.openThemePicker = () => {
 const calcState = { dir:'short', ex:'binance', lev:null };
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
 const MMR_LBL = {binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%',kucoin:'KuCoin · MMR 0.5%'};
+
+function estimatedLiquidationPrice(input={}) {
+  const dir = String(input.dir || '').toLowerCase();
+  const entry = Number(input.entry || 0);
+  const lev = Math.max(1, Number(input.leverage || input.lev || 1) || 1);
+  if (!entry || lev <= 1 || dir === 'spot') return null;
+  const exchange = String(input.exchange || '').toLowerCase();
+  const mmr = MMR[exchange] ?? .005;
+  const denom = dir === 'short' ? (1 - 1 / lev + mmr) : (1 + 1 / lev - mmr);
+  if (!Number.isFinite(denom) || denom <= 0) return null;
+  const liq = entry / denom;
+  return Number.isFinite(liq) && liq > 0 ? Math.round(liq * 100000000) / 100000000 : null;
+}
+
+function sameLiquidationArea(a, b) {
+  const x = Number(a || 0);
+  const y = Number(b || 0);
+  if (!x || !y) return false;
+  return Math.abs(x - y) / Math.max(1, Math.abs(y)) < 0.002;
+}
+
+function isManualLiquidation(t={}) {
+  if (t.liquidationManual === true) return true;
+  if (t.liquidationManual === false) return false;
+  const liq = Number(t.liquidation || 0);
+  if (!liq) return false;
+  const estimate = estimatedLiquidationPrice(t);
+  return !estimate || !sameLiquidationArea(liq, estimate);
+}
+
+function editLiquidationState(existingTrade={}, nextInput={}) {
+  const el = document.getElementById('eLiquidation');
+  const raw = (el?.value || '').trim();
+  const typed = el?.dataset?.userEdited === '1';
+  const parsed = Number(raw);
+  const coreChanged =
+    String(existingTrade.dir || '').toLowerCase() !== String(nextInput.dir || '').toLowerCase() ||
+    String(existingTrade.exchange || '').toUpperCase() !== String(nextInput.exchange || '').toUpperCase() ||
+    Number(existingTrade.entry || 0) !== Number(nextInput.entry || 0) ||
+    Number(existingTrade.leverage || 1) !== Number(nextInput.leverage || 1);
+  const explicitManual = existingTrade.liquidationManual === true;
+  const manual = !!raw && (typed || explicitManual || !coreChanged);
+  const estimate = estimatedLiquidationPrice(nextInput);
+  if (manual && Number.isFinite(parsed) && parsed > 0) {
+    return { liquidation: parsed, liquidationManual: typed || explicitManual };
+  }
+  return { liquidation: estimate || null, liquidationManual: false };
+}
 const LEVS = [2,3,5,7,10,15,20,25,50];
 
 window.setDir = d => {
@@ -3969,7 +4017,13 @@ window.openEditTrade = id => {
       if(el){ el.disabled=true; el.style.opacity='0.4'; el.value=t?.[id.replace('e','').toLowerCase()]||''; }
     });
     const liqEl = document.getElementById('eLiquidation');
-    if(liqEl){ liqEl.disabled=false; liqEl.style.opacity=''; liqEl.value=t?.liquidation||''; }
+    if(liqEl){
+      liqEl.disabled=false; liqEl.style.opacity='';
+      liqEl.value=t?.liquidation||'';
+      liqEl.dataset.userEdited = '0';
+      liqEl.dataset.manualLiquidation = isManualLiquidation(t) ? '1' : '0';
+      liqEl.oninput = () => { liqEl.dataset.userEdited = '1'; };
+    }
     // Direction buttons
     document.querySelectorAll('[data-ed]').forEach(b=>{ b.className='dir-btn'; b.disabled=true; b.style.opacity='0.4'; });
     // Show notice
@@ -3989,7 +4043,14 @@ window.openEditTrade = id => {
     document.getElementById('eLev').value      = t?.leverage||1;
     document.getElementById('eEntry').value    = t?.entry||'';
     document.getElementById('eSL').value       = t?.sl||'';
-    document.getElementById('eLiquidation').value = t?.liquidation||'';
+    const liqEl = document.getElementById('eLiquidation');
+    if (liqEl) {
+      const liqDisplay = t?.liquidation || estimatedLiquidationPrice(t) || '';
+      liqEl.value = liqDisplay;
+      liqEl.dataset.userEdited = '0';
+      liqEl.dataset.manualLiquidation = isManualLiquidation(t) ? '1' : '0';
+      liqEl.oninput = () => { liqEl.dataset.userEdited = '1'; };
+    }
     document.getElementById('eRisk').value     = t?.risk||'';
     document.getElementById('eSize').value     = t?.posSize||'';
     document.getElementById('eDate').value     = t?.createdAt ? t.createdAt.split('T')[0] : '';
@@ -4044,7 +4105,6 @@ window.saveEditTrade = async () => {
   const traders    = window.G?.traders()||[];
   const traderName = traders.find(tr=>tr.id===traderId)?.name||'';
   const notes      = document.getElementById('eNotes').value;
-  const liquidationOverride = parseFloat(document.getElementById('eLiquidation').value)||0;
   const invalidations = readInvalidationFields('e');
   const existingBeforeEdit = (window.G?.trades()||[]).find(t=>t.id===id) || {};
   const previousInvalidations = tradeInvalidations(existingBeforeEdit);
@@ -4052,11 +4112,12 @@ window.saveEditTrade = async () => {
   // Exchange trade: only update trader, notes and liquidation override
   if(window._editFromExchange) {
     try {
+      const liquidationOverride = parseFloat(document.getElementById('eLiquidation').value)||0;
       const originalPlan = existingBeforeEdit.originalPlan || window.buildOriginalTraderPlan?.(existingBeforeEdit) || null;
-      const nextTrade = { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations, ...(originalPlan ? { originalPlan } : {}) };
+      const nextTrade = { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, liquidationManual: !!liquidationOverride, invalidations, ...(originalPlan ? { originalPlan } : {}) };
       const changeAudit = getEditChangeAudit(existingBeforeEdit, nextTrade);
       await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), firestoreSafeObject({
-        traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations,
+        traderId, traderName, notes, liquidation: liquidationOverride || null, liquidationManual: !!liquidationOverride, invalidations,
         ...(originalPlan ? { originalPlan } : {}),
         ...(changeAudit ? {
           changeEvents: [...(Array.isArray(existingBeforeEdit.changeEvents) ? existingBeforeEdit.changeEvents : []), changeAudit],
@@ -4066,10 +4127,10 @@ window.saveEditTrade = async () => {
         updatedAt:new Date().toISOString()
       }));
       await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
-      await applyEditAlertState(id, { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, invalidations });
+      await applyEditAlertState(id, { ...existingBeforeEdit, id, traderId, traderName, notes, liquidation: liquidationOverride || null, liquidationManual: !!liquidationOverride, invalidations });
       // Also update local exchange position
       const pos = exchangePositions.find(p=>p.exchangeId===id||p.id===id);
-      if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; pos.liquidation=liquidationOverride || null; pos.invalidations=invalidations; }
+      if(pos){ pos.traderId=traderId; pos.traderName=traderName; pos.notes=notes; pos.liquidation=liquidationOverride || null; pos.liquidationManual=!!liquidationOverride; pos.invalidations=invalidations; }
       await window._loadTrades();
       closeModal('editTradeModal');
       renderPositions();
@@ -4084,7 +4145,6 @@ window.saveEditTrade = async () => {
   const lev      = parseInt(document.getElementById('eLev').value)||1;
   const entry    = parseFloat(document.getElementById('eEntry').value)||0;
   const sl       = parseFloat(document.getElementById('eSL').value)||0;
-  const liquidation = liquidationOverride;
   const risk     = parseFloat(document.getElementById('eRisk').value)||0;
   const tp1      = parseFloat(document.getElementById('eTP1').value)||0;
   const tp1pct   = parseFloat(document.getElementById('eTP1pct').value)||33;
@@ -4104,12 +4164,15 @@ window.saveEditTrade = async () => {
     ? (manualSize || existingTrade.posSize || 0)
     : ((risk && slDist) ? Math.round(risk/slDist*100)/100 : (manualSize || 0));
   const calcRisk = slDist && posSize ? Math.round(posSize*slDist*100)/100 : risk;
+  const liqState = editLiquidationState(existingTrade, { dir:editDir, entry, leverage:lev, exchange });
+  const liquidation = liqState.liquidation;
+  const liquidationManual = liqState.liquidationManual;
 
   try {
     const originalPlan = existingTrade.originalPlan || window.buildOriginalTraderPlan?.(existingTrade) || null;
     const nextTrade = {
       ...existingTrade, id, ticker, exchange, leverage:lev, dir:editDir, entry, sl,
-      liquidation: liquidation || null, risk: calcRisk, posSize,
+      liquidation: liquidation || null, liquidationManual, risk: calcRisk, posSize,
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName, invalidations,
       ...(originalPlan ? { originalPlan } : {}),
@@ -4117,7 +4180,7 @@ window.saveEditTrade = async () => {
     const changeAudit = getEditChangeAudit(existingTrade, nextTrade);
     await window._fb.updateDoc(window._fb.doc(window._fb.db,'trades',id), firestoreSafeObject({
       ticker, exchange, leverage:lev, dir:editDir,
-      entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize,
+      entry, sl, liquidation: liquidation || null, liquidationManual, risk: calcRisk, posSize,
       ...(eDate ? { createdAt: eDate+'T00:00:00.000Z' } : {}),
       tp1, tp1pct, tp2, tp2pct, tp3, tp3pct,
       notes, traderId, traderName, invalidations,
@@ -4130,7 +4193,7 @@ window.saveEditTrade = async () => {
       updatedAt: new Date().toISOString(),
     }));
     await resetInvalidationAlertsIfChanged(id, previousInvalidations, invalidations);
-    await applyEditAlertState(id, { ...existingTrade, id, ticker, exchange, leverage:lev, dir:editDir, entry, sl, liquidation: liquidation || null, risk: calcRisk, posSize, tp1, tp1pct, tp2, tp2pct, tp3, tp3pct, notes, traderId, traderName, invalidations });
+    await applyEditAlertState(id, { ...existingTrade, id, ticker, exchange, leverage:lev, dir:editDir, entry, sl, liquidation: liquidation || null, liquidationManual, risk: calcRisk, posSize, tp1, tp1pct, tp2, tp2pct, tp3, tp3pct, notes, traderId, traderName, invalidations });
     await window._loadTrades();
     closeModal('editTradeModal');
     // Re-render current page
