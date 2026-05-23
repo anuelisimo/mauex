@@ -366,9 +366,9 @@ function estimatedLiquidationPrice(input={}) {
   if (!entry || lev <= 1 || dir === 'spot') return null;
   const exchange = String(input.exchange || '').toLowerCase();
   const mmr = MMR[exchange] ?? .005;
-  const denom = dir === 'short' ? (1 - 1 / lev + mmr) : (1 + 1 / lev - mmr);
-  if (!Number.isFinite(denom) || denom <= 0) return null;
-  const liq = entry / denom;
+  const liq = dir === 'short'
+    ? entry * (1 + 1 / lev - mmr)
+    : entry * (1 - 1 / lev + mmr);
   return Number.isFinite(liq) && liq > 0 ? Math.round(liq * 100000000) / 100000000 : null;
 }
 
@@ -510,7 +510,7 @@ window.compute = () => {
   // Use manual size if provided, otherwise calculate from risk+SL
   const posSize = sizeManual > 0 ? sizeManual : (hasSL && hasRisk ? risk/slDist : 0);
   const margin  = posSize ? (sp?posSize:posSize/lev) : 0;
-  const liq     = (!sp && hasSL) ? (sh?entry/(1-1/lev+mmr):entry/(1+1/lev-mmr)) : null;
+  const liq     = !sp ? estimatedLiquidationPrice({ dir:calcState.dir, entry, leverage:lev, exchange:calcState.ex }) : null;
   const liqSafe = !liq||(sh?liq>sl:liq<sl);
 
   // Alerts
@@ -2216,8 +2216,7 @@ function renderWatchlist() {
     const rrPnlTP1 = t.tp1&&t.entry&&t.posSize ? Math.abs((t.tp1-t.entry)/t.entry*t.posSize*(t.tp1pct||33)/100) : 0;
     const rr = rrRisk && rrPnlTP1 ? rrPnlTP1/rrRisk : (t.tp1&&t.entry&&t.sl ? Math.abs((t.tp1-t.entry)/(t.entry-t.sl)) : 0);
     const tps = [{l:'TP1',v:t.tp1,pct:t.tp1pct||33},{l:'TP2',v:t.tp2,pct:t.tp2pct||33},{l:'TP3',v:t.tp3,pct:t.tp3pct||34}].filter(x=>x.v);
-    const mmrW = 0.005;
-    const wLiq = t.liquidation || (lev>1&&t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrW) : t.entry/(1+1/lev-mmrW)) : null);
+    const wLiq = t.liquidation || estimatedLiquidationPrice(t);
     const fakeT = {...t, liquidation: t.liquidation||wLiq};
     const isMin = !!cardStates[t.id];
     const invalidAlert = getInvalidationAlert(t, currentPrice);
@@ -2904,9 +2903,8 @@ function renderPositions() {
     const realizedPnl = closedParts.length ? closedParts.reduce((s,x)=>s+(Number(x.pnl)||0),0) : (Number(t.realizedPnl)||0);
     const openPct = originalSize ? Math.round((t.posSize/originalSize)*10000)/100 : 100;
     const closedPct = originalSize ? Math.round((closedSize/originalSize)*10000)/100 : 0;
-    const mmrPos = 0.005;
     const lev    = t.leverage||1;
-    const liq    = lev > 1 && t.entry ? (t.dir==='short' ? t.entry/(1-1/lev+mmrPos) : t.entry/(1+1/lev-mmrPos)) : null;
+    const liq    = estimatedLiquidationPrice(t);
     const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq, invalidations:t.invalidations };
     const slDistPct = t.sl&&t.entry ? Math.abs(t.sl-t.entry)/t.entry*100 : null;
     const riskUsd   = t.risk || (t.posSize&&slDistPct ? t.posSize*slDistPct/100 : null);
@@ -6850,8 +6848,7 @@ function renderOrders() {
     const exColor = o.exchange==='BINANCE'?'#f0b90b':o.exchange==='BYBIT'?'#f7a600':o.exchange==='MEXC'?'#00b8d9':o.exchange==='KUCOIN'?'#24ae8f':'#00a0ea';
     const lev = o.leverage || 1;
     const isSpotOrder = o.dir === 'spot';
-    const mmrO = 0.005;
-    const liqApprox = lev > 1 ? (o.liquidation || (entryPrice ? (o.dir==='short' ? entryPrice/(1-1/lev+mmrO) : entryPrice/(1+1/lev-mmrO)) : null)) : null;
+    const liqApprox = lev > 1 ? (o.liquidation || estimatedLiquidationPrice({ ...o, entry:entryPrice })) : null;
     const sl  = o.sl  || null;
     const tp1 = o.tp1 || null;
     const tp2 = o.tp2 || null;
