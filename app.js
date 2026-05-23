@@ -82,6 +82,20 @@ function dirBadgeColors(dir) {
   if (dir === 'spot') return { color:'var(--blue)', bg:'var(--blue-dim)', border:'rgba(61,156,240,0.28)' };
   return { color:'#22c55e', bg:'rgba(34,197,94,0.12)', border:'rgba(34,197,94,0.25)' };
 }
+function effectiveTradeSize(t={}) {
+  const saved = Number(t.posSize || 0);
+  if (saved > 0) return saved;
+  const risk = Number(t.risk || 0);
+  const entry = Number(t.entry || 0);
+  const sl = Number(t.sl || 0);
+  if (!risk) return 0;
+  if (entry && sl) {
+    const slDist = Math.abs(sl - entry) / entry;
+    return slDist ? Math.round((risk / slDist) * 100) / 100 : 0;
+  }
+  if (t.dir === 'spot') return risk;
+  return Math.round(risk * (Number(t.leverage || 1) || 1) * 100) / 100;
+}
 const fmtD = d => {
   if (!d) return '—';
   const str = String(d);
@@ -508,7 +522,7 @@ window.compute = () => {
   const sizeManual = parseFloat(document.getElementById('cSize')?.value) || 0;
   const slDist  = hasSL ? Math.abs(sl-entry)/entry : 0;
   // Use manual size if provided, otherwise calculate from risk+SL
-  const posSize = sizeManual > 0 ? sizeManual : (hasSL && hasRisk ? risk/slDist : 0);
+  const posSize = sizeManual > 0 ? sizeManual : (hasSL && hasRisk ? risk/slDist : (hasRisk ? (sp ? risk : risk * lev) : 0));
   const margin  = posSize ? (sp?posSize:posSize/lev) : 0;
   const liq     = !sp ? estimatedLiquidationPrice({ dir:calcState.dir, entry, leverage:lev, exchange:calcState.ex }) : null;
   const liqSafe = !liq||(sh?liq>sl:liq<sl);
@@ -2200,20 +2214,21 @@ function renderWatchlist() {
     const currentPrice = G?.getPrice(sym, t.dir) || G?.getPrice(t.ticker, t.dir);
     const lev = t.leverage||1;
     const isSpot = t.dir === 'spot';
-    const margin = t.dir==='spot' ? t.posSize : (t.posSize||0)/lev;
-    const unitsLabel = positionUnitsLabel(t, t.posSize, t.entry);
+    const displaySize = effectiveTradeSize(t);
+    const margin = t.dir==='spot' ? displaySize : displaySize/lev;
+    const unitsLabel = positionUnitsLabel(t, displaySize, t.entry);
     const slDist = t.entry&&t.sl ? Math.abs(t.sl-t.entry)/t.entry*100 : 0;
     const sign = (t.dir==='short') ? -1 : 1;
-    const contr = (t.posSize||0)/(t.entry||1);
-    const riskUsd = t.risk || (t.posSize&&slDist ? t.posSize*slDist/100 : null);
+    const contr = (displaySize||0)/(t.entry||1);
+    const riskUsd = t.risk || (displaySize&&slDist ? displaySize*slDist/100 : null);
     const distToEntry = currentPrice&&t.entry ? ((t.entry-currentPrice)/currentPrice*100*sign) : null;
     const distColor = distToEntry==null?'var(--t3)':Math.abs(distToEntry)<1?'var(--accent)':Math.abs(distToEntry)<3?'var(--amber)':'var(--t2)';
     const tpPnlCalc = (tpPrice, pct) => {
-      if(!tpPrice||!t.entry||!t.posSize) return null;
+      if(!tpPrice||!t.entry||!displaySize) return null;
       return Math.round(contr*(tpPrice-t.entry)*sign*(pct/100)*100)/100;
     };
     const rrRisk = t.risk || 0;
-    const rrPnlTP1 = t.tp1&&t.entry&&t.posSize ? Math.abs((t.tp1-t.entry)/t.entry*t.posSize*(t.tp1pct||33)/100) : 0;
+    const rrPnlTP1 = t.tp1&&t.entry&&displaySize ? Math.abs((t.tp1-t.entry)/t.entry*displaySize*(t.tp1pct||33)/100) : 0;
     const rr = rrRisk && rrPnlTP1 ? rrPnlTP1/rrRisk : (t.tp1&&t.entry&&t.sl ? Math.abs((t.tp1-t.entry)/(t.entry-t.sl)) : 0);
     const tps = [{l:'TP1',v:t.tp1,pct:t.tp1pct||33},{l:'TP2',v:t.tp2,pct:t.tp2pct||33},{l:'TP3',v:t.tp3,pct:t.tp3pct||34}].filter(x=>x.v);
     const wLiq = t.liquidation || estimatedLiquidationPrice(t);
@@ -2277,7 +2292,7 @@ function renderWatchlist() {
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'Riesgo a SL' : 'Capital expuesto'}</div>
-          <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${t.sl ? 'var(--red)' : 'var(--blue)'};">${t.sl ? '-$'+fmt(riskUsd||0) : '$'+fmt(t.posSize||0)}</div>
+          <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${t.sl ? 'var(--red)' : 'var(--blue)'};">${t.sl ? '-$'+fmt(riskUsd||0) : '$'+fmt(displaySize||0)}</div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${t.sl && slDist ? slDist.toFixed(1)+'% entry' : 'spot sin liquidacion'}</div>
         </div>
         <div style="background:var(--border2);"></div>
@@ -2315,7 +2330,7 @@ function renderWatchlist() {
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
-          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(displaySize||0)}</div>
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
@@ -2331,7 +2346,7 @@ function renderWatchlist() {
           const tpColor  = tpColors[i] || '#4ade80';
           const tpBg     = ['rgba(74,222,128,0.03)','rgba(34,197,94,0.03)','rgba(22,163,74,0.03)'][i] || 'transparent';
           const distFromEntry = tp.v&&t.entry ? Math.abs((tp.v-t.entry)/t.entry*100) : null;
-          const tpPnlAmt = t.posSize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
+          const tpPnlAmt = displaySize&&t.entry ? Math.round(contr*(tp.v-t.entry)*(t.dir==='short'?-1:1)*(tp.pct/100)*100)/100 : null;
           const rr = rrFor(tp.v);
           return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -2978,7 +2993,7 @@ function renderPositions() {
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Capital invertido</div>
-          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize||0)}</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(displaySize||0)}</div>
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
@@ -4158,9 +4173,10 @@ window.saveEditTrade = async () => {
   const manualSize = parseFloat(sizeEl?.value)||0;
   const slDist = sl && entry ? Math.abs(sl-entry)/entry : 0;
   const isOpenPosition = ['active','zombie'].includes(existingTrade.status);
+  const derivedSize = manualSize || ((risk && slDist) ? Math.round(risk/slDist*100)/100 : (risk ? Math.round((editDir === 'spot' ? risk : risk * lev)*100)/100 : 0));
   const posSize = isOpenPosition
     ? (manualSize || existingTrade.posSize || 0)
-    : ((risk && slDist) ? Math.round(risk/slDist*100)/100 : (manualSize || 0));
+    : derivedSize;
   const calcRisk = slDist && posSize ? Math.round(posSize*slDist*100)/100 : risk;
   const liqState = editLiquidationState(existingTrade, { dir:editDir, entry, leverage:lev, exchange });
   const liquidation = liqState.liquidation;
@@ -6798,7 +6814,7 @@ function renderOrders() {
     exchange: ((t.exchange||'BINANCE')+'').toUpperCase(),
     ticker:   (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker || '?',
     entry:    t.entry || 0,
-    totalSize: t.posSize || 0,
+    totalSize: effectiveTradeSize(t),
     sl:       t.sl||null,
     tp1:      t.tp1||null,
     tp2:      t.tp2||null,

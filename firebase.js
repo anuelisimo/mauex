@@ -221,9 +221,9 @@ window.saveTrade = async status => {
     toast('Completá ticker y entry como mínimo.','error'); _savingTrade = false; return;
   }
   const slDist  = sl ? Math.abs(sl - entry) / entry : 0;
-  // Use manual size if provided, otherwise calculate from risk+SL
-  const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : 0);
   const lev = calcState.dir === 'spot' ? 1 : (calcState.lev || 1);
+  // Use manual size if provided; without SL, risk USD acts as margin/max loss.
+  const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : (risk ? (calcState.dir === 'spot' ? risk : risk * lev) : 0));
 
   try {
     const currentWatchOrders = status === 'watchlist'
