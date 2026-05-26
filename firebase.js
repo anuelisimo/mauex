@@ -353,6 +353,7 @@ window.openDirectTradeModal = () => {
     pnlEl.dataset.manual = '';
     pnlEl.dataset.originalPnl = '';
   }
+  renderDirectTradeReviewTags({});
   window.updateDirectTradeSizeLabel?.();
   openModal('directTradeModal');
 };
@@ -378,6 +379,7 @@ window.saveDirectTrade = async (editId) => {
   const openDate  = document.getElementById('dtOpenDate').value;
   const closeDate = document.getElementById('dtCloseDate').value || new Date().toISOString().split('T')[0];
   const notes  = document.getElementById('dtNotes').value;
+  const reviewData = getDirectTradeReviewData();
 
   if (!ticker) { toast('Ingresá el ticker.','error'); return; }
   if (!closeDate) { toast('Ingresá la fecha de cierre.','error'); return; }
@@ -398,6 +400,7 @@ window.saveDirectTrade = async (editId) => {
       ticker, dir, exchange, leverage: lev, traderId, traderName,
       entry, closePrice: exit, posSize: notional, marginSize: margin,
       pnl: pnl || 0, pnlPct, daysOpen: days,
+      ...reviewData,
       status: 'closed',
       createdAt: openDate ? openDate+'T00:00:00.000Z' : new Date().toISOString(),
       closeDate, notes,
@@ -531,6 +534,50 @@ function renderCloseReviewTags(t) {
 function getCloseReviewData() {
   const selected = [...document.querySelectorAll('[data-close-review-tag].selected')];
   const byKind = kind => selected.filter(x => x.dataset.closeReviewKind === kind).map(x => x.dataset.closeReviewTag);
+  const mauexTags = byKind('warn');
+  const goodTags = byKind('good');
+  const errorTags = byKind('bad');
+  return {
+    mauexTags, goodTags, errorTags,
+    reviewTags: [...new Set([...mauexTags, ...goodTags, ...errorTags])],
+    reviewedAt: new Date().toISOString(),
+  };
+}
+function directReviewChip(tag, kind, selected=false) {
+  const safe = String(tag).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  return `<button type="button" class="review-chip ${kind} ${selected?'selected':''}" data-direct-review-tag="${safe}" data-direct-review-kind="${kind}" onclick="toggleDirectReviewTag(this)">${safe}</button>`;
+}
+function toggleDirectReviewTag(btn) {
+  btn?.classList?.toggle('selected');
+}
+window.toggleDirectReviewTag = toggleDirectReviewTag;
+function renderDirectTradeReviewTags(t={}) {
+  const el = document.getElementById('dtReviewTags');
+  if (!el) return;
+  const goodSet = new Set(t.goodTags || []);
+  const errSet = new Set(t.errorTags || []);
+  const mauexSet = new Set(t.mauexTags || []);
+  const suggested = [...new Set([...(t.mauexTags || []), ...suggestedCloseTags(t)])];
+  const esc = s => String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const row = (title, hint, html) => `<div style="margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <span class="lbl" style="margin:0;">${esc(title)}</span>
+      <span class="info-dot" data-tip="${esc(hint)}" title="${esc(hint)}">i</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">${html}</div>
+  </div>`;
+  el.innerHTML = `
+    <div style="border:0.5px solid var(--border2);border-radius:var(--r);padding:10px 12px;background:rgba(255,255,255,0.015);">
+      ${row('Evaluacion de ejecucion', 'Estos chips alimentan el dashboard de calidad y pueden editarse aunque el trade ya este en historial.', '<span style="font-size:11px;color:var(--t3);">Marca uno o varios atributos.</span>')}
+      ${row('Sugeridos por MAUex', 'Tags automaticos o previamente guardados. Podes quitarlos si no aplican.', suggested.length ? suggested.map(x=>directReviewChip(x,'warn',mauexSet.has(x))).join('') : '<span style="font-size:11px;color:var(--t3);">Sin alertas automaticas.</span>')}
+      ${row('Aciertos', 'Marca todo lo positivo que quieras recordar.', CLOSE_GOOD_TAGS.map(x=>directReviewChip(x,'good',goodSet.has(x))).join(''))}
+      ${CLOSE_ERROR_GROUPS.map(group => row(group.title, 'Marca una o varias causas reales. Esto alimenta el Dashboard de calidad.', group.tags.map(x=>directReviewChip(x,'bad',errSet.has(x))).join(''))).join('')}
+    </div>`;
+}
+window.renderDirectTradeReviewTags = renderDirectTradeReviewTags;
+function getDirectTradeReviewData() {
+  const selected = [...document.querySelectorAll('[data-direct-review-tag].selected')];
+  const byKind = kind => selected.filter(x => x.dataset.directReviewKind === kind).map(x => x.dataset.directReviewTag);
   const mauexTags = byKind('warn');
   const goodTags = byKind('good');
   const errorTags = byKind('bad');

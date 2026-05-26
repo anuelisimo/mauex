@@ -4015,6 +4015,7 @@ window.openEditTrade = id => {
     document.getElementById('dtOpenDate').value  = t.createdAt ? t.createdAt.split('T')[0] : '';
     document.getElementById('dtCloseDate').value = t.closeDate||'';
     document.getElementById('dtNotes').value     = [t.notes, t.closeNotes].filter(Boolean).join(' · ')||'';
+    window.renderDirectTradeReviewTags?.(t);
     // Change title and button to "edit" mode
     document.querySelector('#directTradeModal .modal-title').textContent = '✎ Editar trade';
     document.getElementById('dtSaveBtn').textContent = 'Guardar cambios';

@@ -867,7 +867,7 @@
 </div>
 
 <div class="modal-overlay" id="directTradeModal">
-  <div class="modal" style="width:420px;max-height:90vh;overflow-y:auto;">
+  <div class="modal" style="width:680px;max-height:90vh;overflow-y:auto;">
     <div class="modal-hdr"><div class="modal-title">Agregar trade al historial</div><button class="modal-close" onclick="closeModal('directTradeModal')">✕</button></div>
     <div class="modal-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
@@ -903,6 +903,7 @@
         <div><label class="lbl">Fecha entrada</label><input type="date" id="dtOpenDate"></div>
         <div><label class="lbl">Fecha cierre</label><input type="date" id="dtCloseDate"></div>
       </div>
+      <div id="dtReviewTags" style="margin-bottom:12px;"></div>
       <div style="margin-bottom:12px;"><label class="lbl">Notas</label><textarea id="dtNotes" placeholder="Contexto del trade..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('directTradeModal')">Cancelar</button><button class="btn acc" id="dtSaveBtn" onclick="window._saveDirectTrade()">Guardar en historial</button></div>
@@ -1024,11 +1025,11 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      FIREBASE MODULE
      ═══════════════════════════════════════════════════════════════════════ -->
-<script type="module" src="./firebase.js?v=20260523"></script>
+<script type="module" src="./firebase.js?v=20260526"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260526-2"></script>
+<script src="./app.js?v=20260526-3"></script>
 </body>
 </html>
