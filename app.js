@@ -2905,11 +2905,12 @@ function renderPositions() {
     const sym    = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
     const price  = G.getPrice(t.ticker, t.dir);
     const sign   = (t.dir==='short') ? -1 : 1;
-    const contr  = (t.posSize||0) / (t.entry||1);
+    const displaySize = effectiveTradeSize(t);
+    const contr  = (displaySize||0) / (t.entry||1);
     const pnl    = price!=null ? Math.round(contr*(price-t.entry)*sign*100)/100 : null;
     const isSpot = t.dir === 'spot';
-    const margin = t.dir==='spot' ? (t.posSize||0) : (t.posSize||0)/(t.leverage||1);
-    const unitsLabel = positionUnitsLabel(t, t.posSize, t.entry);
+    const margin = t.dir==='spot' ? displaySize : displaySize/(t.leverage||1);
+    const unitsLabel = positionUnitsLabel(t, displaySize, t.entry);
     const pnlPct = pnl!=null&&margin ? Math.round(pnl/margin*10000)/100 : null;
     const tps    = [{l:'TP1',v:t.tp1,k:'tp1',pct:t.tp1pct||33},{l:'TP2',v:t.tp2,k:'tp2',pct:t.tp2pct||33},{l:'TP3',v:t.tp3,k:'tp3',pct:t.tp3pct||34}].filter(x=>x.v);
     const closedParts = typeof closedPartsForPosition === 'function' ? closedPartsForPosition(t.id) : [];
@@ -2923,7 +2924,7 @@ function renderPositions() {
     const liq    = estimatedLiquidationPrice(t);
     const fakeT  = { entry:t.entry, sl:t.sl, tp1:t.tp1, tp2:t.tp2, tp3:t.tp3, dir:t.dir, liquidation: t.liquidation||liq, invalidations:t.invalidations };
     const slDistPct = t.sl&&t.entry ? Math.abs(t.sl-t.entry)/t.entry*100 : null;
-    const riskUsd   = t.risk || (t.posSize&&slDistPct ? t.posSize*slDistPct/100 : null);
+    const riskUsd   = t.risk || (displaySize&&slDistPct ? displaySize*slDistPct/100 : null);
     const priceChg  = price&&t.entry ? (price-t.entry)/t.entry*100*sign : null;
     const isMin = !!cardStates[t.id];
     const alert = getPositionAlert(t, price);
@@ -2962,7 +2963,7 @@ function renderPositions() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <div style="font-size:20px;font-weight:700;font-family:var(--mono);" class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
-            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${t.posSize}" data-dir="${t.dir}" data-manual="true">
+            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${displaySize}" data-dir="${t.dir}" data-manual="true">
             ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
           </div>
           ${collapseBtn}
@@ -2984,7 +2985,7 @@ function renderPositions() {
 
       ${t.entry&&(t.sl||t.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, price||0)}</div>` : ''}
 
-      ${isSpot && (t.sl || margin || t.posSize) ? `
+      ${isSpot && (t.sl || margin || displaySize) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--blue)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'Riesgo a SL' : 'Capital expuesto'}</div>
@@ -3008,7 +3009,7 @@ function renderPositions() {
         </div>
       </div>` : ''}
 
-      ${(!isSpot && (t.sl || margin || t.posSize)) ? `
+      ${(!isSpot && (t.sl || margin || displaySize)) ? `
       <div style="display:grid;grid-template-columns:1fr 0.5px 1fr 0.5px 1fr 0.5px 1fr;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);">
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
@@ -3028,7 +3029,7 @@ function renderPositions() {
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Nominal</div>
-          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(t.posSize)}</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">$${fmt(displaySize)}</div>
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
