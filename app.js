@@ -658,9 +658,13 @@ function applyManualCapitalOverlay(data) {
   Object.entries(sourceBalances).forEach(([ex, raw]) => {
     const b = normalizeDashboardBalance(raw);
     const m = manual[ex] || { margin: 0, orders: 0 };
-    const margin = Math.max(b.margin || 0, m.margin || 0);
-    const orders = Math.max(b.orders || 0, m.orders || 0);
     const total = b.total || 0;
+    let margin = Math.max(b.margin || 0, m.margin || 0);
+    let orders = Math.max(b.orders || 0, m.orders || 0);
+    if (total > 0 && margin + orders > total) {
+      margin = Math.min(margin, total);
+      orders = Math.min(orders, Math.max(0, total - margin));
+    }
     balances[ex] = {
       ...b,
       margin: Math.round(margin * 100) / 100,
