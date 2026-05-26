@@ -2901,6 +2901,7 @@ function renderPositions() {
   const cardStates = getCardState();
 
   const manualHtml = sorted.map(t => {
+    try {
     const sym    = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
     const price  = G.getPrice(t.ticker, t.dir);
     const sign   = (t.dir==='short') ? -1 : 1;
@@ -3093,6 +3094,21 @@ function renderPositions() {
         <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
       </div>
     </div>`;
+    } catch(e) {
+      console.error('position card render error:', t?.id, e);
+      return `<div class="pos-card" style="border-left:3px solid var(--amber);">
+        <div class="pos-card-header">
+          <div class="pos-card-left">
+            <span class="status-dot-amber"></span>
+            <span class="pos-card-ticker">${dashSafe(t?.ticker || 'Posicion')}</span>
+          </div>
+          <button class="btn sm" onclick="openEditTrade('${t?.id || ''}')">Editar</button>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6;">
+          Esta posicion tiene un dato incompleto. Editala y guarda para normalizarla.
+        </div>
+      </div>`;
+    }
   }).join('');
 
   container.innerHTML = totalHtml + manualHtml;
