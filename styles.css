@@ -331,7 +331,8 @@ textarea{resize:vertical;min-height:70px;}
 .tf-btn{padding:7px 10px;border:none;border-right:0.5px solid var(--border2);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;}
 .tf-btn:last-child{border-right:none;}
 .tf-btn.active{background:var(--accent-dim);color:var(--accent);}
-.main-chart{height:calc(100vh - 455px);min-height:360px;flex:1;}
+.main-chart{height:calc(100vh - 455px);min-height:360px;flex:1;position:relative;overflow:hidden;}
+.main-smc-overlay{position:absolute;inset:0;z-index:3;pointer-events:none;}
 .main-obv-label{font-family:var(--mono);font-size:9px;color:var(--t3);padding:6px 2px 3px;}
 .main-obv-chart{height:112px;min-height:90px;}
 .main-chart-help{font-family:var(--mono);font-size:10px;color:var(--t3);padding:6px 2px 0;}

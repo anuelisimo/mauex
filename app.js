@@ -4474,7 +4474,7 @@ window.removeEntryRow = id => {
 let lwCharts = {}; // lightweight chart instances
 
 let aiMarketType = 'spot'; // 'spot' | 'futures'
-let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, smc:false, chart:null, obvChart:null, resize:null, obvResize:null };
+let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, smc:false, emaRibbon:false, chart:null, obvChart:null, resize:null, obvResize:null, smcOverlayResize:null };
 
 window.setMarketType = type => {
   aiMarketType = type;
@@ -4592,6 +4592,49 @@ function calcEMA(candles, period) {
   });
 }
 
+function addSlopeColoredEma(chart, candles, period, lineWidth=2) {
+  if (!chart || candles.length < period + 2) return;
+  const ema = calcEMA(candles, period);
+  let run = [];
+  let runColor = null;
+  const flush = () => {
+    if (run.length < 2) return;
+    const s = chart.addLineSeries({
+      color: runColor,
+      lineWidth,
+      priceLineVisible:false,
+      lastValueVisible:false,
+      crosshairMarkerVisible:false,
+    });
+    s.setData(run);
+  };
+  for (let i=1; i<ema.length; i++) {
+    const color = ema[i].value >= ema[i-1].value ? '#0da578' : '#ed28a4';
+    const point = { time:ema[i].time, value:ema[i].value };
+    if (!runColor) {
+      runColor = color;
+      run = [{ time:ema[i-1].time, value:ema[i-1].value }, point];
+    } else if (color === runColor) {
+      run.push(point);
+    } else {
+      flush();
+      runColor = color;
+      run = [{ time:ema[i-1].time, value:ema[i-1].value }, point];
+    }
+  }
+  flush();
+}
+
+function drawEmaRibbon(chart, candles) {
+  [
+    { period:9, width:2 },
+    { period:21, width:2 },
+    { period:50, width:2 },
+    { period:100, width:2 },
+    { period:200, width:2 },
+  ].forEach(x => addSlopeColoredEma(chart, candles, x.period, x.width));
+}
+
 function calcRSI(candles, period=14) {
   const result=[];
   let gains=0, losses=0;
@@ -4639,6 +4682,7 @@ function mainChartLabel(tf) {
 function clearMainChart() {
   if (mainChartState.resize) { try { mainChartState.resize.disconnect(); } catch(e) {} mainChartState.resize = null; }
   if (mainChartState.obvResize) { try { mainChartState.obvResize.disconnect(); } catch(e) {} mainChartState.obvResize = null; }
+  if (mainChartState.smcOverlayResize) { try { mainChartState.smcOverlayResize.disconnect(); } catch(e) {} mainChartState.smcOverlayResize = null; }
   if (mainChartState.chart) { try { mainChartState.chart.remove(); } catch(e) {} mainChartState.chart = null; }
   if (mainChartState.obvChart) { try { mainChartState.obvChart.remove(); } catch(e) {} mainChartState.obvChart = null; }
   const el = document.getElementById('mainChart');
@@ -4680,6 +4724,13 @@ window.toggleMainChartSmc = () => {
   loadMainChart(mainChartState.symbol);
 };
 
+window.toggleMainChartEmaRibbon = () => {
+  mainChartState.emaRibbon = !mainChartState.emaRibbon;
+  const btn = document.getElementById('mainChartEmaBtn');
+  if (btn) btn.textContent = mainChartState.emaRibbon ? 'EMA on' : 'EMA off';
+  loadMainChart(mainChartState.symbol);
+};
+
 window.fitMainChart = () => {
   try { mainChartState.chart?.timeScale().fitContent(); } catch(e) {}
 };
@@ -4712,6 +4763,80 @@ function addHorizontalLevel(chart, level, from, to, opts={}) {
   return s;
 }
 
+function calcAverageTrueRange(candles, period=50) {
+  if (!candles?.length) return 0;
+  const start = Math.max(1, candles.length - period);
+  let sum = 0, count = 0;
+  for (let i=start; i<candles.length; i++) {
+    const prev = candles[i-1]?.close || candles[i].close;
+    const tr = Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - prev),
+      Math.abs(candles[i].low - prev)
+    );
+    if (Number.isFinite(tr)) { sum += tr; count++; }
+  }
+  return count ? sum / count : 0;
+}
+
+function findOrderBlockBefore(candles, event, direction) {
+  const idx = candles.findIndex(c => c.time === event.time);
+  if (idx < 2) return null;
+  const min = Math.max(0, idx - 18);
+  for (let i=idx-1; i>=min; i--) {
+    const c = candles[i];
+    const bearishCandle = c.close < c.open;
+    const bullishCandle = c.close > c.open;
+    if ((direction === 'bull' && bearishCandle) || (direction === 'bear' && bullishCandle)) {
+      return {
+        side: direction,
+        time: c.time,
+        top: Math.max(c.open, c.close, c.high),
+        bottom: Math.min(c.open, c.close, c.low),
+        mid: (Math.max(c.high, c.open, c.close) + Math.min(c.low, c.open, c.close)) / 2,
+      };
+    }
+  }
+  return null;
+}
+
+function detectFairValueGaps(candles, atr) {
+  const gaps = [];
+  const minGap = Math.max((atr || 0) * 0.12, 0);
+  for (let i=2; i<candles.length; i++) {
+    const a = candles[i-2];
+    const c = candles[i];
+    if (c.low > a.high && (c.low - a.high) >= minGap) {
+      gaps.push({ side:'bull', time:c.time, top:c.low, bottom:a.high });
+    }
+    if (c.high < a.low && (a.low - c.high) >= minGap) {
+      gaps.push({ side:'bear', time:c.time, top:a.low, bottom:c.high });
+    }
+  }
+  return gaps;
+}
+
+function detectEqualHighLow(pivots, atr) {
+  const threshold = Math.max((atr || 0) * 0.18, 0);
+  if (!threshold) return [];
+  const levels = [];
+  ['high','low'].forEach(type => {
+    const ps = pivots.filter(p => p.type === type);
+    for (let i=1; i<ps.length; i++) {
+      const a = ps[i-1], b = ps[i];
+      if (Math.abs(a.level - b.level) <= threshold) {
+        levels.push({
+          type,
+          time:b.time,
+          from:a.time,
+          level:(a.level + b.level) / 2,
+        });
+      }
+    }
+  });
+  return levels;
+}
+
 function detectSmcEvents(candles, size=12) {
   const pivots = [];
   for (let i=size; i<candles.length-size; i++) {
@@ -4740,22 +4865,162 @@ function detectSmcEvents(candles, size=12) {
       lastLow.crossed = true; trend = -1;
     }
   }
-  return { events, pivots };
+  const atr = calcAverageTrueRange(candles, 80);
+  const orderBlocks = events
+    .slice(-18)
+    .map(e => findOrderBlockBefore(candles, e, e.side))
+    .filter(Boolean);
+  const fairValueGaps = detectFairValueGaps(candles, atr).slice(-16);
+  const equalLevels = detectEqualHighLow(pivots.slice(-40), atr).slice(-10);
+  return { events, pivots, orderBlocks, fairValueGaps, equalLevels, atr };
+}
+
+function smcCoord(chart, series, time, price) {
+  const x = chart.timeScale().timeToCoordinate(time);
+  const y = series.priceToCoordinate(price);
+  if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function smcDrawLabel(ctx, text, x, y, color, align='center') {
+  ctx.save();
+  ctx.font = '10px "Fira Code", monospace';
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function smcDrawBox(ctx, chart, series, item, top, bottom, color, label, opts={}) {
+  const from = smcCoord(chart, series, item.time, top);
+  const yBottom = series.priceToCoordinate(bottom);
+  if (!from || yBottom == null) return;
+  const x1 = Math.max(0, from.x);
+  const x2 = opts.toX ?? ctx.canvas.clientWidth;
+  const y1 = Math.min(from.y, yBottom);
+  const h = Math.max(3, Math.abs(yBottom - from.y));
+  if (x2 <= x1 || !Number.isFinite(h)) return;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.fillRect(x1, y1, x2 - x1, h);
+  if (opts.border) {
+    ctx.strokeStyle = opts.border;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x1, y1, x2 - x1, h);
+  }
+  if (label) smcDrawLabel(ctx, label, x1 + 8, y1 + Math.min(14, h / 2), opts.labelColor || 'rgba(232,237,243,.75)', 'left');
+  ctx.restore();
+}
+
+function drawMainSmcCanvasOverlay(chart, series, candles, smcData) {
+  const el = document.getElementById('mainChart');
+  if (!el || !chart || !series || !candles?.length || !smcData) return;
+  let canvas = document.getElementById('mainSmcOverlay');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'mainSmcOverlay';
+    canvas.className = 'main-smc-overlay';
+    el.appendChild(canvas);
+  }
+  const draw = () => {
+    const rect = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const rightX = rect.width;
+    smcData.fairValueGaps.slice(-10).forEach(g => {
+      smcDrawBox(ctx, chart, series, g, g.top, g.bottom,
+        g.side === 'bull' ? 'rgba(32,72,145,.35)' : 'rgba(126,40,58,.35)',
+        g.side === 'bull' ? 'Bull FVG' : 'Bear FVG',
+        { toX:rightX, border:g.side === 'bull' ? 'rgba(49,121,245,.24)' : 'rgba(247,124,128,.24)' }
+      );
+    });
+
+    smcData.orderBlocks.slice(-9).forEach(ob => {
+      smcDrawBox(ctx, chart, series, ob, ob.top, ob.bottom,
+        ob.side === 'bull' ? 'rgba(0,196,122,.22)' : 'rgba(240,61,61,.22)',
+        ob.side === 'bull' ? 'Bull OB' : 'Bear OB',
+        { toX:rightX, border:ob.side === 'bull' ? 'rgba(0,196,122,.55)' : 'rgba(240,61,61,.55)' }
+      );
+    });
+
+    const swingHigh = [...smcData.pivots].reverse().find(p => p.type === 'high');
+    const swingLow = [...smcData.pivots].reverse().find(p => p.type === 'low');
+    if (swingHigh && swingLow && swingHigh.level !== swingLow.level) {
+      const top = Math.max(swingHigh.level, swingLow.level);
+      const bottom = Math.min(swingHigh.level, swingLow.level);
+      const yTop = series.priceToCoordinate(top);
+      const yBottom = series.priceToCoordinate(bottom);
+      if (yTop != null && yBottom != null) {
+        const yPremium = Math.min(yTop, yBottom);
+        const yDiscount = Math.max(yTop, yBottom);
+        const h = Math.abs(yBottom - yTop);
+        const xStart = Math.max(0, Math.min(
+          chart.timeScale().timeToCoordinate(swingHigh.time) ?? 0,
+          chart.timeScale().timeToCoordinate(swingLow.time) ?? 0
+        ));
+        ctx.fillStyle = 'rgba(240,61,61,.20)';
+        ctx.fillRect(xStart, yPremium, rightX - xStart, h * 0.25);
+        ctx.fillStyle = 'rgba(135,139,148,.16)';
+        ctx.fillRect(xStart, yPremium + h * 0.42, rightX - xStart, h * 0.16);
+        ctx.fillStyle = 'rgba(0,196,122,.18)';
+        ctx.fillRect(xStart, yPremium + h * 0.75, rightX - xStart, h * 0.25);
+        smcDrawLabel(ctx, 'Premium', xStart + (rightX - xStart) / 2, yPremium + 12, '#f03d3d');
+        smcDrawLabel(ctx, 'Equilibrium', rightX - 8, yPremium + h * 0.50, 'rgba(232,237,243,.68)', 'right');
+        smcDrawLabel(ctx, 'Discount', xStart + (rightX - xStart) / 2, yPremium + h - 12, '#00c47a');
+        smcDrawLabel(ctx, 'Strong High', rightX - 8, yPremium + 12, '#f03d3d', 'right');
+        smcDrawLabel(ctx, 'Weak Low', rightX - 8, yPremium + h - 12, '#00c47a', 'right');
+      }
+    }
+
+    smcData.events.slice(-35).forEach(e => {
+      const p = smcCoord(chart, series, e.time, e.level);
+      if (!p) return;
+      ctx.save();
+      ctx.strokeStyle = e.side === 'bull' ? 'rgba(0,196,122,.75)' : 'rgba(240,61,61,.75)';
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(Math.max(0, p.x - 42), p.y);
+      ctx.lineTo(Math.min(rightX, p.x + 42), p.y);
+      ctx.stroke();
+      smcDrawLabel(ctx, e.tag, p.x, p.y + (e.side === 'bull' ? -12 : 12), e.side === 'bull' ? '#00c47a' : '#f03d3d');
+      ctx.restore();
+    });
+
+    smcData.equalLevels.forEach(eq => {
+      const p = smcCoord(chart, series, eq.time, eq.level);
+      if (!p) return;
+      smcDrawLabel(ctx, eq.type === 'high' ? 'EQH' : 'EQL', p.x, p.y + (eq.type === 'high' ? -12 : 12), eq.type === 'high' ? '#f03d3d' : '#00c47a');
+    });
+  };
+  draw();
+  chart.timeScale().subscribeVisibleLogicalRangeChange(draw);
+  if (mainChartState.smcOverlayResize) { try { mainChartState.smcOverlayResize.disconnect(); } catch(e) {} }
+  mainChartState.smcOverlayResize = new ResizeObserver(draw);
+  mainChartState.smcOverlayResize.observe(el);
 }
 
 function drawSmcOverlay(chart, candleSeries, candles) {
   if (!chart || !candleSeries || !candles?.length) return;
   const from = candles[Math.max(0, candles.length - 180)]?.time || candles[0].time;
   const to = candles[candles.length - 1].time;
-  const { events, pivots } = detectSmcEvents(candles, Math.max(5, mainChartState.tf === '1h' || mainChartState.tf === '15m' ? 8 : 12));
+  const smcData = detectSmcEvents(candles, Math.max(5, mainChartState.tf === '1h' || mainChartState.tf === '15m' ? 8 : 12));
+  const { events, pivots, orderBlocks, fairValueGaps, equalLevels } = smcData;
   const recentEvents = events.slice(-40);
-  candleSeries.setMarkers(recentEvents.map(e => ({
+  const markers = recentEvents.map(e => ({
     time:e.time,
     position:e.side === 'bull' ? 'belowBar' : 'aboveBar',
     color:e.side === 'bull' ? '#00c47a' : '#f03d3d',
     shape:e.side === 'bull' ? 'arrowUp' : 'arrowDown',
     text:`${e.side === 'bull' ? 'Bull' : 'Bear'} ${e.tag}`,
-  })));
+  }));
   recentEvents.slice(-10).forEach(e => {
     addHorizontalLevel(chart, e.level, e.pivotTime || from, to, {
       color:e.side === 'bull' ? 'rgba(0,196,122,.55)' : 'rgba(240,61,61,.55)',
@@ -4766,6 +5031,58 @@ function drawSmcOverlay(chart, candleSeries, candles) {
     color:p.type === 'high' ? 'rgba(240,61,61,.22)' : 'rgba(0,196,122,.22)',
     lineStyle:3,
   }));
+  orderBlocks.slice(-8).forEach(ob => {
+    const color = ob.side === 'bull' ? 'rgba(49,121,245,.42)' : 'rgba(247,124,128,.42)';
+    addHorizontalLevel(chart, ob.top, ob.time, to, { color, lineStyle:2 });
+    addHorizontalLevel(chart, ob.bottom, ob.time, to, { color, lineStyle:2 });
+    addHorizontalLevel(chart, ob.mid, ob.time, to, { color:color.replace('.42', '.25'), lineStyle:3 });
+    markers.push({
+      time:ob.time,
+      position:ob.side === 'bull' ? 'belowBar' : 'aboveBar',
+      color:ob.side === 'bull' ? '#3179f5' : '#f77c80',
+      shape:'circle',
+      text:ob.side === 'bull' ? 'Bull OB' : 'Bear OB',
+    });
+  });
+  fairValueGaps.slice(-8).forEach(g => {
+    const color = g.side === 'bull' ? 'rgba(0,255,104,.35)' : 'rgba(255,0,8,.35)';
+    addHorizontalLevel(chart, g.top, g.time, to, { color, lineStyle:3 });
+    addHorizontalLevel(chart, g.bottom, g.time, to, { color, lineStyle:3 });
+    markers.push({
+      time:g.time,
+      position:g.side === 'bull' ? 'belowBar' : 'aboveBar',
+      color:g.side === 'bull' ? '#00c47a' : '#f03d3d',
+      shape:'square',
+      text:g.side === 'bull' ? 'Bull FVG' : 'Bear FVG',
+    });
+  });
+  equalLevels.forEach(eq => {
+    addHorizontalLevel(chart, eq.level, eq.from || from, to, {
+      color:eq.type === 'high' ? 'rgba(240,61,61,.50)' : 'rgba(0,196,122,.50)',
+      lineStyle:1,
+    });
+    markers.push({
+      time:eq.time,
+      position:eq.type === 'high' ? 'aboveBar' : 'belowBar',
+      color:eq.type === 'high' ? '#f03d3d' : '#00c47a',
+      shape:'circle',
+      text:eq.type === 'high' ? 'EQH' : 'EQL',
+    });
+  });
+  const swingHigh = [...pivots].reverse().find(p => p.type === 'high');
+  const swingLow = [...pivots].reverse().find(p => p.type === 'low');
+  if (swingHigh && swingLow && swingHigh.level !== swingLow.level) {
+    const top = Math.max(swingHigh.level, swingLow.level);
+    const bottom = Math.min(swingHigh.level, swingLow.level);
+    const eq = (top + bottom) / 2;
+    const premium = bottom + (top - bottom) * 0.75;
+    const discount = bottom + (top - bottom) * 0.25;
+    addHorizontalLevel(chart, premium, Math.min(swingHigh.time, swingLow.time), to, { color:'rgba(240,61,61,.22)', lineStyle:3 });
+    addHorizontalLevel(chart, eq, Math.min(swingHigh.time, swingLow.time), to, { color:'rgba(135,139,148,.35)', lineStyle:2 });
+    addHorizontalLevel(chart, discount, Math.min(swingHigh.time, swingLow.time), to, { color:'rgba(0,196,122,.22)', lineStyle:3 });
+  }
+  candleSeries.setMarkers(markers.slice(-120));
+  drawMainSmcCanvasOverlay(chart, candleSeries, candles, smcData);
 }
 
 function drawMainTradeLevels(chart, series, candles, trade) {
@@ -4849,6 +5166,7 @@ async function loadMainChart(symbol = mainChartState.symbol) {
       color:c.close >= c.open ? 'rgba(0,196,122,0.28)' : 'rgba(240,61,61,0.28)',
     })));
     chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
+    if (mainChartState.emaRibbon) drawEmaRibbon(chart, candles);
     if (_analysisTradeData) drawMainTradeLevels(chart, candlesSeries, candles, _analysisTradeData);
     if (mainChartState.smc) drawSmcOverlay(chart, candlesSeries, candles);
     else candlesSeries.setMarkers([]);
