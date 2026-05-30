@@ -105,7 +105,7 @@
     </button>
     <button class="bnav-btn" data-page="analysis" onclick="window.showPage('analysis')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20 10 10 0 010-20z"/><path d="M12 8v4l3 3"/><path d="M9.5 2.5C9.5 2.5 7 5 7 12s2.5 9.5 2.5 9.5"/><path d="M14.5 2.5S17 5 17 12s-2.5 9.5-2.5 9.5"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
-      <span>AI</span>
+      <span>Charts</span>
     </button>
   </nav>
 
@@ -352,8 +352,8 @@
     <div id="analysisPage" style="display:none;">
       <div class="fxb" style="margin-bottom:16px;">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">AI Chart Analysis</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Velas + EMA + RSI + OBV + datos de mercado · Binance</div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Charts</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Grafico operativo + analisis AI con velas, EMAs, RSI, OBV y datos de mercado</div>
         </div>
       </div>
       <!-- Trade info panel (shown when opened from watchlist) -->
@@ -382,9 +382,42 @@
       <!-- Market data strip -->
       <div id="marketStrip" style="display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:11px;"></div>
 
+      <div id="chartsTabs" class="chart-tabs">
+        <button id="chartsTabGraficos" class="chart-tab active" onclick="showChartsTab('graficos')">Graficos</button>
+        <button id="chartsTabAI" class="chart-tab" onclick="showChartsTab('ai')">AI</button>
+      </div>
+
+      <div id="chartsTabGraficosContent">
+        <div class="main-chart-shell" id="mainChartShell">
+          <div class="main-chart-toolbar">
+            <div class="main-chart-title">
+              <span id="mainChartSymbol">BTCUSDT</span>
+              <span id="mainChartMeta">1D</span>
+            </div>
+            <div class="main-chart-actions">
+              <div class="tf-switch">
+                <button class="tf-btn" data-tf="15m" onclick="setMainChartTimeframe('15m')">15m</button>
+                <button class="tf-btn" data-tf="1h" onclick="setMainChartTimeframe('1h')">1H</button>
+                <button class="tf-btn" data-tf="4h" onclick="setMainChartTimeframe('4h')">4H</button>
+                <button class="tf-btn active" data-tf="1d" onclick="setMainChartTimeframe('1d')">1D</button>
+                <button class="tf-btn" data-tf="1w" onclick="setMainChartTimeframe('1w')">1W</button>
+                <button class="tf-btn" data-tf="1M" onclick="setMainChartTimeframe('1M')">1M</button>
+              </div>
+              <button class="btn" onclick="toggleMainChartScale()" id="mainChartScaleBtn">Log</button>
+              <button class="btn" onclick="fitMainChart()">Ajustar</button>
+              <button class="btn" onclick="toggleMainChartFullscreen()">Pantalla completa</button>
+            </div>
+          </div>
+          <div id="mainChart" class="main-chart"></div>
+          <div class="main-chart-help">Rueda o pellizco: zoom. Arrastrar: mover. Doble click: ajustar vista.</div>
+        </div>
+      </div>
+
+      <div id="chartsTabAIContent" style="display:none;">
+
       <!-- 2x2 chart grid — each with 3 subpanels -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;" id="aiChartGrid">
-        <div class="card" style="padding:10px;">
+        <div class="card ai-tf-card tf-1w" style="padding:10px;">
           <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1W — SEMANAL</div>
           <div id="cs1W" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
@@ -394,7 +427,7 @@
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
           <div id="rsi1W" style="height:80px;"></div>
         </div>
-        <div class="card" style="padding:10px;">
+        <div class="card ai-tf-card tf-1d" style="padding:10px;">
           <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1D — DIARIO</div>
           <div id="cs1D" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
@@ -404,7 +437,7 @@
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
           <div id="rsi1D" style="height:80px;"></div>
         </div>
-        <div class="card" style="padding:10px;">
+        <div class="card ai-tf-card tf-4h" style="padding:10px;">
           <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">4H — CUATRO HORAS</div>
           <div id="cs4H" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
@@ -414,7 +447,7 @@
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
           <div id="rsi4H" style="height:80px;"></div>
         </div>
-        <div class="card" style="padding:10px;">
+        <div class="card ai-tf-card tf-1h" style="padding:10px;">
           <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1H — UNA HORA</div>
           <div id="cs1H" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
@@ -427,7 +460,7 @@
       </div>
 
       <!-- Monthly chart -->
-      <div class="card" style="padding:10px;margin-bottom:10px;" id="monthlyCard">
+      <div class="card ai-tf-card tf-1m" style="padding:10px;margin-bottom:10px;" id="monthlyCard">
         <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1M — MENSUAL</div>
         <div id="cs1M" style="height:220px;"></div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
@@ -440,6 +473,7 @@
 
       <div id="copyStatus" style="display:none;text-align:center;padding:12px;font-family:var(--mono);font-size:12px;color:var(--accent);">
         ✅ Imagen copiada al portapapeles. Pegala directamente en Claude!
+      </div>
       </div>
     </div>
 
@@ -1030,6 +1064,6 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260526-4"></script>
+<script src="./app.js?v=20260530-1"></script>
 </body>
 </html>

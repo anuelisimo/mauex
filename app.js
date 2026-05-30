@@ -4304,6 +4304,7 @@ window.removeEntryRow = id => {
 let lwCharts = {}; // lightweight chart instances
 
 let aiMarketType = 'spot'; // 'spot' | 'futures'
+let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, chart:null, resize:null };
 
 window.setMarketType = type => {
   aiMarketType = type;
@@ -4317,6 +4318,9 @@ window.setMarketType = type => {
     ft.style.background='var(--accent)'; ft.style.color='#000';
     sp.style.background='var(--bg3)';    sp.style.color='var(--t2)';
   }
+  if (document.getElementById('chartsTabGraficosContent')?.style.display !== 'none') {
+    loadMainChart(mainChartState.symbol);
+  }
 };
 
 async function fetchOHLCV(symbol, interval, limit=300) {
@@ -4324,7 +4328,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
   if(window._aiSource === 'mexc') {
     // symbol is already in MEXC format (e.g. GOLD_USDT) set by selectTicker
     const mexcSym = symbol;
-    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Min60'};
+    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Min60','15m':'Min15'};
     const mexcIv = ivMap[interval] || 'Day1';
     try {
       const url = `https://contract.mexc.com/api/v1/contract/kline/${mexcSym}?interval=${mexcIv}&limit=${limit}`;
@@ -4356,8 +4360,8 @@ async function fetchOHLCV(symbol, interval, limit=300) {
 
   if(isStock) {
     // Yahoo Finance via proxy (avoids CORS)
-    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h'};
-    const rangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo'};
+    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','15m':'15m'};
+    const rangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo','15m':'5d'};
     const yhIv = ivMap[interval]||'1d';
     const range = rangeMap[interval]||'1y';
     const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
@@ -4450,8 +4454,129 @@ const lwCfg = (height) => ({
 
 function makeChart(el, height) {
   const ch = LightweightCharts.createChart(el, {...lwCfg(height), width:el.clientWidth||400});
-  new ResizeObserver(()=>ch.applyOptions({width:el.clientWidth})).observe(el);
+  new ResizeObserver(()=>ch.applyOptions({width:el.clientWidth, height:el.clientHeight || height})).observe(el);
   return ch;
+}
+
+function mainChartLimit(tf) {
+  return tf === '15m' ? 500 : tf === '1h' ? 600 : tf === '4h' ? 500 : tf === '1d' ? 700 : tf === '1w' ? 400 : 180;
+}
+
+function mainChartLabel(tf) {
+  return ({'15m':'15m','1h':'1H','4h':'4H','1d':'1D','1w':'1W','1M':'1M'})[tf] || tf;
+}
+
+function clearMainChart() {
+  if (mainChartState.resize) { try { mainChartState.resize.disconnect(); } catch(e) {} mainChartState.resize = null; }
+  if (mainChartState.chart) { try { mainChartState.chart.remove(); } catch(e) {} mainChartState.chart = null; }
+  const el = document.getElementById('mainChart');
+  if (el) el.innerHTML = '';
+}
+
+window.showChartsTab = (tab) => {
+  const isGraph = tab !== 'ai';
+  const graph = document.getElementById('chartsTabGraficosContent');
+  const ai = document.getElementById('chartsTabAIContent');
+  const bGraph = document.getElementById('chartsTabGraficos');
+  const bAI = document.getElementById('chartsTabAI');
+  if (graph) graph.style.display = isGraph ? 'block' : 'none';
+  if (ai) ai.style.display = isGraph ? 'none' : 'block';
+  bGraph?.classList.toggle('active', isGraph);
+  bAI?.classList.toggle('active', !isGraph);
+  if (isGraph) setTimeout(() => loadMainChart(mainChartState.symbol), 50);
+};
+
+window.setMainChartTimeframe = (tf) => {
+  mainChartState.tf = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
+  loadMainChart(mainChartState.symbol);
+};
+
+window.toggleMainChartScale = () => {
+  mainChartState.log = !mainChartState.log;
+  const btn = document.getElementById('mainChartScaleBtn');
+  if (btn) btn.textContent = mainChartState.log ? 'Lineal' : 'Log';
+  loadMainChart(mainChartState.symbol);
+};
+
+window.fitMainChart = () => {
+  try { mainChartState.chart?.timeScale().fitContent(); } catch(e) {}
+};
+
+window.toggleMainChartFullscreen = () => {
+  const shell = document.getElementById('mainChartShell');
+  if (!shell) return;
+  shell.classList.toggle('fullscreen');
+  setTimeout(() => {
+    try {
+      const el = document.getElementById('mainChart');
+      mainChartState.chart?.applyOptions({ width: el?.clientWidth || 800, height: el?.clientHeight || 500 });
+    } catch(e) {}
+  }, 80);
+};
+
+async function loadMainChart(symbol = mainChartState.symbol) {
+  const el = document.getElementById('mainChart');
+  if (!el || !symbol) return null;
+  mainChartState.symbol = symbol;
+  const title = document.getElementById('mainChartSymbol');
+  const meta = document.getElementById('mainChartMeta');
+  if (title) title.textContent = symbol;
+  if (meta) meta.textContent = `${mainChartLabel(mainChartState.tf)} ${mainChartState.log ? 'Log' : 'Lineal'}`;
+  clearMainChart();
+  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:12px;">Cargando grafico...</div>`;
+  try {
+    const candles = await fetchOHLCV(symbol, mainChartState.tf, mainChartLimit(mainChartState.tf));
+    if (!candles.length) throw new Error('Sin datos');
+    el.innerHTML = '';
+    const chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth || 900,
+      height: el.clientHeight || 520,
+      layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
+      crosshair:{ mode:1 },
+      rightPriceScale:{ mode: mainChartState.log ? 1 : 0, borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.05,bottom:0.20} },
+      timeScale:{ borderColor:'rgba(255,255,255,0.10)', timeVisible:true, secondsVisible:false },
+      handleScroll:{ mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true, vertTouchDrag:true },
+      handleScale:{ axisPressedMouseMove:true, mouseWheel:true, pinch:true },
+    });
+    mainChartState.chart = chart;
+    const candlesSeries = chart.addCandlestickSeries({
+      upColor:'#00c47a', downColor:'#f03d3d',
+      borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
+      wickUpColor:'#00a85a', wickDownColor:'#c03030',
+    });
+    candlesSeries.setData(candles);
+    [
+      {p:20, color:'rgba(240,200,60,0.95)'},
+      {p:50, color:'rgba(61,156,240,0.95)'},
+      ...(candles.length >= 220 ? [{p:200, color:'rgba(240,80,80,0.85)'}] : []),
+    ].forEach(({p,color}) => {
+      if (candles.length < p) return;
+      const s = chart.addLineSeries({ color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+      s.setData(calcEMA(candles, p));
+    });
+    const vol = chart.addHistogramSeries({
+      priceFormat:{type:'volume'},
+      priceScaleId:'volume',
+      priceLineVisible:false,
+      lastValueVisible:false,
+    });
+    vol.setData(candles.map(c => ({
+      time:c.time,
+      value:c.volume,
+      color:c.close >= c.open ? 'rgba(0,196,122,0.28)' : 'rgba(240,61,61,0.28)',
+    })));
+    chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
+    chart.timeScale().fitContent();
+    el.ondblclick = () => chart.timeScale().fitContent();
+    mainChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 520 }));
+    mainChartState.resize.observe(el);
+    return chart;
+  } catch(e) {
+    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:12px;">No pude cargar el grafico: ${e.message}</div>`;
+    return null;
+  }
 }
 
 async function renderTFCharts(tfKey, symbol, interval) {
@@ -4476,7 +4601,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
     if(!candles.length) throw new Error('Sin datos');
 
     // ── Candlestick chart with EMAs ───────────────────────────────────────
-    const csChart = makeChart(csEl, 220);
+    const csChart = makeChart(csEl, tfKey === '1M' ? 320 : 220);
     lwCharts['cs'+tfKey] = csChart;
 
     // Show time axis only on candle chart (top panel)
@@ -4718,7 +4843,8 @@ window.loadCharts = async () => {
 
   try {
     // Load all timeframes + market data in parallel
-    const [res1M, res1W, res1D, md] = await Promise.all([
+    const [mainChart, res1M, res1W, res1D, md] = await Promise.all([
+      loadMainChart(symbol),
       renderTFCharts('1M', symbol, '1M'),
       renderTFCharts('1W', symbol, '1w'),
       renderTFCharts('1D', symbol, '1d'),
@@ -5785,9 +5911,9 @@ const _origFetchOHLCV = fetchOHLCV;
 window.fetchOHLCV = async (symbol, interval, limit=300) => {
   if(window._aiSource==='yahoo') {
     // Map LW intervals to Yahoo intervals
-    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h'};
+    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','15m':'15m'};
     const yhIv  = ivMap[interval]||'1d';
-    const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':'1mo';
+    const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':interval==='15m'?'5d':'1mo';
     try {
       const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
       const r = await (window.proxyFetch ? window.proxyFetch(yhUrl) : fetch(yhUrl));
