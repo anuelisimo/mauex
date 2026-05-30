@@ -370,6 +370,7 @@ window.openThemePicker = () => {
 
 // ── Calc state ─────────────────────────────────────────────────────────────
 const calcState = { dir:'short', ex:'binance', lev:null };
+let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'' };
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
 const MMR_LBL = {binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%',kucoin:'KuCoin · MMR 0.5%'};
 
@@ -420,6 +421,159 @@ function editLiquidationState(existingTrade={}, nextInput={}) {
   }
   return { liquidation: estimate || null, liquidationManual: false };
 }
+
+function calcChartLevelsFromInputs() {
+  const entry = parseFloat(document.getElementById('cEntry')?.value) || 0;
+  const sl = parseFloat(document.getElementById('cSL')?.value) || 0;
+  const tp1 = parseFloat(document.getElementById('cTP1')?.value) || 0;
+  const tp2 = parseFloat(document.getElementById('cTP2')?.value) || 0;
+  const tp3 = parseFloat(document.getElementById('cTP3')?.value) || 0;
+  const invs = readInvalidationFields('c');
+  const liq = calcState.dir !== 'spot'
+    ? estimatedLiquidationPrice({ dir:calcState.dir, entry, leverage:calcState.lev || 1, exchange:calcState.ex })
+    : null;
+  return [
+    ...(entry ? [{ price:entry, title:'Entry', color:'rgba(232,237,243,.95)' }] : []),
+    ...(sl ? [{ price:sl, title:'SL', color:'rgba(240,61,61,.95)' }] : []),
+    ...(tp1 ? [{ price:tp1, title:'TP1', color:'rgba(0,196,122,.75)' }] : []),
+    ...(tp2 ? [{ price:tp2, title:'TP2', color:'rgba(0,196,122,.88)' }] : []),
+    ...(tp3 ? [{ price:tp3, title:'TP3', color:'rgba(0,196,122,1)' }] : []),
+    ...invs.map((x,i) => ({ price:x.price, title:x.label || `Inv ${i+1}`, color:'rgba(56,189,248,.95)' })),
+    ...(liq ? [{ price:liq, title:'Liq', color:'rgba(245,158,11,.95)' }] : []),
+  ];
+}
+
+function calcChartSymbolInfo() {
+  const raw = (document.getElementById('cTicker')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  if (!raw) return null;
+  const exchange = calcState.dir === 'spot' ? 'MANUAL' : calcState.ex;
+  const crypto = appIsCryptoTicker(raw, exchange);
+  const symbol = crypto
+    ? (raw.endsWith('USDT') || raw.endsWith('USDC') || raw.includes('_') ? raw.replace(/USDC$/,'USDT') : raw + 'USDT')
+    : raw;
+  return { raw, symbol, source: crypto ? 'binance' : 'yahoo', type: crypto ? 'crypto' : 'stock' };
+}
+
+function clearCalcSignalChart() {
+  if (calcChartState.resize) { try { calcChartState.resize.disconnect(); } catch(e) {} calcChartState.resize = null; }
+  if (calcChartState.chart) { try { calcChartState.chart.remove(); } catch(e) {} calcChartState.chart = null; }
+  const el = document.getElementById('calcSignalChart');
+  if (el) el.innerHTML = '';
+}
+
+function scheduleCalcSignalChart() {
+  clearTimeout(calcChartState.timer);
+  calcChartState.timer = setTimeout(renderCalcSignalChart, 450);
+}
+
+window.setCalcChartTimeframe = (tf) => {
+  calcChartState.tf = tf;
+  document.querySelectorAll('[data-calc-tf]').forEach(b => b.classList.toggle('active', b.dataset.calcTf === tf));
+  calcChartState.key = '';
+  renderCalcSignalChart();
+};
+
+async function renderCalcSignalChart() {
+  const el = document.getElementById('calcSignalChart');
+  const status = document.getElementById('calcChartStatus');
+  if (!el) return;
+  const info = calcChartSymbolInfo();
+  const entry = parseFloat(document.getElementById('cEntry')?.value) || 0;
+  if (!info || !entry) {
+    clearCalcSignalChart();
+    if (status) status.textContent = 'Carga ticker y entry para ver la señal.';
+    return;
+  }
+  const key = [
+    info.symbol, info.source, calcState.dir, calcState.ex, calcState.lev || 1, calcChartState.tf,
+    ['cEntry','cSL','cTP1','cTP2','cTP3','cInv1','cInv2'].map(id => document.getElementById(id)?.value || '').join('|')
+  ].join('::');
+  if (key === calcChartState.key && calcChartState.chart) return;
+  calcChartState.key = key;
+  clearCalcSignalChart();
+  if (status) status.textContent = `Validando ${info.raw} en ${mainChartLabel(calcChartState.tf)}...`;
+  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando velas...</div>`;
+  const prevSource = window._aiSource;
+  const prevType = window._aiType;
+  try {
+    window._aiSource = info.source;
+    window._aiType = info.type;
+    const candles = await fetchOHLCV(info.symbol, calcChartState.tf, mainChartLimit(calcChartState.tf));
+    if (!candles.length) throw new Error('Sin datos');
+    el.innerHTML = '';
+    const chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth || 720,
+      height: el.clientHeight || 320,
+      layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
+      crosshair:{ mode:1 },
+      rightPriceScale:{ borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.06,bottom:0.20} },
+      timeScale:{ borderColor:'rgba(255,255,255,0.10)', timeVisible:true, secondsVisible:false },
+      handleScroll:{ mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true, vertTouchDrag:true },
+      handleScale:{ axisPressedMouseMove:true, mouseWheel:true, pinch:true },
+    });
+    calcChartState.chart = chart;
+    const series = chart.addCandlestickSeries({
+      upColor:'#00c47a', downColor:'#f03d3d',
+      borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
+      wickUpColor:'#00a85a', wickDownColor:'#c03030',
+    });
+    series.setData(candles);
+    const vol = chart.addHistogramSeries({ priceFormat:{type:'volume'}, priceScaleId:'volume', priceLineVisible:false, lastValueVisible:false });
+    vol.setData(candles.map(c => ({ time:c.time, value:c.volume, color:c.close>=c.open?'rgba(0,196,122,.23)':'rgba(240,61,61,.23)' })));
+    chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
+    calcChartLevelsFromInputs().forEach(lvl => {
+      try {
+        series.createPriceLine({
+          price:lvl.price,
+          color:lvl.color,
+          lineWidth:1,
+          lineStyle:2,
+          axisLabelVisible:true,
+          title:lvl.title,
+        });
+      } catch(e) {}
+    });
+    chart.timeScale().fitContent();
+    el.ondblclick = () => chart.timeScale().fitContent();
+    calcChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 320 }));
+    calcChartState.resize.observe(el);
+    const last = candles[candles.length - 1]?.close;
+    const gap = last && entry ? ((last - entry) / entry * 100) : null;
+    if (status) status.textContent = gap == null
+      ? `${info.raw} · ${mainChartLabel(calcChartState.tf)}`
+      : `${info.raw} · precio ${gap >= 0 ? '+' : ''}${gap.toFixed(2)}% vs entry`;
+  } catch(e) {
+    if (status) status.textContent = `No pude cargar ${info.raw}: ${e.message}`;
+    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${e.message}</div>`;
+  } finally {
+    window._aiSource = prevSource;
+    window._aiType = prevType;
+  }
+}
+
+window.openCalcSetupInCharts = () => {
+  const info = calcChartSymbolInfo();
+  if (!info) { toast('Carga un ticker primero.', 'error'); return; }
+  const el = document.getElementById('aiSymbol');
+  if (el) el.value = info.symbol;
+  window._aiSource = info.source;
+  window._aiType = info.type;
+  _analysisTradeData = {
+    ticker: info.raw,
+    dir: calcState.dir,
+    exchange: calcState.dir === 'spot' ? 'MANUAL' : calcState.ex.toUpperCase(),
+    leverage: calcState.lev || 1,
+    entry: parseFloat(document.getElementById('cEntry')?.value) || 0,
+    sl: parseFloat(document.getElementById('cSL')?.value) || 0,
+    tp1: parseFloat(document.getElementById('cTP1')?.value) || 0,
+    tp2: parseFloat(document.getElementById('cTP2')?.value) || 0,
+    tp3: parseFloat(document.getElementById('cTP3')?.value) || 0,
+  };
+  showPage('analysis');
+  showChartsTab('graficos');
+  loadCharts();
+};
 const LEVS = [2,3,5,7,10,15,20,25,50];
 
 window.setDir = d => {
@@ -510,6 +664,7 @@ window.compute = () => {
     ['calcMetrics','calcLevels','calcBar'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.innerHTML='';
     });
+    scheduleCalcSignalChart();
     return;
   }
 
@@ -609,6 +764,7 @@ window.compute = () => {
         <div style="width:1.5px;height:20px;background:${p.c};margin:1px auto;"></div>
       </div>
       <div style="position:absolute;left:${pct(p.v)}%;transform:translateX(-50%);top:10px;font-size:8px;color:${p.c};font-family:var(--mono);white-space:nowrap;">$${fmtPx(p.v)}</div>`).join('')}`;
+  scheduleCalcSignalChart();
 };
 
 // ── Dashboard ──────────────────────────────────────────────────────────────

@@ -335,6 +335,14 @@ textarea{resize:vertical;min-height:70px;}
 .main-chart-help{font-family:var(--mono);font-size:10px;color:var(--t3);padding:6px 2px 0;}
 .main-chart-shell.fullscreen{position:fixed;inset:8px;z-index:200;background:var(--bg1);min-height:0;margin:0;}
 .main-chart-shell.fullscreen .main-chart{height:calc(100vh - 94px);}
+.calc-chart-card{padding:12px!important;}
+.calc-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
+.calc-chart-status{font-family:var(--mono);font-size:10px;color:var(--t3);}
+.calc-chart-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.tf-switch.mini .tf-btn{padding:6px 9px;font-size:9px;}
+.calc-signal-chart{height:330px;min-height:260px;}
+.calc-actions-final{margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.calc-actions-final .btn{width:100%;}
 #aiChartGrid .tf-1h{order:1;}
 #aiChartGrid .tf-4h{order:2;}
 #aiChartGrid .tf-1d{order:3;}
@@ -350,6 +358,11 @@ textarea{resize:vertical;min-height:70px;}
   .tf-btn{padding:8px 2px;border-bottom:0;border-right:0.5px solid var(--border2);}
   .main-chart{height:calc(100vh - 350px);min-height:390px;}
   .main-chart-help{display:none;}
+  .calc-chart-head{display:block;}
+  .calc-chart-tools{margin-top:8px;width:100%;}
+  .calc-chart-tools .tf-switch{flex:1;}
+  .calc-signal-chart{height:310px;}
+  .calc-actions-final{grid-template-columns:1fr;margin-top:12px;}
   #aiChartGrid{grid-template-columns:1fr!important;}
   #monthlyCard{min-height:auto;}
   #monthlyCard #cs1M{height:260px!important;}

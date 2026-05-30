@@ -254,11 +254,6 @@
             <div class="sec-label">Notas</div>
             <textarea id="cNotes" placeholder="Contexto del setup..."></textarea>
           </div>
-          <div style="margin-top:4px;display:flex;flex-direction:column;gap:8px;">
-            <button class="btn" style="width:100%;background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes</button>
-            <button class="btn acc" style="width:100%;" onclick="saveTrade('watchlist')">📋 Agregar al Watchlist</button>
-            <button class="btn" style="width:100%;background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;" onclick="saveTrade('active')">🟢 Abrir Posición directa</button>
-          </div>
         </div>
         <div>
           <div class="alert-box alert-danger" id="calcAlert1"></div>
@@ -266,8 +261,30 @@
           <div class="g4" id="calcMetrics" style="margin-bottom:16px;"></div>
           <div class="card-sm" id="spotNote" style="display:none;margin-bottom:12px;"><div style="font-size:11px;color:var(--blue);font-family:var(--mono);">Spot: sin liquidación.</div></div>
           <div class="card-sm" style="margin-bottom:12px;"><div class="sec-label" style="margin-bottom:8px;">Niveles y PnL</div><div id="calcLevels"></div></div>
-          <div class="card-sm"><div class="sec-label" style="margin-bottom:8px;">Mapa de precios</div><div class="price-bar-wrap" id="calcBar"></div></div>
+          <div class="card-sm" style="margin-bottom:12px;"><div class="sec-label" style="margin-bottom:8px;">Mapa de precios</div><div class="price-bar-wrap" id="calcBar"></div></div>
+          <div class="card-sm calc-chart-card">
+            <div class="calc-chart-head">
+              <div>
+                <div class="sec-label" style="margin-bottom:3px;">Validacion en grafico</div>
+                <div id="calcChartStatus" class="calc-chart-status">Carga ticker y entry para ver la señal.</div>
+              </div>
+              <div class="calc-chart-tools">
+                <div class="tf-switch mini">
+                  <button class="tf-btn active" data-calc-tf="1h" onclick="setCalcChartTimeframe('1h')">1H</button>
+                  <button class="tf-btn" data-calc-tf="4h" onclick="setCalcChartTimeframe('4h')">4H</button>
+                  <button class="tf-btn" data-calc-tf="1d" onclick="setCalcChartTimeframe('1d')">1D</button>
+                </div>
+                <button class="btn sm" onclick="openCalcSetupInCharts()">Abrir en Charts</button>
+              </div>
+            </div>
+            <div id="calcSignalChart" class="calc-signal-chart"></div>
+          </div>
         </div>
+      </div>
+      <div class="calc-actions-final">
+        <button class="btn" style="background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes</button>
+        <button class="btn acc" onclick="saveTrade('watchlist')">📋 Agregar al Watchlist</button>
+        <button class="btn" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;" onclick="saveTrade('active')">🟢 Abrir Posición directa</button>
       </div>
     </div>
 
@@ -1064,6 +1081,6 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260530-1"></script>
+<script src="./app.js?v=20260530-2"></script>
 </body>
 </html>
