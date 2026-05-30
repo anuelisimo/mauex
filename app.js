@@ -522,8 +522,11 @@ async function renderCalcSignalChart() {
     const vol = chart.addHistogramSeries({ priceFormat:{type:'volume'}, priceScaleId:'volume', priceLineVisible:false, lastValueVisible:false });
     vol.setData(candles.map(c => ({ time:c.time, value:c.volume, color:c.close>=c.open?'rgba(0,196,122,.23)':'rgba(240,61,61,.23)' })));
     chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
+    const firstTime = candles[0]?.time;
+    const lastTime = candles[candles.length - 1]?.time;
     calcChartLevelsFromInputs().forEach(lvl => {
       try {
+        addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:2 });
         series.createPriceLine({
           price:lvl.price,
           color:lvl.color,
@@ -2282,6 +2285,16 @@ function getExchangeUrl(exchange, ticker, dir) {
   return null;
 }
 
+function chartsIconButton(id, label='Abrir en Charts') {
+  return `<button title="${label}" aria-label="${label}"
+    style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;"
+    onclick="openTradeInAnalysis('${id}')">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="display:block;">
+      <path d="M3 3v18h18"/><path d="M7 15l3-3 3 2 5-7"/><path d="M18 7h-4"/><path d="M18 7v4"/>
+    </svg>
+  </button>`;
+}
+
 // ── Card minimize/maximize memory ──────────────────────────────────────────
 function getCardState() {
   try { return JSON.parse(localStorage.getItem('mauex_card_state')||'{}'); } catch(e){ return {}; }
@@ -2524,14 +2537,14 @@ function renderWatchlist() {
       ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
       ${invalidationNotesHtml(t)}
 
-      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist" selected>👁 Watchlist</option>
           <option value="pending">⏳ Órdenes</option>
           <option value="active">🟢 Posición</option>
         </select>
-        <button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openTradeInAnalysis('${t.id}')">📊 Analizar</button>
+        ${chartsIconButton(t.id)}
         <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
         <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
       </div>
@@ -3240,7 +3253,7 @@ function renderPositions() {
       ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
       ${invalidationNotesHtml(t)}
 
-      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist">👁 Watchlist</option>
@@ -3251,6 +3264,7 @@ function renderPositions() {
           ? `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openCloseTrade('${t.id}')">Cerrar</button>`
           : `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:11px;cursor:pointer;" onclick="window.toggleZombie('${t.id}',false)">↩ Restaurar</button>`
         }
+        ${chartsIconButton(t.id)}
         <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
         <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
       </div>
@@ -4460,7 +4474,7 @@ window.removeEntryRow = id => {
 let lwCharts = {}; // lightweight chart instances
 
 let aiMarketType = 'spot'; // 'spot' | 'futures'
-let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, chart:null, resize:null };
+let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, smc:false, chart:null, obvChart:null, resize:null, obvResize:null };
 
 window.setMarketType = type => {
   aiMarketType = type;
@@ -4624,9 +4638,13 @@ function mainChartLabel(tf) {
 
 function clearMainChart() {
   if (mainChartState.resize) { try { mainChartState.resize.disconnect(); } catch(e) {} mainChartState.resize = null; }
+  if (mainChartState.obvResize) { try { mainChartState.obvResize.disconnect(); } catch(e) {} mainChartState.obvResize = null; }
   if (mainChartState.chart) { try { mainChartState.chart.remove(); } catch(e) {} mainChartState.chart = null; }
+  if (mainChartState.obvChart) { try { mainChartState.obvChart.remove(); } catch(e) {} mainChartState.obvChart = null; }
   const el = document.getElementById('mainChart');
   if (el) el.innerHTML = '';
+  const obv = document.getElementById('mainObvChart');
+  if (obv) obv.innerHTML = '';
 }
 
 window.showChartsTab = (tab) => {
@@ -4655,6 +4673,13 @@ window.toggleMainChartScale = () => {
   loadMainChart(mainChartState.symbol);
 };
 
+window.toggleMainChartSmc = () => {
+  mainChartState.smc = !mainChartState.smc;
+  const btn = document.getElementById('mainChartSmcBtn');
+  if (btn) btn.textContent = mainChartState.smc ? 'SMC on' : 'SMC off';
+  loadMainChart(mainChartState.symbol);
+};
+
 window.fitMainChart = () => {
   try { mainChartState.chart?.timeScale().fitContent(); } catch(e) {}
 };
@@ -4667,12 +4692,112 @@ window.toggleMainChartFullscreen = () => {
     try {
       const el = document.getElementById('mainChart');
       mainChartState.chart?.applyOptions({ width: el?.clientWidth || 800, height: el?.clientHeight || 500 });
+      const obv = document.getElementById('mainObvChart');
+      mainChartState.obvChart?.applyOptions({ width: obv?.clientWidth || 800, height: obv?.clientHeight || 110 });
     } catch(e) {}
   }, 80);
 };
 
+function addHorizontalLevel(chart, level, from, to, opts={}) {
+  if (!chart || !Number(level) || !from || !to) return null;
+  const s = chart.addLineSeries({
+    color: opts.color || 'rgba(232,237,243,.7)',
+    lineWidth: opts.lineWidth || 1,
+    lineStyle: opts.lineStyle ?? 2,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+  });
+  s.setData([{ time: from, value: level }, { time: to, value: level }]);
+  return s;
+}
+
+function detectSmcEvents(candles, size=12) {
+  const pivots = [];
+  for (let i=size; i<candles.length-size; i++) {
+    const slice = candles.slice(i-size, i+size+1);
+    const maxH = Math.max(...slice.map(c=>c.high));
+    const minL = Math.min(...slice.map(c=>c.low));
+    if (candles[i].high >= maxH) pivots.push({ type:'high', level:candles[i].high, time:candles[i].time, crossed:false });
+    if (candles[i].low <= minL) pivots.push({ type:'low', level:candles[i].low, time:candles[i].time, crossed:false });
+  }
+  const events = [];
+  let lastHigh = null, lastLow = null, trend = 0;
+  for (const c of candles) {
+    pivots.filter(p => p.time < c.time && !p.seen).forEach(p => {
+      p.seen = true;
+      if (p.type === 'high') lastHigh = p;
+      if (p.type === 'low') lastLow = p;
+    });
+    if (lastHigh && !lastHigh.crossed && c.close > lastHigh.level) {
+      const tag = trend < 0 ? 'CHoCH' : 'BOS';
+      events.push({ time:c.time, price:c.high, side:'bull', tag, level:lastHigh.level, pivotTime:lastHigh.time });
+      lastHigh.crossed = true; trend = 1;
+    }
+    if (lastLow && !lastLow.crossed && c.close < lastLow.level) {
+      const tag = trend > 0 ? 'CHoCH' : 'BOS';
+      events.push({ time:c.time, price:c.low, side:'bear', tag, level:lastLow.level, pivotTime:lastLow.time });
+      lastLow.crossed = true; trend = -1;
+    }
+  }
+  return { events, pivots };
+}
+
+function drawSmcOverlay(chart, candleSeries, candles) {
+  if (!chart || !candleSeries || !candles?.length) return;
+  const from = candles[Math.max(0, candles.length - 180)]?.time || candles[0].time;
+  const to = candles[candles.length - 1].time;
+  const { events, pivots } = detectSmcEvents(candles, Math.max(5, mainChartState.tf === '1h' || mainChartState.tf === '15m' ? 8 : 12));
+  const recentEvents = events.slice(-40);
+  candleSeries.setMarkers(recentEvents.map(e => ({
+    time:e.time,
+    position:e.side === 'bull' ? 'belowBar' : 'aboveBar',
+    color:e.side === 'bull' ? '#00c47a' : '#f03d3d',
+    shape:e.side === 'bull' ? 'arrowUp' : 'arrowDown',
+    text:`${e.side === 'bull' ? 'Bull' : 'Bear'} ${e.tag}`,
+  })));
+  recentEvents.slice(-10).forEach(e => {
+    addHorizontalLevel(chart, e.level, e.pivotTime || from, to, {
+      color:e.side === 'bull' ? 'rgba(0,196,122,.55)' : 'rgba(240,61,61,.55)',
+      lineStyle:e.tag === 'CHoCH' ? 1 : 2,
+    });
+  });
+  pivots.slice(-8).forEach(p => addHorizontalLevel(chart, p.level, p.time, to, {
+    color:p.type === 'high' ? 'rgba(240,61,61,.22)' : 'rgba(0,196,122,.22)',
+    lineStyle:3,
+  }));
+}
+
+function drawMainTradeLevels(chart, series, candles, trade) {
+  if (!chart || !series || !candles?.length || !trade?.entry) return;
+  const firstTime = candles[0].time;
+  const lastTime = candles[candles.length - 1].time;
+  const levels = [
+    { price:trade.entry, color:'rgba(232,237,243,.95)', title:'Entry' },
+    ...(trade.sl ? [{ price:trade.sl, color:'rgba(240,61,61,.95)', title:'SL' }] : []),
+    ...(trade.tp1 ? [{ price:trade.tp1, color:'rgba(0,196,122,.75)', title:'TP1' }] : []),
+    ...(trade.tp2 ? [{ price:trade.tp2, color:'rgba(0,196,122,.88)', title:'TP2' }] : []),
+    ...(trade.tp3 ? [{ price:trade.tp3, color:'rgba(0,196,122,1)', title:'TP3' }] : []),
+    ...tradeInvalidations(trade).map((x,i) => ({ price:x.price, color:'rgba(56,189,248,.95)', title:x.label || `Inv ${i+1}` })),
+  ];
+  levels.forEach(lvl => {
+    addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:2 });
+    try {
+      series.createPriceLine({
+        price:lvl.price,
+        color:lvl.color,
+        lineWidth:1,
+        lineStyle:2,
+        axisLabelVisible:true,
+        title:lvl.title,
+      });
+    } catch(e) {}
+  });
+}
+
 async function loadMainChart(symbol = mainChartState.symbol) {
   const el = document.getElementById('mainChart');
+  const obvEl = document.getElementById('mainObvChart');
   if (!el || !symbol) return null;
   mainChartState.symbol = symbol;
   const title = document.getElementById('mainChartSymbol');
@@ -4724,10 +4849,49 @@ async function loadMainChart(symbol = mainChartState.symbol) {
       color:c.close >= c.open ? 'rgba(0,196,122,0.28)' : 'rgba(240,61,61,0.28)',
     })));
     chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
+    if (_analysisTradeData) drawMainTradeLevels(chart, candlesSeries, candles, _analysisTradeData);
+    if (mainChartState.smc) drawSmcOverlay(chart, candlesSeries, candles);
+    else candlesSeries.setMarkers([]);
     chart.timeScale().fitContent();
     el.ondblclick = () => chart.timeScale().fitContent();
     mainChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 520 }));
     mainChartState.resize.observe(el);
+    if (obvEl) {
+      const obvChart = LightweightCharts.createChart(obvEl, {
+        width: obvEl.clientWidth || 900,
+        height: obvEl.clientHeight || 110,
+        layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+        grid:{ vertLines:{color:'rgba(255,255,255,0.025)'}, horzLines:{color:'rgba(255,255,255,0.025)'} },
+        rightPriceScale:{ borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.12,bottom:0.10} },
+        timeScale:{ borderColor:'rgba(255,255,255,0.10)', timeVisible:true, secondsVisible:false },
+        handleScroll:{ mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true },
+        handleScale:{ axisPressedMouseMove:true, mouseWheel:true, pinch:true },
+      });
+      mainChartState.obvChart = obvChart;
+      const obvSeries = obvChart.addLineSeries({
+        color:'rgba(61,156,240,.9)',
+        lineWidth:1.5,
+        priceLineVisible:false,
+        lastValueVisible:false,
+      });
+      obvSeries.setData(calcOBV(candles));
+      obvChart.timeScale().fitContent();
+      let syncingObvRange = false;
+      chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (!range || syncingObvRange) return;
+        syncingObvRange = true;
+        try { obvChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+        syncingObvRange = false;
+      });
+      obvChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (!range || syncingObvRange) return;
+        syncingObvRange = true;
+        try { chart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+        syncingObvRange = false;
+      });
+      mainChartState.obvResize = new ResizeObserver(() => obvChart.applyOptions({ width:obvEl.clientWidth, height:obvEl.clientHeight || 110 }));
+      mainChartState.obvResize.observe(obvEl);
+    }
     return chart;
   } catch(e) {
     el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:12px;">No pude cargar el grafico: ${e.message}</div>`;
@@ -6763,8 +6927,9 @@ window.openTradeInAnalysis = (id) => {
     setMarketType('spot');
   }
 
-    // Navigate to analysis and auto-load charts
+  // Navigate to analysis and auto-load charts
   window.showPage('analysis');
+  if (typeof showChartsTab === 'function') showChartsTab('graficos');
   // Small delay to let the page render first
   setTimeout(() => {
     if(typeof loadCharts === 'function') loadCharts();
@@ -7319,14 +7484,14 @@ function renderOrders() {
       ${invalidationNotesHtml(o)}
 
       ${o._manual ? `
-      <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${o.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist">👁 Watchlist</option>
           <option value="pending" selected>⏳ Órdenes</option>
           <option value="active">🟢 Posición</option>
         </select>
-        <button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openEditTrade('${o.id}')">Editar</button>
+        ${chartsIconButton(o.id)}
         <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${o.id}')">✎</button>
         <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="window.deletePendingOrder('${o.id}')">✕</button>
       </div>` : ''}
