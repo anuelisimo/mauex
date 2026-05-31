@@ -465,7 +465,7 @@ function signalNumbersFromText(text) {
     .replace(/\bsignal\s*id\s*[:#]?\s*\d+\b/ig,' ')
     .replace(/#\d+\b/g,' ')
     .replace(/\d+(?:[.,]\d+)?\s*%/g,' ');
-  return (clean.match(/\$?\d+(?:[.,]\d+)?\s*[kK]?/g) || [])
+  return (clean.match(/\$?(?:\d+(?:[.,]\d+)?|[.,]\d+)\s*[kK]?/g) || [])
     .map(signalParseNumber)
     .filter(n => Number.isFinite(n) && n > 0);
 }
@@ -568,6 +568,17 @@ function signalWeightedRR(parsed={}) {
   return targets.reduce((s, tp, i) => s + Math.abs(tp - entry) / risk * (Number(pcts[i]) || 0), 0) / weight;
 }
 
+function signalTargetLooksValid(n, parsed={}) {
+  const target = Number(n || 0);
+  const entry = Number(parsed.entry || 0);
+  if (!target || !entry) return target > 0;
+  const ratio = target / entry;
+  if (ratio <= 0.01 || ratio >= 100) return false;
+  if (parsed.dir === 'long' && target <= entry) return false;
+  if (parsed.dir === 'short' && target >= entry) return false;
+  return true;
+}
+
 async function signalFetchCurrentPrice(ticker, exchange='BINANCE', dir='long') {
   const sym = String(ticker || '').replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
   if (!sym) return 0;
@@ -642,7 +653,8 @@ function signalApplyMarketState(sig, price=0) {
   sig.market = signalMarketState(p, current);
   sig.rrFirst = p.sl && p.entry && p.tp1 ? Math.abs((p.tp1 - p.entry) / (p.sl - p.entry)) : null;
   sig.rr = signalWeightedRR(p);
-  sig.warnings = (sig.warnings || []).filter(x => !String(x).startsWith('Precio: '));
+  sig.warnings = (sig.warnings || []).filter(x => !String(x).startsWith('Precio: ') && x !== 'Sin precio live');
+  if (!current) sig.warnings.push('Sin precio live');
   if (sig.market) {
     if (sig.market.code === 'invalidated') {
       sig.status = 'review';
@@ -713,6 +725,7 @@ function parseSignalMessage(raw, opts={}) {
   }
   const cleanTargets = [...new Set(targetNums)]
     .filter(n => !parsed.entry || Math.abs(n - parsed.entry) / Math.max(1, parsed.entry) > 0.001)
+    .filter(n => signalTargetLooksValid(n, parsed))
     .slice(0, 12);
   parsed.targets = cleanTargets;
   const pct = cleanTargets.length ? Math.round((100 / cleanTargets.length) * 100) / 100 : 0;
