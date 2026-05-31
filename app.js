@@ -697,6 +697,7 @@ function signalCardHtml(sig) {
   const statusText = sig.status === 'ready' ? 'Lectura confiable' : sig.status === 'converted' ? 'Ya convertida' : sig.status === 'discarded' ? 'Descartada' : 'Revisar lectura';
   const targetsLabel = p.targets?.length ? p.targets.map((x,i)=>`TP${i+1} $${fmtPx(x)}`).join(' · ') : '';
   const entryRangeLabel = p.entryRange?.length > 1 ? p.entryRange.map(fmtPx).join(' - ') : '';
+  const confidenceTip = 'Confianza mide que tan fiable es la lectura automatica del mensaje: datos completos, coherencia entre entry, SL y TPs, estado del precio actual y si parece una senal nueva o una actualizacion. No mide probabilidad de ganar.';
   return `
     <div class="signal-card ${stateCls}">
       <div class="signal-head">
@@ -709,7 +710,10 @@ function signalCardHtml(sig) {
           </div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:5px;">${statusText} · ${fmtD(sig.createdAt)}</div>
         </div>
-        <div style="text-align:right;"><div class="signal-confidence" style="color:${confColor};">${sig.confidence}</div><div style="font-family:var(--mono);font-size:9px;color:var(--t3);">confianza</div></div>
+        <div style="text-align:right;">
+          <div class="signal-confidence" style="color:${confColor};">${sig.confidence}</div>
+          <div class="signal-confidence-label">confianza <span class="info-dot" data-tip="${signalEsc(confidenceTip)}" title="${signalEsc(confidenceTip)}">i</span></div>
+        </div>
       </div>
       <div class="signal-body">
         <div class="signal-grid">
@@ -721,15 +725,21 @@ function signalCardHtml(sig) {
           ${signalFieldHtml('R:R', sig.rr ? sig.rr.toFixed(2)+':1' : '—', rrColor, sig.rrFirst ? `TP1 ${sig.rrFirst.toFixed(2)}:1` : '')}
         </div>
         ${targetsLabel ? `<div style="font-family:var(--mono);font-size:10px;color:var(--accent);line-height:1.6;margin:-2px 0 10px;">${signalEsc(targetsLabel)}</div>` : ''}
-        <div class="signal-raw">${signalEsc(sig.raw)}</div>
         ${chips ? `<div class="signal-warnings">${chips}</div>` : ''}
+        <button class="signal-toggle" type="button" onclick="toggleSignalRaw('${sig.id}')">
+          <span>Texto de la se&ntilde;al</span>
+          <span id="signalRawArrow-${sig.id}">▼</span>
+        </button>
+        <div id="signalRawPanel-${sig.id}" class="signal-raw-panel" style="display:none;">
+          <div class="signal-raw">${signalEsc(sig.raw)}</div>
+        </div>
         <div id="signalChartPanel-${sig.id}" class="signal-chart-panel" style="display:none;">
           <div id="signalChart-${sig.id}" class="signal-chart"></div>
         </div>
       </div>
       <div class="signal-actions">
         <button class="btn sm" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
-        <button class="btn sm" onclick="toggleSignalChart('${sig.id}')">Gráfico</button>
+        <button class="btn sm signal-chart-btn" title="Abrir gr&aacute;fico" onclick="toggleSignalChart('${sig.id}')">📈</button>
         <button class="btn sm" onclick="signalConvert('${sig.id}','watchlist')">Watch</button>
         <button class="btn sm" style="background:var(--amber);color:#000;border-color:var(--amber);" onclick="signalConvert('${sig.id}','pending')">Orden</button>
         <button class="btn sm acc" onclick="signalConvert('${sig.id}','active')">Posición</button>
@@ -737,6 +747,15 @@ function signalCardHtml(sig) {
       </div>
     </div>`;
 }
+
+window.toggleSignalRaw = id => {
+  const panel = document.getElementById(`signalRawPanel-${id}`);
+  const arrow = document.getElementById(`signalRawArrow-${id}`);
+  if (!panel) return;
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  if (arrow) arrow.textContent = opening ? '▲' : '▼';
+};
 
 function renderSignals() {
   fillSignalTraderSelect();
