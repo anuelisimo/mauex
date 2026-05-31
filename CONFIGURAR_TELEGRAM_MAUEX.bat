@@ -13,8 +13,10 @@ echo      TELEGRAM_BOT_TOKEN
 echo      TELEGRAM_WEBHOOK_SECRET
 echo      TELEGRAM_INBOX_SECRET
 echo      Pueden tener el mismo valor.
-echo      OPENAI_API_KEY  ^(opcional, para interpretar texto + imagen con AI^)
-echo      OPENAI_SIGNAL_MODEL  ^(opcional: gpt-5-mini^)
+echo      GEMINI_API_KEY  ^(recomendado, para interpretar texto + imagen con AI gratis^)
+echo      AI_SIGNAL_PROVIDER=gemini
+echo      GEMINI_SIGNAL_MODEL  ^(opcional: gemini-2.5-flash^)
+echo      OPENAI_API_KEY  ^(opcional, respaldo si algun dia queres usar OpenAI^)
 echo   3. Pega y despliega el worker.js actualizado.
 echo.
 
@@ -52,7 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$token='%BOT_TOKEN%'; In
 
 echo.
 echo Listo.
-echo Si queres que MAUex interprete imagenes con AI, revisa que en Cloudflare tambien este OPENAI_API_KEY.
+echo Si queres que MAUex interprete imagenes con AI, revisa que en Cloudflare tambien este GEMINI_API_KEY.
 echo Ahora reenviate una senal de Bitcoin Bullets o Binance Killers al bot.
 echo Luego entra a MAUex ^> Signals ^> Sincronizar Telegram.
 echo.

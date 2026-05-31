@@ -981,10 +981,30 @@ async function fetchTelegramSignals(secret='') {
 
 function signalNeedsAi(sig={}) {
   const p = sig.parsed || {};
+  const source = signalNormText(`${sig.sourceName || ''} ${sig.traderName || ''} ${sig.raw || ''}`);
+  const isStandardProvider = /binance\s*killers|bitcoin\s*bullets/.test(source);
+  if (isStandardProvider) return false;
+  if (p.type && p.type !== 'new_signal') return false;
   const missing = (sig.missing || []).filter(x => !(x === 'entry' && p.entryIsCurrentMarket));
   const criticalMissing = missing.some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
   const structuralWarning = (sig.warnings || []).some(x => /raro|update|Sin precio live/i.test(x));
+  if (!criticalMissing && !structuralWarning && Number(sig.confidence || 0) >= 72) return false;
   return criticalMissing || (sig.hasImage && (criticalMissing || structuralWarning || Number(sig.confidence || 0) < 86));
+}
+
+function signalLooksActionableMessage(raw='', hasImage=false) {
+  const text = String(raw || '').trim();
+  if (!text) return false;
+  const upper = text.toUpperCase();
+  const hasTicker = /(?:COIN|PAIR|SYMBOL)\s*[:=]?\s*[$#]?[A-Z0-9]{2,15}/i.test(text) || /[$#][A-Z0-9]{2,15}(?:\/?(?:USDT|USDC|USD|PERP))?\b/i.test(text);
+  const hasSetupWord = /\b(LONG|SHORT|BUYING\s+SETUP|SELLING\s+SETUP|LIMIT\s+LONG|LIMIT\s+SHORT)\b/i.test(text);
+  const hasLevels = /\b(ENTRY|ENTRADA|CMP|TARGETS?|TAKE\s*PROFIT|TP\d*|STOP\s*LOSS|SL)\b/i.test(text);
+  const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|✅))\b/i.test(text);
+  const looksLikeAdOnly = /\b(SUBSCRIBE|PROMO|DISCOUNT|JOIN\s+VIP|SALE|RESULTS?|PROFIT\s+TODAY)\b/i.test(text) && !hasLevels;
+  const looksLikeMacroOnly = /\b(MACRO|MARKET\s+UPDATE|NEWS|CPI|FOMC|FED|INFLATION|DXY|YIELDS?)\b/i.test(text) && !hasLevels;
+  if (looksLikeAdOnly || looksLikeMacroOnly) return false;
+  if (hasTicker && (hasSetupWord || hasLevels || hasManagement)) return true;
+  return !!(hasImage && hasTicker && hasLevels);
 }
 
 async function fetchSignalAi(sig={}, secret='') {
@@ -1103,7 +1123,13 @@ window.syncTelegramSignals = async (silent=false) => {
     if (!fresh.length) { if (!silent) toast('Telegram ya está al día.'); return; }
     let imported = 0;
     let merged = 0;
+    let ignored = 0;
     for (const msg of fresh.reverse()) {
+      if (!signalLooksActionableMessage(msg.raw || '', !!msg.hasImage)) {
+        if (msg.telegramId || msg.id) seen.add(msg.telegramId || msg.id);
+        ignored++;
+        continue;
+      }
       const sourceName = msg.sourceName || 'Telegram';
       const traderId = signalTraderIdFromSource(sourceName);
       const sig = parseSignalMessage(msg.raw, {
@@ -1137,6 +1163,7 @@ window.syncTelegramSignals = async (silent=false) => {
     const parts = [];
     if (imported) parts.push(`${imported} nueva${imported === 1 ? '' : 's'}`);
     if (merged) parts.push(`${merged} update${merged === 1 ? '' : 's'} unido${merged === 1 ? '' : 's'}`);
+    if (ignored && !silent) parts.push(`${ignored} ignorada${ignored === 1 ? '' : 's'}`);
     if (!silent || imported || merged) toast(`Telegram: ${parts.join(' + ') || 'sin cambios'}.`, 'success');
   } catch(e) {
     if (!silent) toast('Telegram: ' + e.message, 'error');
