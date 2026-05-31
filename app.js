@@ -733,13 +733,20 @@ function signalCardHtml(sig) {
         <div id="signalRawPanel-${sig.id}" class="signal-raw-panel" style="display:none;">
           <div class="signal-raw">${signalEsc(sig.raw)}</div>
         </div>
+        <button class="signal-toggle" type="button" onclick="toggleSignalChart('${sig.id}')">
+          <span>Gr&aacute;fico</span>
+          <span id="signalChartArrow-${sig.id}">▼</span>
+        </button>
         <div id="signalChartPanel-${sig.id}" class="signal-chart-panel" style="display:none;">
+          <div class="signal-chart-tools">
+            ${['30m','1h','4h','1d','1w','1M'].map(tf => `<button class="signal-tf-btn ${tf === '1h' ? 'active' : ''}" data-sig-chart="${sig.id}" data-sig-tf="${tf}" onclick="event.stopPropagation();setSignalChartTimeframe('${sig.id}','${tf}')">${mainChartLabel(tf)}</button>`).join('')}
+          </div>
           <div id="signalChart-${sig.id}" class="signal-chart"></div>
         </div>
       </div>
       <div class="signal-actions">
         <button class="btn sm" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
-        <button class="btn sm signal-chart-btn" title="Abrir gr&aacute;fico" onclick="toggleSignalChart('${sig.id}')">📈</button>
+        <button class="btn sm signal-chart-btn" title="Abrir en Charts" onclick="signalOpenChart('${sig.id}')">📈</button>
         <button class="btn sm" onclick="signalConvert('${sig.id}','watchlist')">Watch</button>
         <button class="btn sm" style="background:var(--amber);color:#000;border-color:var(--amber);" onclick="signalConvert('${sig.id}','pending')">Orden</button>
         <button class="btn sm acc" onclick="signalConvert('${sig.id}','active')">Posición</button>
@@ -835,6 +842,7 @@ window.signalToCalculator = async id => {
 };
 
 const signalChartState = {};
+const signalChartTfState = {};
 
 function signalChartInfo(sig) {
   const p = sig?.parsed || {};
@@ -874,13 +882,15 @@ async function renderSignalInlineChart(sig) {
   destroySignalChart(id);
   const info = signalChartInfo(sig);
   if (!info) return;
-  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando gráfico...</div>`;
+  const tf = signalChartTfState[id] || '1h';
+  document.querySelectorAll(`[data-sig-chart="${id}"]`).forEach(b => b.classList.toggle('active', b.dataset.sigTf === tf));
+  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando gráfico ${mainChartLabel(tf)}...</div>`;
   const prevSource = window._aiSource;
   const prevType = window._aiType;
   try {
     window._aiSource = info.source;
     window._aiType = info.type;
-    const candles = await fetchOHLCV(info.symbol, '1h', mainChartLimit('1h'));
+    const candles = await fetchOHLCV(info.symbol, tf, mainChartLimit(tf));
     if (!candles.length) throw new Error('Sin datos');
     el.innerHTML = '';
     const chart = LightweightCharts.createChart(el, {
@@ -922,9 +932,11 @@ async function renderSignalInlineChart(sig) {
 
 window.toggleSignalChart = async id => {
   const panel = document.getElementById(`signalChartPanel-${id}`);
+  const arrow = document.getElementById(`signalChartArrow-${id}`);
   if (!panel) return;
   const opening = panel.style.display === 'none';
   panel.style.display = opening ? 'block' : 'none';
+  if (arrow) arrow.textContent = opening ? '▲' : '▼';
   if (!opening) { destroySignalChart(id); return; }
   const items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
@@ -933,17 +945,44 @@ window.toggleSignalChart = async id => {
   await renderSignalInlineChart(sig);
 };
 
+window.setSignalChartTimeframe = async (id, tf) => {
+  signalChartTfState[id] = tf;
+  const panel = document.getElementById(`signalChartPanel-${id}`);
+  document.querySelectorAll(`[data-sig-chart="${id}"]`).forEach(b => b.classList.toggle('active', b.dataset.sigTf === tf));
+  if (!panel || panel.style.display === 'none') return;
+  const items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  await renderSignalInlineChart(sig);
+};
+
 window.signalOpenChart = async id => {
   const items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
   await signalHydrateMarket(sig);
   saveSignalInbox(items);
-  if (applySignalToCalculator(sig)) {
-    setTimeout(() => {
-      renderCalcSignalChart?.();
-      document.getElementById('calcSignalChart')?.scrollIntoView({ behavior:'smooth', block:'center' });
-    }, 150);
-  }
+  const p = sig?.parsed || {};
+  const info = signalChartInfo(sig);
+  if (!info) { toast('La señal necesita ticker para abrir Charts.', 'error'); return; }
+  const aiSym = document.getElementById('aiSymbol');
+  if (aiSym) aiSym.value = info.symbol;
+  window._aiSource = info.source;
+  window._aiType = info.type;
+  if (typeof setMarketType === 'function') setMarketType(p.dir === 'spot' ? 'spot' : 'futures');
+  _analysisTradeData = {
+    ticker: info.raw,
+    dir: p.dir || 'long',
+    exchange: p.exchange || 'BINANCE',
+    leverage: p.leverage || 1,
+    entry: p.entry || 0,
+    sl: p.sl || 0,
+    tp1: p.targets?.[0] || p.tp1 || 0,
+    tp2: p.targets?.[1] || p.tp2 || 0,
+    tp3: p.targets?.[2] || p.tp3 || 0,
+    notes: sig.raw || '',
+  };
+  window.showPage('analysis');
+  showChartsTab('graficos');
+  setTimeout(() => loadCharts(), 120);
 };
 
 window.signalConvert = async (id, status) => {
@@ -5135,7 +5174,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
   if(window._aiSource === 'mexc') {
     // symbol is already in MEXC format (e.g. GOLD_USDT) set by selectTicker
     const mexcSym = symbol;
-    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Min60','15m':'Min15'};
+    const ivMap = {'1M':'Month1','1w':'Week1','1d':'Day1','4h':'Hour4','1h':'Min60','30m':'Min30','15m':'Min15'};
     const mexcIv = ivMap[interval] || 'Day1';
     try {
       const url = `https://contract.mexc.com/api/v1/contract/kline/${mexcSym}?interval=${mexcIv}&limit=${limit}`;
@@ -5167,8 +5206,8 @@ async function fetchOHLCV(symbol, interval, limit=300) {
 
   if(isStock) {
     // Yahoo Finance via proxy (avoids CORS)
-    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','15m':'15m'};
-    const rangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo','15m':'5d'};
+    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','30m':'30m','15m':'15m'};
+    const rangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo','30m':'1mo','15m':'5d'};
     const yhIv = ivMap[interval]||'1d';
     const range = rangeMap[interval]||'1y';
     const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
@@ -5309,11 +5348,11 @@ function makeChart(el, height) {
 }
 
 function mainChartLimit(tf) {
-  return tf === '15m' ? 500 : tf === '1h' ? 600 : tf === '4h' ? 500 : tf === '1d' ? 700 : tf === '1w' ? 400 : 180;
+  return tf === '15m' ? 500 : tf === '30m' ? 600 : tf === '1h' ? 600 : tf === '4h' ? 500 : tf === '1d' ? 700 : tf === '1w' ? 400 : 180;
 }
 
 function mainChartLabel(tf) {
-  return ({'15m':'15m','1h':'1H','4h':'4H','1d':'1D','1w':'1W','1M':'1M'})[tf] || tf;
+  return ({'15m':'15m','30m':'30M','1h':'1H','4h':'4H','1d':'1D','1w':'1W','1M':'1M'})[tf] || tf;
 }
 
 function clearMainChart() {
@@ -5648,7 +5687,7 @@ function drawSmcOverlay(chart, candleSeries, candles) {
   if (!chart || !candleSeries || !candles?.length) return;
   const from = candles[Math.max(0, candles.length - 180)]?.time || candles[0].time;
   const to = candles[candles.length - 1].time;
-  const smcData = detectSmcEvents(candles, Math.max(5, mainChartState.tf === '1h' || mainChartState.tf === '15m' ? 8 : 12));
+  const smcData = detectSmcEvents(candles, Math.max(5, mainChartState.tf === '1h' || mainChartState.tf === '30m' || mainChartState.tf === '15m' ? 8 : 12));
   const { events, pivots, orderBlocks, fairValueGaps, equalLevels } = smcData;
   const recentEvents = events.slice(-40);
   const markers = recentEvents.map(e => ({
@@ -7186,9 +7225,9 @@ const _origFetchOHLCV = fetchOHLCV;
 window.fetchOHLCV = async (symbol, interval, limit=300) => {
   if(window._aiSource==='yahoo') {
     // Map LW intervals to Yahoo intervals
-    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','15m':'15m'};
+    const ivMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','30m':'30m','15m':'15m'};
     const yhIv  = ivMap[interval]||'1d';
-    const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':interval==='15m'?'5d':'1mo';
+    const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':interval==='30m'?'1mo':interval==='15m'?'5d':'1mo';
     try {
       const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
       const r = await (window.proxyFetch ? window.proxyFetch(yhUrl) : fetch(yhUrl));

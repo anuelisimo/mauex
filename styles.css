@@ -375,6 +375,10 @@ textarea{resize:vertical;min-height:70px;}
 .signal-raw-panel{margin-top:8px;}
 .signal-raw{font-family:var(--mono);font-size:10px;color:var(--t3);line-height:1.55;background:rgba(0,0,0,.18);border-radius:8px;padding:9px;white-space:pre-wrap;max-height:110px;overflow:auto;}
 .signal-chart-panel{margin-top:10px;border:0.5px solid var(--border);border-radius:10px;background:rgba(0,0,0,.14);padding:8px;}
+.signal-chart-tools{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:8px;}
+.signal-tf-btn{border:0.5px solid var(--border2);background:rgba(255,255,255,.025);color:var(--t3);border-radius:6px;padding:6px 4px;font-family:var(--mono);font-size:9px;font-weight:700;cursor:pointer;}
+.signal-tf-btn:hover{color:var(--t1);border-color:rgba(255,255,255,.18);}
+.signal-tf-btn.active{background:var(--accent);border-color:var(--accent);color:#020806;}
 .signal-chart{height:300px;min-height:240px;}
 .signal-chart-btn{font-size:14px;line-height:1;}
 .signal-actions{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:10px 16px;background:rgba(0,0,0,.16);}
