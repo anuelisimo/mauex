@@ -523,12 +523,12 @@ function signalMarketState(parsed={}, price=0) {
   const inZone = current >= low && current <= high;
   let state = { price: current, code: 'unknown', label: 'Precio leído', tone: 'blue', detail: '' };
   if (dir === 'short') {
-    if (sl && current >= sl) state = { price: current, code:'invalidated', label:'Invalidada por SL', tone:'red', detail:'El precio actual ya está arriba del SL del short.' };
+    if (sl && current >= sl) state = { price: current, code:'invalidated', label:'SL tocado', tone:'red', detail:'El precio actual ya está arriba del SL del short.' };
     else if (current > high) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasó la entrada y está yendo contra el short.' };
     else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual está dentro del rango de entrada.' };
     else if (current < low) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se movió a favor del short desde la zona de entrada.' };
   } else {
-    if (sl && current <= sl) state = { price: current, code:'invalidated', label:'Invalidada por SL', tone:'red', detail:'El precio actual ya está debajo del SL del long.' };
+    if (sl && current <= sl) state = { price: current, code:'invalidated', label:'SL tocado', tone:'red', detail:'El precio actual ya está debajo del SL del long.' };
     else if (current < low) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasó la entrada y está yendo contra el long.' };
     else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual está dentro del rango de entrada.' };
     else if (current > high) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se movió a favor del long desde la zona de entrada.' };
