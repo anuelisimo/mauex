@@ -30,9 +30,14 @@ if exist PROBAR_IBKR_MAUEX.ps1 git add PROBAR_IBKR_MAUEX.ps1
 if exist PROBAR_CONEXIONES_DASH_MAUEX.bat git add PROBAR_CONEXIONES_DASH_MAUEX.bat
 if exist PROBAR_CONEXIONES_DASH_MAUEX.ps1 git add PROBAR_CONEXIONES_DASH_MAUEX.ps1
 if exist CONFIGURAR_TELEGRAM_MAUEX.bat git add CONFIGURAR_TELEGRAM_MAUEX.bat
+if exist INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.bat git add INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.bat
+if exist INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.ps1
+if exist PROBAR_TELEGRAM_READER_ORACLE_MAUEX.bat git add PROBAR_TELEGRAM_READER_ORACLE_MAUEX.bat
+if exist PROBAR_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add PROBAR_TELEGRAM_READER_ORACLE_MAUEX.ps1
+if exist telegram-reader git add telegram-reader
 
 echo Guardando cambios locales...
-git commit -m "Add IBKR dashboard support and spot card cleanup"
+git commit -m "Improve signal desk Telegram automation"
 if %ERRORLEVEL% NEQ 0 (
   echo.
   echo Puede que no haya cambios nuevos para guardar. Sigo igual.

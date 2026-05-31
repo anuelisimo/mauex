@@ -518,7 +518,7 @@ function signalLineHas(line, words) {
 function signalLineIsEntry(line) {
   const raw = String(line || '').trim();
   return /^(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\b/i.test(raw)
-    || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=\.]/i.test(raw);
+    || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=]/i.test(raw);
 }
 
 function signalLineIsCmpEntry(line) {
@@ -760,7 +760,7 @@ function parseSignalMessage(raw, opts={}) {
     }
   });
   if (!parsed.entry) {
-    const entryMatch = upper.match(/(?:ENTRY|ENTRADA|ENTRIES|ZONE|ZONA)\s*[:=\.]?\s*([^\n]+)/i);
+    const entryMatch = lines.map(line => String(line || '').match(/^(?:ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=\.]?\s*([^\n]+)/i)).find(Boolean);
     if (entryMatch && /\b(CMP|CURRENT\s*MARKET|MARKET\s*PRICE|MARKET|NOW|AHORA)\b/i.test(entryMatch[1] || '')) {
       parsed.entryIsCurrentMarket = true;
     }
