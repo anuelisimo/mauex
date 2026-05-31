@@ -6,7 +6,7 @@
 <title>MAUex - Trading Journal</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 90'><rect width='90' height='90' rx='18' fill='%230a0c0f'/><polyline points='10,78 27,52 45,26' fill='none' stroke='%23f03d3d' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><polyline points='45,26 63,52 80,78' fill='none' stroke='%2300c47a' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/><circle cx='45' cy='26' r='4' fill='%23e8edf3'/></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./styles.css?v=20260531-11">
+<link rel="stylesheet" href="./styles.css?v=20260531-12">
 </head>
 <body>
 
@@ -187,38 +187,14 @@
       <div class="fxb" style="margin-bottom:20px;gap:12px;align-items:flex-start;">
         <div>
           <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Signal Desk</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:4px;">Peg&aacute; se&ntilde;ales de Telegram. MAUex las limpia y las deja listas para evaluar.</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:4px;">MAUex lee Telegram autom&aacute;ticamente y deja las se&ntilde;ales listas para evaluar.</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
           <button class="btn sm" onclick="syncTelegramSignals()">Sincronizar Telegram</button>
           <button class="btn sm" onclick="clearSignalInbox()">Limpiar descartadas</button>
         </div>
       </div>
-      <div class="signal-layout">
-        <div class="card signal-input-card">
-          <div class="sec-label">Nueva se&ntilde;al</div>
-          <textarea id="signalRawInput" class="signal-raw-input" placeholder="Peg&aacute; ac&aacute; el mensaje del trader..."></textarea>
-          <div class="g2" style="gap:8px;margin-top:10px;">
-            <div>
-              <label class="lbl">Trader / canal</label>
-              <select id="signalTraderSelect"><option value="">Sin trader</option></select>
-            </div>
-            <div>
-              <label class="lbl">Exchange sugerido</label>
-              <select id="signalExchangeSelect">
-                <option value="BINANCE">BINANCE</option>
-                <option value="BYBIT">BYBIT</option>
-                <option value="OKX">OKX</option>
-                <option value="MEXC">MEXC</option>
-                <option value="KUCOIN">KUCOIN</option>
-                <option value="IBKR">IBKR</option>
-                <option value="MANUAL">MANUAL</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn acc" style="width:100%;margin-top:12px;" onclick="parseSignalInboxInput()">Interpretar se&ntilde;al</button>
-          <div class="signal-help">Primera versi&oacute;n: lectura local por reglas inteligentes. El siguiente paso puede ser conectarla a AI/Telegram para lectura autom&aacute;tica.</div>
-        </div>
+      <div class="signal-layout signal-layout-full">
         <div>
           <div id="signalInboxStats" class="signal-stats"></div>
           <div id="signalInbox"></div>
@@ -1131,6 +1107,6 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260531-11"></script>
+<script src="./app.js?v=20260531-12"></script>
 </body>
 </html>

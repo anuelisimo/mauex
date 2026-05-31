@@ -349,6 +349,7 @@ textarea{resize:vertical;min-height:70px;}
 .calc-actions-final{margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .calc-actions-final .btn{width:100%;}
 .signal-layout{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start;}
+.signal-layout-full{grid-template-columns:1fr;}
 .signal-input-card{position:sticky;top:86px;}
 .signal-raw-input{min-height:210px;font-family:var(--mono);font-size:12px;line-height:1.55;resize:vertical;}
 .signal-help{font-family:var(--mono);font-size:10px;color:var(--t3);line-height:1.6;margin-top:10px;}

@@ -34,7 +34,7 @@ const fmtQty = n => {
 const APP_CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
   'TRX','IOTA','RSR','KAVA','OMG','WAXP','BLOK','VLX','AKRO','AAVE','ONDO','XMR','ANKR',
-  'HYPE','CAKE','LINEA','XVG','POL','TAO'];
+  'HYPE','CAKE','LINEA','XVG','POL','TAO','VIRTUAL','ASTER','JUP','SUI','IDOL','PTB','WLD'];
 const APP_CRYPTO_EXCHANGES = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','GATE','KRAKEN','COINBASE','HUOBI'];
 function appIsCryptoTicker(ticker, exchange) {
   if (window.isCryptoTicker) return window.isCryptoTicker(ticker, exchange);
@@ -349,6 +349,7 @@ window.showPage = page => {
 const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
 const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
 let _signalTelegramSyncing = false;
+let _signalTelegramAutoTimer = null;
 const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING']);
 
 function signalEsc(v) {
@@ -502,8 +503,8 @@ function signalDetectExchange(raw, fallback='BINANCE') {
 function signalDetectDirection(raw) {
   const upper = String(raw || '').toUpperCase();
   if (/\bSPOT\b/.test(upper)) return 'spot';
-  if (/\b(SHORT|SELL|VENTA|BAJISTA)\b/.test(upper)) return 'short';
-  if (/\b(LONG|BUY|COMPRA|ALCISTA)\b/.test(upper)) return 'long';
+  if (/\b(SHORT|SELL|VENTA|BAJISTA|SELLING\s+SETUP|SELL\s+SETUP|SHORTING\s+SETUP)\b/.test(upper)) return 'short';
+  if (/\b(LONG|BUY|COMPRA|ALCISTA|BUYING\s+SETUP|BUY\s+SETUP)\b/.test(upper)) return 'long';
   if (/\b(BULLISH|BOTTOMED|ACCUMULATION|BREAKOUT|SUPPORT|UPTREND|BOUNCE)\b/.test(upper)) return 'long';
   if (/\b(BEARISH|BREAKDOWN|DOWNTREND|RESISTANCE|REJECTION)\b/.test(upper)) return 'short';
   return '';
@@ -517,7 +518,12 @@ function signalLineHas(line, words) {
 function signalLineIsEntry(line) {
   const raw = String(line || '').trim();
   return /^(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\b/i.test(raw)
-    || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=]/i.test(raw);
+    || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=\.]/i.test(raw);
+}
+
+function signalLineIsCmpEntry(line) {
+  return signalLineIsEntry(line)
+    && /\b(CMP|CURRENT\s*MARKET|MARKET\s*PRICE|MARKET|NOW|AHORA)\b/i.test(String(line || ''));
 }
 
 function signalLineIsStop(line) {
@@ -534,8 +540,15 @@ function signalLineIsTarget(line) {
 
 function signalCurrentPriceFor(ticker, dir='long') {
   const sym = String(ticker || '').replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
-  const p = window.G?.getPrice?.(sym, dir);
-  return Number(p || window.G?.prices?.[sym]?.spot || window.G?.prices?.[sym]?.futures || 0) || 0;
+  const candidates = [sym, `${sym}USDT`, `${sym}USD`, `${sym}PERP`, String(ticker || '').toUpperCase()].filter(Boolean);
+  for (const c of candidates) {
+    const p = window.G?.getPrice?.(c, dir) || window.G?.getPrice?.(c, 'futures') || window.G?.getPrice?.(c, 'spot');
+    if (Number(p) > 0) return Number(p);
+    const row = window.G?.prices?.[c];
+    const saved = Number(row?.spot || row?.futures || row?.price || 0);
+    if (saved > 0) return saved;
+  }
+  return 0;
 }
 
 function signalChooseEntry(entryRange, ticker, dir, livePrice=0) {
@@ -588,21 +601,39 @@ async function signalFetchCurrentPrice(ticker, exchange='BINANCE', dir='long') {
   try {
     let px = 0;
     if (isCrypto) {
-      const urls = String(exchange || '').toUpperCase() === 'KUCOIN'
-        ? [
-            `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`,
-            `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`,
-          ]
-        : [
-            `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`,
-            `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`,
-          ];
+      const urls = [
+        `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`,
+        `https://fapi.binance.com/fapi/v1/ticker/price?symbol=${sym}USDT`,
+        `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`,
+        `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${sym}USDT`,
+      ];
+      if (String(exchange || '').toUpperCase() === 'KUCOIN') {
+        urls.unshift(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`);
+      }
       for (const url of urls) {
         try {
-          const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+          const useProxy = url.includes('api.kucoin.com') && window.proxyFetch;
+          let r = await (useProxy ? window.proxyFetch(url) : fetch(url));
+          if (!r.ok && window.proxyFetch && !useProxy) {
+            r = await window.proxyFetch(url).catch(() => r);
+          }
           const d = await r.json();
-          px = Number(d?.price || d?.data?.price || 0);
+          px = Number(d?.price || d?.data?.price || d?.result?.list?.[0]?.lastPrice || 0);
           if (px) break;
+        } catch(e) {}
+      }
+      if (!px && sym === 'XMR') {
+        try {
+          const cg = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
+          const cd = await cg.json();
+          px = Number(cd?.monero?.usd || 0);
+        } catch(e) {}
+      }
+      if (!px && sym === 'XMR') {
+        try {
+          const kr = await fetch('https://api.kraken.com/0/public/Ticker?pair=XMRUSD');
+          const kd = await kr.json();
+          px = Number(kd?.result?.XXMRZUSD?.c?.[0] || kd?.result?.XMRUSD?.c?.[0] || 0);
         } catch(e) {}
       }
     } else {
@@ -649,10 +680,20 @@ function signalMarketState(parsed={}, price=0) {
 function signalApplyMarketState(sig, price=0) {
   const p = sig?.parsed || {};
   const current = Number(price || 0);
+  if (current && p.entryIsCurrentMarket && !p.entry) {
+    p.entry = Math.round(current * 100000000) / 100000000;
+    p.entryRange = [p.entry];
+  }
   if (current && p.entryRange?.length > 1) p.entry = signalChooseEntry(p.entryRange, p.ticker, p.dir, current);
   sig.market = signalMarketState(p, current);
   sig.rrFirst = p.sl && p.entry && p.tp1 ? Math.abs((p.tp1 - p.entry) / (p.sl - p.entry)) : null;
   sig.rr = signalWeightedRR(p);
+  if (p.entry && Array.isArray(sig.missing)) sig.missing = sig.missing.filter(x => x !== 'entry');
+  if (p.dir && Array.isArray(sig.missing)) sig.missing = sig.missing.filter(x => x !== 'direccion');
+  if (p.ticker && Array.isArray(sig.missing)) sig.missing = sig.missing.filter(x => x !== 'ticker');
+  if (p.sl && Array.isArray(sig.missing)) sig.missing = sig.missing.filter(x => x !== 'SL');
+  if (p.tp1 && Array.isArray(sig.missing)) sig.missing = sig.missing.filter(x => x !== 'TP');
+  sig.status = sig.missing?.length ? 'review' : (sig.status === 'converted' ? 'converted' : 'ready');
   sig.warnings = (sig.warnings || []).filter(x => !String(x).startsWith('Precio: ') && x !== 'Sin precio live');
   if (!current) sig.warnings.push('Sin precio live');
   if (sig.market) {
@@ -688,6 +729,7 @@ function parseSignalMessage(raw, opts={}) {
     leverage: 1,
     entry: 0, sl: 0, tp1: 0, tp2: 0, tp3: 0,
     entryRange: [], targets: [], targetPercents: [],
+    entryIsCurrentMarket: false,
     providerSignalId,
     type: 'new_signal',
   };
@@ -706,7 +748,9 @@ function parseSignalMessage(raw, opts={}) {
     const work = line.replace(/\bTP\s*\d+\b/ig,'TP').replace(/\bTARGET\s*\d+\b/ig,'TARGET').replace(/\bTAKE\s*PROFIT\s*\d+\b/ig,'TAKE PROFIT');
     const nums = signalNumbersFromText(work);
     if (!nums.length) return;
-    if (signalLineIsEntry(line)) {
+    if (signalLineIsCmpEntry(line)) {
+      parsed.entryIsCurrentMarket = true;
+    } else if (signalLineIsEntry(line)) {
       parsed.entryRange = nums.slice(0, 2);
       parsed.entry = signalChooseEntry(parsed.entryRange, parsed.ticker, parsed.dir);
     } else if (signalLineIsStop(line)) {
@@ -716,7 +760,10 @@ function parseSignalMessage(raw, opts={}) {
     }
   });
   if (!parsed.entry) {
-    const entryMatch = upper.match(/(?:ENTRY|ENTRADA|ENTRIES|ZONE|ZONA)\s*[:=]?\s*([^\n]+)/i);
+    const entryMatch = upper.match(/(?:ENTRY|ENTRADA|ENTRIES|ZONE|ZONA)\s*[:=\.]?\s*([^\n]+)/i);
+    if (entryMatch && /\b(CMP|CURRENT\s*MARKET|MARKET\s*PRICE|MARKET|NOW|AHORA)\b/i.test(entryMatch[1] || '')) {
+      parsed.entryIsCurrentMarket = true;
+    }
     const nums = entryMatch ? signalNumbersFromText(entryMatch[1]) : [];
     if (nums.length) {
       parsed.entryRange = nums.slice(0, 2);
@@ -830,7 +877,9 @@ function signalCardHtml(sig) {
   ].join('');
   const statusText = sig.status === 'ready' ? 'Lectura confiable' : sig.status === 'converted' ? 'Ya convertida' : sig.status === 'discarded' ? 'Descartada' : 'Revisar lectura';
   const targetsLabel = p.targets?.length ? p.targets.map((x,i)=>`TP${i+1} $${fmtPx(x)}`).join(' · ') : '';
-  const entryRangeLabel = p.entryRange?.length > 1 ? p.entryRange.map(fmtPx).join(' - ') : '';
+  const entryRangeLabel = p.entryIsCurrentMarket
+    ? 'CMP precio actual'
+    : (p.entryRange?.length > 1 ? p.entryRange.map(fmtPx).join(' - ') : '');
   const confidenceTip = 'Confianza mide que tan fiable es la lectura automatica del mensaje: datos completos, coherencia entre entry, SL y TPs, estado del precio actual y si parece una senal nueva o una actualizacion. No mide probabilidad de ganar.';
   const updatesHtml = updates.length
     ? `<div style="margin-top:10px;"><div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-bottom:6px;">Updates de Telegram</div>${updates.slice().reverse().map(u => `<div class="signal-raw" style="margin-top:6px;max-height:110px;">${signalEsc(fmtD(u.createdAt))}\n${signalEsc(u.raw)}</div>`).join('')}</div>`
@@ -907,7 +956,6 @@ window.toggleSignalRaw = id => {
 };
 
 function renderSignals() {
-  fillSignalTraderSelect();
   const items = loadSignalInbox();
   renderSignalStats(items);
   const el = document.getElementById('signalInbox');
@@ -932,7 +980,9 @@ async function fetchTelegramSignals(secret='') {
 }
 
 function signalNeedsAi(sig={}) {
-  const criticalMissing = (sig.missing || []).some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
+  const p = sig.parsed || {};
+  const missing = (sig.missing || []).filter(x => !(x === 'entry' && p.entryIsCurrentMarket));
+  const criticalMissing = missing.some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
   const structuralWarning = (sig.warnings || []).some(x => /raro|update|Sin precio live/i.test(x));
   return criticalMissing || (sig.hasImage && (criticalMissing || structuralWarning || Number(sig.confidence || 0) < 86));
 }
@@ -955,9 +1005,12 @@ async function fetchSignalAi(sig={}, secret='') {
     e.status = 403;
     throw e;
   }
+  const data = await r.json().catch(() => null);
   if (r.status === 501) return null;
-  if (!r.ok) throw new Error(`AI HTTP ${r.status}`);
-  return r.json();
+  if (!r.ok) {
+    throw new Error(data?.error || data?.message || `AI HTTP ${r.status}`);
+  }
+  return data;
 }
 
 function signalApplyAiInterpretation(sig={}, ai={}) {
@@ -1084,13 +1137,21 @@ window.syncTelegramSignals = async (silent=false) => {
     const parts = [];
     if (imported) parts.push(`${imported} nueva${imported === 1 ? '' : 's'}`);
     if (merged) parts.push(`${merged} update${merged === 1 ? '' : 's'} unido${merged === 1 ? '' : 's'}`);
-    toast(`Telegram: ${parts.join(' + ') || 'sin cambios'}.`, 'success');
+    if (!silent || imported || merged) toast(`Telegram: ${parts.join(' + ') || 'sin cambios'}.`, 'success');
   } catch(e) {
     if (!silent) toast('Telegram: ' + e.message, 'error');
   } finally {
     _signalTelegramSyncing = false;
   }
 };
+
+function startTelegramAutoSync() {
+  if (_signalTelegramAutoTimer) clearInterval(_signalTelegramAutoTimer);
+  setTimeout(() => window.syncTelegramSignals?.(true), 2500);
+  _signalTelegramAutoTimer = setInterval(() => {
+    window.syncTelegramSignals?.(true);
+  }, 45000);
+}
 
 window.parseSignalInboxInput = async () => {
   const raw = document.getElementById('signalRawInput')?.value || '';
@@ -7418,6 +7479,7 @@ function startAutoSync() {
   // Sync exchange capital every 30s; positions and orders stay manual.
   setTimeout(() => window.syncAllExchanges?.(), 1200);
   syncTimer = setInterval(() => window.syncAllExchanges?.(), 30000);
+  startTelegramAutoSync();
 }
 
 // ── AI Analysis autocomplete ───────────────────────────────────────────────
