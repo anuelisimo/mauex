@@ -197,7 +197,7 @@ document.querySelectorAll('.modal-overlay').forEach(el =>
 // ── Navigation ─────────────────────────────────────────────────────────────
 const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
-  orders:'ordersPage', positions:'posPage', map:'mapPage', history:'histPage',
+  signals:'signalsPage', orders:'ordersPage', positions:'posPage', map:'mapPage', history:'histPage',
   traders:'tradPage', analysis:'analysisPage', settings:'settingsPage',
 };
 
@@ -258,6 +258,7 @@ window.showPage = page => {
   // Render the page
   const renders = {
     dashboard: renderDashboard,
+    signals:   renderSignals,
     watchlist: renderWatchlist,
     orders:    renderOrders,
     positions: renderPositions,
@@ -341,6 +342,303 @@ window.showPage = page => {
 };
 
 // ── Themes ─────────────────────────────────────────────────────────────────
+// Signal Desk: local inbox for Telegram-style signals
+const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
+const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS']);
+
+function signalEsc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function loadSignalInbox() {
+  try { return JSON.parse(localStorage.getItem(SIGNAL_INBOX_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function saveSignalInbox(items) {
+  localStorage.setItem(SIGNAL_INBOX_KEY, JSON.stringify(items.slice(0, 200)));
+}
+
+function signalParseNumber(token) {
+  if (!token) return 0;
+  let s = String(token).trim().replace(/\$/g,'').replace(/\s/g,'');
+  const hasK = /k$/i.test(s);
+  s = s.replace(/k$/i,'');
+  if (s.includes(',') && s.includes('.')) s = s.replace(/,/g,'');
+  else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g,'');
+  else s = s.replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? n * (hasK ? 1000 : 1) : 0;
+}
+
+function signalNumbersFromText(text) {
+  const clean = String(text || '')
+    .replace(/\b\d{1,3}\s*x\b/ig,' ')
+    .replace(/\bx\s*\d{1,3}\b/ig,' ')
+    .replace(/\d+(?:[.,]\d+)?\s*%/g,' ');
+  return (clean.match(/\$?\d+(?:[.,]\d+)?\s*[kK]?/g) || [])
+    .map(signalParseNumber)
+    .filter(n => Number.isFinite(n) && n > 0);
+}
+
+function signalDetectTicker(raw) {
+  const upper = String(raw || '').toUpperCase();
+  const pair = upper.match(/\b([A-Z0-9]{2,12})\s*[-/]?\s*(USDT|USDC|USD|PERP)\b/);
+  if (pair && !SIGNAL_STOPWORDS.has(pair[1])) return pair[1].replace(/PERP$/,'');
+  for (const c of APP_CRYPTOS) {
+    const re = new RegExp(`(?:#|\\$|\\b)${c}(?:USDT|USDC|USD|PERP)?\\b`, 'i');
+    if (re.test(upper)) return c;
+  }
+  const tokens = upper.match(/\b[A-Z][A-Z0-9]{1,11}\b/g) || [];
+  return (tokens.find(t => !SIGNAL_STOPWORDS.has(t) && !/^\d+$/.test(t)) || '').replace(/USDT|USDC|USD|PERP/g,'');
+}
+
+function signalDetectExchange(raw, fallback='BINANCE') {
+  const upper = String(raw || '').toUpperCase();
+  const found = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','IBKR','MANUAL'].find(ex => upper.includes(ex));
+  return found || String(fallback || 'BINANCE').toUpperCase();
+}
+
+function signalDetectDirection(raw) {
+  const upper = String(raw || '').toUpperCase();
+  if (/\bSPOT\b/.test(upper)) return 'spot';
+  if (/\b(SHORT|SELL|VENTA|BAJISTA)\b/.test(upper)) return 'short';
+  if (/\b(LONG|BUY|COMPRA|ALCISTA)\b/.test(upper)) return 'long';
+  return '';
+}
+
+function signalLineHas(line, words) {
+  const upper = String(line || '').toUpperCase();
+  return words.some(w => upper.includes(w));
+}
+
+function parseSignalMessage(raw, opts={}) {
+  const text = String(raw || '').trim();
+  const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const joined = lines.join('\n');
+  const upper = joined.toUpperCase();
+  const parsed = {
+    ticker: signalDetectTicker(joined),
+    dir: signalDetectDirection(joined),
+    exchange: signalDetectExchange(joined, opts.exchange || 'BINANCE'),
+    leverage: 1,
+    entry: 0, sl: 0, tp1: 0, tp2: 0, tp3: 0,
+    entryRange: [],
+    type: 'new_signal',
+  };
+  const levMatch = upper.match(/\b(?:LEV|LEVERAGE|APALANCAMIENTO|MARGIN)\s*[:=]?\s*(\d{1,3})\s*X?\b/) || upper.match(/\bX\s*(\d{1,3})\b/) || upper.match(/\b(\d{1,3})\s*X\b/);
+  if (levMatch) parsed.leverage = Math.max(1, Math.min(125, Number(levMatch[1]) || 1));
+  if (/\b(MOVE|MOVER|TRAIL|UPDATE|ACTUALIZA|BE|BREAK\s*EVEN|CANCEL|CANCELAR|CLOSE|CERRAR|CLOSED|TP\s*HIT|TOCO|TOCÓ)\b/i.test(joined)) parsed.type = 'update_or_management';
+
+  const targetNums = [];
+  lines.forEach(line => {
+    const work = line.replace(/\bTP\s*\d+\b/ig,'TP').replace(/\bTARGET\s*\d+\b/ig,'TARGET').replace(/\bTAKE\s*PROFIT\s*\d+\b/ig,'TAKE PROFIT');
+    const nums = signalNumbersFromText(work);
+    if (!nums.length) return;
+    if (signalLineHas(line, ['ENTRY','ENTRADA','ENTRIES','ZONE','ZONA','LIMIT','BUY LIMIT','SELL LIMIT'])) {
+      parsed.entryRange = nums.slice(0, 2);
+      parsed.entry = nums.length >= 2 ? Math.round(((nums[0] + nums[1]) / 2) * 100000000) / 100000000 : nums[0];
+    } else if (signalLineHas(line, ['STOP','SL','INVALIDATION','INVALIDACION'])) {
+      parsed.sl = nums[0];
+    } else if (signalLineHas(line, ['TP','TARGET','TAKE PROFIT','OBJETIVO'])) {
+      targetNums.push(...nums);
+    }
+  });
+  if (!parsed.entry) {
+    const entryMatch = upper.match(/(?:ENTRY|ENTRADA|ENTRIES|ZONE|ZONA)\s*[:=]?\s*([^\n]+)/i);
+    const nums = entryMatch ? signalNumbersFromText(entryMatch[1]) : [];
+    if (nums.length) {
+      parsed.entryRange = nums.slice(0, 2);
+      parsed.entry = nums.length >= 2 ? Math.round(((nums[0] + nums[1]) / 2) * 100000000) / 100000000 : nums[0];
+    }
+  }
+  const cleanTargets = [...new Set(targetNums)]
+    .filter(n => !parsed.entry || Math.abs(n - parsed.entry) / Math.max(1, parsed.entry) > 0.001)
+    .slice(0, 3);
+  [parsed.tp1, parsed.tp2, parsed.tp3] = [cleanTargets[0] || 0, cleanTargets[1] || 0, cleanTargets[2] || 0];
+
+  const missing = [];
+  if (!parsed.ticker) missing.push('ticker');
+  if (!parsed.dir) missing.push('direccion');
+  if (!parsed.entry) missing.push('entry');
+  if (!parsed.sl) missing.push('SL');
+  if (!parsed.tp1) missing.push('TP');
+  const warnings = [];
+  if (parsed.type !== 'new_signal') warnings.push('Parece update, no señal nueva');
+  if (parsed.dir === 'long' && parsed.sl && parsed.entry && parsed.sl >= parsed.entry) warnings.push('SL raro para LONG');
+  if (parsed.dir === 'short' && parsed.sl && parsed.entry && parsed.sl <= parsed.entry) warnings.push('SL raro para SHORT');
+  if (parsed.entryRange.length > 1) warnings.push('Entry tomado como promedio del rango');
+  const confidence = Math.max(5, Math.min(98, 100 - missing.length * 16 - warnings.length * 8));
+  const rr = parsed.sl && parsed.entry && parsed.tp1 ? Math.abs((parsed.tp1 - parsed.entry) / (parsed.sl - parsed.entry)) : null;
+  const trader = (window.G?.traders?.() || []).find(t => t.id === opts.traderId);
+  return {
+    id: `sig-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    raw: text,
+    createdAt: new Date().toISOString(),
+    status: missing.length ? 'review' : 'ready',
+    traderId: opts.traderId || '',
+    traderName: trader?.name || '',
+    parsed,
+    missing,
+    warnings,
+    confidence,
+    rr,
+  };
+}
+
+function fillSignalTraderSelect() {
+  const el = document.getElementById('signalTraderSelect');
+  if (!el) return;
+  const current = el.value;
+  const list = window.G?.traders?.() || [];
+  el.innerHTML = '<option value="">Sin trader</option>' + list.map(t => `<option value="${t.id}">${signalEsc(t.name)}</option>`).join('');
+  if (current) el.value = current;
+}
+
+function renderSignalStats(items) {
+  const el = document.getElementById('signalInboxStats');
+  if (!el) return;
+  const active = items.filter(x => x.status !== 'discarded');
+  const ready = active.filter(x => x.status === 'ready').length;
+  const review = active.filter(x => x.status === 'review').length;
+  const converted = active.filter(x => x.status === 'converted').length;
+  el.innerHTML = [['Inbox', active.length], ['Listas', ready], ['A revisar', review], ['Convertidas', converted]]
+    .map(([l,v]) => `<div class="signal-stat"><div>${l}</div><strong>${v}</strong></div>`).join('');
+}
+
+function signalCardHtml(sig) {
+  const p = sig.parsed || {};
+  const dirCls = p.dir === 'short' ? 'bs' : p.dir === 'spot' ? 'bsp' : 'bl';
+  const stateCls = sig.status === 'ready' ? 'ready' : sig.status === 'discarded' ? 'discarded' : 'review';
+  const confColor = sig.confidence >= 80 ? 'var(--accent)' : sig.confidence >= 55 ? 'var(--amber)' : 'var(--red)';
+  const chips = [
+    ...(sig.missing || []).map(x => `<span class="signal-chip red">Falta ${signalEsc(x)}</span>`),
+    ...(sig.warnings || []).map(x => `<span class="signal-chip">${signalEsc(x)}</span>`),
+    ...(sig.status === 'converted' ? ['<span class="signal-chip green">Convertida</span>'] : []),
+  ].join('');
+  const statusText = sig.status === 'ready' ? 'Lectura confiable' : sig.status === 'converted' ? 'Ya convertida' : sig.status === 'discarded' ? 'Descartada' : 'Revisar lectura';
+  return `
+    <div class="signal-card ${stateCls}">
+      <div class="signal-head">
+        <div>
+          <div class="signal-title">
+            <span>${signalEsc(p.ticker || 'Ticker?')}</span>
+            <span class="badge ${dirCls}">${signalEsc((p.dir || 'dir?').toUpperCase())}${p.leverage > 1 ? ' x'+p.leverage : ''}</span>
+            <span style="font-size:11px;color:var(--t3);">${signalEsc(p.exchange || '')}</span>
+            <span style="font-size:11px;color:var(--t3);">· ${signalEsc(sig.traderName || 'Sin trader')}</span>
+          </div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:5px;">${statusText} · ${fmtD(sig.createdAt)}</div>
+        </div>
+        <div style="text-align:right;"><div class="signal-confidence" style="color:${confColor};">${sig.confidence}</div><div style="font-family:var(--mono);font-size:9px;color:var(--t3);">confianza</div></div>
+      </div>
+      <div class="signal-body">
+        <div class="signal-grid">
+          <div class="signal-field"><span>Entry</span><strong>${p.entry ? '$'+fmtPx(p.entry) : '—'}</strong></div>
+          <div class="signal-field"><span>SL</span><strong>${p.sl ? '$'+fmtPx(p.sl) : '—'}</strong></div>
+          <div class="signal-field"><span>TP1</span><strong>${p.tp1 ? '$'+fmtPx(p.tp1) : '—'}</strong></div>
+          <div class="signal-field"><span>TP2</span><strong>${p.tp2 ? '$'+fmtPx(p.tp2) : '—'}</strong></div>
+          <div class="signal-field"><span>TP3</span><strong>${p.tp3 ? '$'+fmtPx(p.tp3) : '—'}</strong></div>
+          <div class="signal-field"><span>R:R TP1</span><strong>${sig.rr ? sig.rr.toFixed(2)+':1' : '—'}</strong></div>
+        </div>
+        <div class="signal-raw">${signalEsc(sig.raw)}</div>
+        ${chips ? `<div class="signal-warnings">${chips}</div>` : ''}
+      </div>
+      <div class="signal-actions">
+        <button class="btn sm" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
+        <button class="btn sm" onclick="signalConvert('${sig.id}','watchlist')">Watch</button>
+        <button class="btn sm" style="background:var(--amber);color:#000;border-color:var(--amber);" onclick="signalConvert('${sig.id}','pending')">Orden</button>
+        <button class="btn sm acc" onclick="signalConvert('${sig.id}','active')">Posición</button>
+        <button class="btn sm" onclick="discardSignal('${sig.id}')">${sig.status === 'discarded' ? 'Borrar' : 'Descartar'}</button>
+      </div>
+    </div>`;
+}
+
+function renderSignals() {
+  fillSignalTraderSelect();
+  const items = loadSignalInbox();
+  renderSignalStats(items);
+  const el = document.getElementById('signalInbox');
+  if (!el) return;
+  const visible = items.filter(x => x.status !== 'discarded');
+  el.innerHTML = visible.length
+    ? visible.map(signalCardHtml).join('')
+    : `<div class="empty"><div class="empty-icon">◇</div><div class="empty-text">No hay señales en inbox</div><div class="empty-sub">Pegá un mensaje de Telegram para empezar.</div></div>`;
+}
+
+window.parseSignalInboxInput = () => {
+  const raw = document.getElementById('signalRawInput')?.value || '';
+  if (!raw.trim()) { toast('Pegá primero el mensaje del trader.', 'error'); return; }
+  const traderId = document.getElementById('signalTraderSelect')?.value || '';
+  const exchange = document.getElementById('signalExchangeSelect')?.value || 'BINANCE';
+  const sig = parseSignalMessage(raw, { traderId, exchange });
+  const items = loadSignalInbox();
+  items.unshift(sig);
+  saveSignalInbox(items);
+  document.getElementById('signalRawInput').value = '';
+  renderSignals();
+  toast(sig.status === 'ready' ? 'Señal interpretada.' : 'Señal creada para revisar.', sig.status === 'ready' ? 'success' : 'error');
+};
+
+function applySignalToCalculator(sig) {
+  const p = sig?.parsed || {};
+  if (!p.ticker || !p.entry) { toast('La señal necesita ticker y entry.', 'error'); return false; }
+  const dir = p.dir || 'long';
+  window.showPage('calc');
+  setDir(dir);
+  if (dir !== 'spot') {
+    const ex = String(p.exchange || 'BINANCE').toLowerCase();
+    if (['binance','bybit','okx','mexc','kucoin'].includes(ex)) setEx(ex);
+  }
+  if (p.leverage) pickLev(p.leverage);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('cTicker', p.ticker || '');
+  set('cEntry', p.entry || '');
+  set('cSL', p.sl || '');
+  set('cTP1', p.tp1 || '');
+  set('cTP2', p.tp2 || '');
+  set('cTP3', p.tp3 || '');
+  set('cSize', '');
+  if (sig.traderId) set('cTrader', sig.traderId);
+  set('cNotes', [sig.traderName ? `Trader: ${sig.traderName}` : '', p.entryRange?.length > 1 ? `Entry original: ${p.entryRange.map(fmtPx).join(' - ')}` : '', 'Señal original:', sig.raw].filter(Boolean).join('\n'));
+  compute();
+  return true;
+}
+
+window.signalToCalculator = id => {
+  const sig = loadSignalInbox().find(x => x.id === id);
+  if (applySignalToCalculator(sig)) toast('Señal cargada en Calculadora.');
+};
+
+window.signalConvert = async (id, status) => {
+  const items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  if (!applySignalToCalculator(sig)) return;
+  try {
+    await window.saveTrade(status);
+    sig.status = 'converted';
+    sig.convertedAt = new Date().toISOString();
+    sig.convertedTo = status;
+    saveSignalInbox(items);
+  } catch(e) {
+    toast('No pude convertir la señal: ' + e.message, 'error');
+  }
+};
+
+window.discardSignal = id => {
+  let items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  if (sig?.status === 'discarded') items = items.filter(x => x.id !== id);
+  else if (sig) sig.status = 'discarded';
+  saveSignalInbox(items);
+  renderSignals();
+};
+
+window.clearSignalInbox = () => {
+  saveSignalInbox(loadSignalInbox().filter(x => x.status !== 'discarded'));
+  renderSignals();
+  toast('Borradores descartados limpiados.');
+};
+
 const THEMES = [
   {id:'default',name:'Classic Green',bg:'#0a0c0f',ac:'#00c47a'},
   {id:'arctic', name:'Arctic Blue',  bg:'#060c18',ac:'#00e5ff'},
