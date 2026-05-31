@@ -545,7 +545,6 @@ function signalApplyMarketState(sig, price=0) {
   sig.rr = signalWeightedRR(p);
   sig.warnings = (sig.warnings || []).filter(x => !String(x).startsWith('Precio: '));
   if (sig.market) {
-    sig.warnings.push(`Precio: ${sig.market.label}`);
     if (sig.market.code === 'invalidated') {
       sig.status = 'review';
       sig.confidence = Math.min(Number(sig.confidence || 0), 40);
@@ -666,11 +665,29 @@ function renderSignalStats(items) {
     .map(([l,v]) => `<div class="signal-stat"><div>${l}</div><strong>${v}</strong></div>`).join('');
 }
 
+function signalFieldHtml(label, value, color, sub='') {
+  return `<div class="signal-field"><span>${signalEsc(label)}</span><strong style="color:${color};">${value}</strong>${sub ? `<small>${signalEsc(sub)}</small>` : ''}</div>`;
+}
+
+function signalBestTargetLabel(parsed={}) {
+  const targets = Array.isArray(parsed.targets) && parsed.targets.length
+    ? parsed.targets
+    : [parsed.tp1, parsed.tp2, parsed.tp3].filter(Boolean);
+  if (!targets.length) return { value:'—', sub:'' };
+  return {
+    value: targets.length === 1 ? '$' + fmtPx(targets[0]) : String(targets.length),
+    sub: targets.length === 1 ? 'TP1' : `TP1 $${fmtPx(targets[0])} · final $${fmtPx(targets[targets.length - 1])}`,
+  };
+}
+
 function signalCardHtml(sig) {
   const p = sig.parsed || {};
   const dirCls = p.dir === 'short' ? 'bs' : p.dir === 'spot' ? 'bsp' : 'bl';
   const stateCls = sig.status === 'ready' ? 'ready' : sig.status === 'discarded' ? 'discarded' : 'review';
   const confColor = sig.confidence >= 80 ? 'var(--accent)' : sig.confidence >= 55 ? 'var(--amber)' : 'var(--red)';
+  const liq = p.dir !== 'spot' ? estimatedLiquidationPrice({ dir:p.dir, entry:p.entry, leverage:p.leverage, exchange:p.exchange }) : null;
+  const tpSummary = signalBestTargetLabel(p);
+  const rrColor = sig.rr && sig.rr >= 2 ? 'var(--accent)' : 'var(--red)';
   const chips = [
     ...(sig.market ? [`<span class="signal-chip ${signalEsc(sig.market.tone || '')}">${signalEsc(sig.market.label)}${sig.market.price ? ' · $'+fmtPx(sig.market.price) : ''}</span>`] : []),
     ...(sig.missing || []).map(x => `<span class="signal-chip red">Falta ${signalEsc(x)}</span>`),
@@ -696,20 +713,23 @@ function signalCardHtml(sig) {
       </div>
       <div class="signal-body">
         <div class="signal-grid">
-          <div class="signal-field"><span>Entry operativo</span><strong>${p.entry ? '$'+fmtPx(p.entry) : '—'}</strong>${entryRangeLabel ? `<small>zona ${signalEsc(entryRangeLabel)}</small>` : ''}</div>
-          <div class="signal-field"><span>SL</span><strong>${p.sl ? '$'+fmtPx(p.sl) : '—'}</strong></div>
-          <div class="signal-field"><span>TP1</span><strong>${p.tp1 ? '$'+fmtPx(p.tp1) : '—'}</strong></div>
-          <div class="signal-field"><span>Precio actual</span><strong>${sig.market?.price ? '$'+fmtPx(sig.market.price) : '—'}</strong>${sig.market?.label ? `<small>${signalEsc(sig.market.label)}</small>` : ''}</div>
-          <div class="signal-field"><span>TPs</span><strong>${p.targets?.length || [p.tp1,p.tp2,p.tp3].filter(Boolean).length || '—'}</strong>${p.targets?.length ? `<small>salidas proporcionales</small>` : ''}</div>
-          <div class="signal-field"><span>R:R plan</span><strong>${sig.rr ? sig.rr.toFixed(2)+':1' : '—'}</strong>${sig.rrFirst ? `<small>TP1 ${sig.rrFirst.toFixed(2)}:1</small>` : ''}</div>
+          ${signalFieldHtml('Precio actual', sig.market?.price ? '$'+fmtPx(sig.market.price) : '—', 'var(--magenta)', sig.market?.label || '')}
+          ${signalFieldHtml('Entry', p.entry ? '$'+fmtPx(p.entry) : '—', 'var(--t1)', entryRangeLabel ? `zona ${entryRangeLabel}` : '')}
+          ${signalFieldHtml('SL', p.sl ? '$'+fmtPx(p.sl) : '—', 'var(--red)')}
+          ${signalFieldHtml('Liq.', liq ? '$'+fmtPx(liq) : '—', 'var(--amber)')}
+          ${signalFieldHtml('TP', tpSummary.value, 'var(--accent)', tpSummary.sub)}
+          ${signalFieldHtml('R:R', sig.rr ? sig.rr.toFixed(2)+':1' : '—', rrColor, sig.rrFirst ? `TP1 ${sig.rrFirst.toFixed(2)}:1` : '')}
         </div>
         ${targetsLabel ? `<div style="font-family:var(--mono);font-size:10px;color:var(--accent);line-height:1.6;margin:-2px 0 10px;">${signalEsc(targetsLabel)}</div>` : ''}
         <div class="signal-raw">${signalEsc(sig.raw)}</div>
         ${chips ? `<div class="signal-warnings">${chips}</div>` : ''}
+        <div id="signalChartPanel-${sig.id}" class="signal-chart-panel" style="display:none;">
+          <div id="signalChart-${sig.id}" class="signal-chart"></div>
+        </div>
       </div>
       <div class="signal-actions">
         <button class="btn sm" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
-        <button class="btn sm" onclick="signalOpenChart('${sig.id}')">📈 Gráfico</button>
+        <button class="btn sm" onclick="toggleSignalChart('${sig.id}')">Gráfico</button>
         <button class="btn sm" onclick="signalConvert('${sig.id}','watchlist')">Watch</button>
         <button class="btn sm" style="background:var(--amber);color:#000;border-color:var(--amber);" onclick="signalConvert('${sig.id}','pending')">Orden</button>
         <button class="btn sm acc" onclick="signalConvert('${sig.id}','active')">Posición</button>
@@ -793,6 +813,105 @@ window.signalToCalculator = async id => {
   await signalHydrateMarket(sig);
   saveSignalInbox(items);
   if (applySignalToCalculator(sig)) toast('Señal cargada en Calculadora.');
+};
+
+const signalChartState = {};
+
+function signalChartInfo(sig) {
+  const p = sig?.parsed || {};
+  const raw = String(p.ticker || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  if (!raw) return null;
+  const crypto = appIsCryptoTicker(raw, p.exchange || 'BINANCE');
+  const symbol = crypto
+    ? (raw.endsWith('USDT') || raw.endsWith('USDC') || raw.includes('_') ? raw.replace(/USDC$/,'USDT') : raw + 'USDT')
+    : raw;
+  return { raw, symbol, source: crypto ? 'binance' : 'yahoo', type: crypto ? 'crypto' : 'stock' };
+}
+
+function signalChartLevels(sig) {
+  const p = sig?.parsed || {};
+  const liq = p.dir !== 'spot' ? estimatedLiquidationPrice({ dir:p.dir, entry:p.entry, leverage:p.leverage, exchange:p.exchange }) : null;
+  const targets = Array.isArray(p.targets) && p.targets.length ? p.targets : [p.tp1,p.tp2,p.tp3].filter(Boolean);
+  return [
+    ...(sig?.market?.price ? [{ price:sig.market.price, title:'Actual', color:'rgba(224,64,251,.98)' }] : []),
+    ...(p.entry ? [{ price:p.entry, title:'Entry', color:'rgba(232,237,243,.95)' }] : []),
+    ...(p.sl ? [{ price:p.sl, title:'SL', color:'rgba(240,61,61,.95)' }] : []),
+    ...(liq ? [{ price:liq, title:'Liq', color:'rgba(245,158,11,.95)' }] : []),
+    ...targets.slice(0, 12).map((price, i) => ({ price, title:`TP${i+1}`, color:'rgba(0,196,122,.92)' })),
+  ];
+}
+
+function destroySignalChart(id) {
+  const st = signalChartState[id];
+  if (st?.resize) { try { st.resize.disconnect(); } catch(e) {} }
+  if (st?.chart) { try { st.chart.remove(); } catch(e) {} }
+  delete signalChartState[id];
+}
+
+async function renderSignalInlineChart(sig) {
+  const id = sig?.id;
+  const el = document.getElementById(`signalChart-${id}`);
+  if (!id || !el) return;
+  destroySignalChart(id);
+  const info = signalChartInfo(sig);
+  if (!info) return;
+  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando gráfico...</div>`;
+  const prevSource = window._aiSource;
+  const prevType = window._aiType;
+  try {
+    window._aiSource = info.source;
+    window._aiType = info.type;
+    const candles = await fetchOHLCV(info.symbol, '1h', mainChartLimit('1h'));
+    if (!candles.length) throw new Error('Sin datos');
+    el.innerHTML = '';
+    const chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth || 720,
+      height: el.clientHeight || 280,
+      layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
+      crosshair:{ mode:1 },
+      rightPriceScale:{ borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.08,bottom:0.18} },
+      timeScale:{ borderColor:'rgba(255,255,255,0.10)', timeVisible:true, secondsVisible:false },
+      handleScroll:{ mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true, vertTouchDrag:true },
+      handleScale:{ axisPressedMouseMove:true, mouseWheel:true, pinch:true },
+    });
+    const series = chart.addCandlestickSeries({
+      upColor:'#00c47a', downColor:'#f03d3d',
+      borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
+      wickUpColor:'#00a85a', wickDownColor:'#c03030',
+    });
+    series.setData(candles);
+    const firstTime = candles[0]?.time;
+    const lastTime = candles[candles.length - 1]?.time;
+    signalChartLevels(sig).forEach(lvl => {
+      try {
+        addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:2 });
+        series.createPriceLine({ price:lvl.price, color:lvl.color, lineWidth:1, lineStyle:2, axisLabelVisible:true, title:lvl.title });
+      } catch(e) {}
+    });
+    chart.timeScale().fitContent();
+    const resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 280 }));
+    resize.observe(el);
+    signalChartState[id] = { chart, resize };
+  } catch(e) {
+    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${signalEsc(e.message)}</div>`;
+  } finally {
+    window._aiSource = prevSource;
+    window._aiType = prevType;
+  }
+}
+
+window.toggleSignalChart = async id => {
+  const panel = document.getElementById(`signalChartPanel-${id}`);
+  if (!panel) return;
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  if (!opening) { destroySignalChart(id); return; }
+  const items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  await signalHydrateMarket(sig);
+  saveSignalInbox(items);
+  await renderSignalInlineChart(sig);
 };
 
 window.signalOpenChart = async id => {
