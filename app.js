@@ -421,6 +421,18 @@ function signalLineIsEntry(line) {
     || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=]/i.test(raw);
 }
 
+function signalLineIsStop(line) {
+  const raw = String(line || '').trim();
+  return /^(STOP\s*LOSS|STOP|SL|INVALIDATION|INVALIDACION)\b/i.test(raw)
+    || /\b(STOP\s*LOSS|STOP|SL|INVALIDATION|INVALIDACION)\s*[:=]/i.test(raw);
+}
+
+function signalLineIsTarget(line) {
+  const raw = String(line || '').trim();
+  return /^(TP|TARGET|TARGETS|TAKE\s*PROFIT|OBJETIVO)\b/i.test(raw)
+    || /\b(TP|TARGET|TARGETS|TAKE\s*PROFIT|OBJETIVO)\s*[:=]/i.test(raw);
+}
+
 function signalCurrentPriceFor(ticker, dir='long') {
   const sym = String(ticker || '').replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
   const p = window.G?.getPrice?.(sym, dir);
@@ -464,9 +476,9 @@ function parseSignalMessage(raw, opts={}) {
     if (signalLineIsEntry(line)) {
       parsed.entryRange = nums.slice(0, 2);
       parsed.entry = signalChooseEntry(parsed.entryRange, parsed.ticker, parsed.dir);
-    } else if (signalLineHas(line, ['STOP','SL','INVALIDATION','INVALIDACION'])) {
+    } else if (signalLineIsStop(line)) {
       parsed.sl = nums[0];
-    } else if (signalLineHas(line, ['TP','TARGET','TAKE PROFIT','OBJETIVO'])) {
+    } else if (signalLineIsTarget(line)) {
       targetNums.push(...nums);
     }
   });
