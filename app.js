@@ -391,6 +391,56 @@ function signalTraderIdFromSource(sourceName='') {
   return found?.id || '';
 }
 
+function signalProviderSignalId(raw='') {
+  const text = String(raw || '');
+  const m = text.match(/\bSIGNAL\s*ID\s*[:#]?\s*#?\s*([A-Z0-9_-]+)/i)
+    || text.match(/\bSIGNAL\s*[:#]\s*#?\s*([A-Z0-9_-]+)/i)
+    || text.match(/\bID\s*[:#]\s*#?\s*([A-Z0-9_-]+)/i);
+  return m ? String(m[1]).toUpperCase() : '';
+}
+
+function signalInboxKey(sig={}) {
+  const p = sig.parsed || {};
+  const provider = signalNormText(sig.sourceName || sig.traderName || sig.source || '');
+  const signalId = String(sig.providerSignalId || p.providerSignalId || '').toUpperCase();
+  if (signalId) return `${provider || 'telegram'}:${signalId}`;
+  return '';
+}
+
+function signalFindExistingSignalIndex(items=[], sig={}) {
+  const p = sig.parsed || {};
+  const signalId = String(sig.providerSignalId || p.providerSignalId || '').toUpperCase();
+  if (!signalId) return -1;
+  const provider = signalNormText(sig.sourceName || sig.traderName || sig.source || '');
+  return items.findIndex(item => {
+    const ip = item.parsed || {};
+    const itemSignalId = String(item.providerSignalId || ip.providerSignalId || '').toUpperCase();
+    if (itemSignalId !== signalId) return false;
+    const itemProvider = signalNormText(item.sourceName || item.traderName || item.source || '');
+    if (!provider || !itemProvider) return true;
+    return provider === itemProvider || provider.includes(itemProvider) || itemProvider.includes(provider);
+  });
+}
+
+function signalMergeUpdateIntoBase(base, update) {
+  const updates = Array.isArray(base.updates) ? base.updates : [];
+  const updateId = update.telegramId || update.id || `${Date.now()}`;
+  if (!updates.some(x => x.id === updateId)) {
+    updates.push({
+      id: updateId,
+      raw: update.raw || '',
+      createdAt: update.createdAt || new Date().toISOString(),
+      confidence: update.confidence || 0,
+    });
+  }
+  base.updates = updates.slice(-20);
+  base.lastTelegramUpdateAt = update.createdAt || new Date().toISOString();
+  base.warnings = [...new Set([...(base.warnings || []), 'Update de Telegram recibido'])];
+  base.telegramId = base.telegramId || update.telegramId || '';
+  if (update.providerSignalId && !base.providerSignalId) base.providerSignalId = update.providerSignalId;
+  return base;
+}
+
 function signalParseNumber(token) {
   if (!token) return 0;
   let s = String(token).trim().replace(/\$/g,'').replace(/\s/g,'');
@@ -601,6 +651,7 @@ function parseSignalMessage(raw, opts={}) {
   const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const joined = lines.join('\n');
   const upper = joined.toUpperCase();
+  const providerSignalId = signalProviderSignalId(joined);
   const parsed = {
     ticker: signalDetectTicker(joined),
     dir: signalDetectDirection(joined),
@@ -608,6 +659,7 @@ function parseSignalMessage(raw, opts={}) {
     leverage: 1,
     entry: 0, sl: 0, tp1: 0, tp2: 0, tp3: 0,
     entryRange: [], targets: [], targetPercents: [],
+    providerSignalId,
     type: 'new_signal',
   };
   const levRange = upper.match(/\(\s*(\d{1,3})\s*-\s*(\d{1,3})\s*X\s*\)/) || upper.match(/\b(\d{1,3})\s*-\s*(\d{1,3})\s*X\b/);
@@ -645,6 +697,7 @@ function parseSignalMessage(raw, opts={}) {
   const pct = cleanTargets.length ? Math.round((100 / cleanTargets.length) * 100) / 100 : 0;
   parsed.targetPercents = cleanTargets.map((_, i) => i === cleanTargets.length - 1 ? Math.round((100 - pct * (cleanTargets.length - 1)) * 100) / 100 : pct);
   [parsed.tp1, parsed.tp2, parsed.tp3] = [cleanTargets[0] || 0, cleanTargets[1] || 0, cleanTargets[2] || 0];
+  if (providerSignalId && !parsed.entry && !parsed.sl && cleanTargets.length) parsed.type = 'update_or_management';
 
   const missing = [];
   if (!parsed.ticker) missing.push('ticker');
@@ -671,6 +724,7 @@ function parseSignalMessage(raw, opts={}) {
     source: opts.source || '',
     sourceName: opts.sourceName || '',
     telegramId: opts.telegramId || '',
+    providerSignalId,
     parsed,
     missing,
     warnings,
@@ -723,8 +777,10 @@ function signalCardHtml(sig) {
   const liq = p.dir !== 'spot' ? estimatedLiquidationPrice({ dir:p.dir, entry:p.entry, leverage:p.leverage, exchange:p.exchange }) : null;
   const tpSummary = signalBestTargetLabel(p);
   const rrColor = sig.rr && sig.rr >= 2 ? 'var(--accent)' : 'var(--red)';
+  const updates = Array.isArray(sig.updates) ? sig.updates : [];
   const chips = [
     ...(sig.market ? [`<span class="signal-chip ${signalEsc(sig.market.tone || '')}">${signalEsc(sig.market.label)}${sig.market.price ? ' · $'+fmtPx(sig.market.price) : ''}</span>`] : []),
+    ...(updates.length ? [`<span class="signal-chip blue">${updates.length} update${updates.length === 1 ? '' : 's'} Telegram</span>`] : []),
     ...(sig.missing || []).map(x => `<span class="signal-chip red">Falta ${signalEsc(x)}</span>`),
     ...(sig.warnings || []).map(x => `<span class="signal-chip">${signalEsc(x)}</span>`),
     ...(sig.status === 'converted' ? ['<span class="signal-chip green">Convertida</span>'] : []),
@@ -733,6 +789,9 @@ function signalCardHtml(sig) {
   const targetsLabel = p.targets?.length ? p.targets.map((x,i)=>`TP${i+1} $${fmtPx(x)}`).join(' · ') : '';
   const entryRangeLabel = p.entryRange?.length > 1 ? p.entryRange.map(fmtPx).join(' - ') : '';
   const confidenceTip = 'Confianza mide que tan fiable es la lectura automatica del mensaje: datos completos, coherencia entre entry, SL y TPs, estado del precio actual y si parece una senal nueva o una actualizacion. No mide probabilidad de ganar.';
+  const updatesHtml = updates.length
+    ? `<div style="margin-top:10px;"><div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-bottom:6px;">Updates de Telegram</div>${updates.slice().reverse().map(u => `<div class="signal-raw" style="margin-top:6px;max-height:110px;">${signalEsc(fmtD(u.createdAt))}\n${signalEsc(u.raw)}</div>`).join('')}</div>`
+    : '';
   return `
     <div class="signal-card ${stateCls}">
       <div class="signal-head">
@@ -767,6 +826,7 @@ function signalCardHtml(sig) {
         </button>
         <div id="signalRawPanel-${sig.id}" class="signal-raw-panel" style="display:none;">
           <div class="signal-raw">${signalEsc(sig.raw)}</div>
+          ${updatesHtml}
         </div>
         <button class="signal-toggle" type="button" onclick="toggleSignalChart('${sig.id}')">
           <span>Gr&aacute;fico</span>
@@ -851,6 +911,8 @@ window.syncTelegramSignals = async (silent=false) => {
     const seen = new Set(items.map(x => x.telegramId || x.id).filter(Boolean));
     const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id));
     if (!fresh.length) { if (!silent) toast('Telegram ya está al día.'); return; }
+    let imported = 0;
+    let merged = 0;
     for (const msg of fresh.reverse()) {
       const sourceName = msg.sourceName || 'Telegram';
       const traderId = signalTraderIdFromSource(sourceName);
@@ -865,11 +927,22 @@ window.syncTelegramSignals = async (silent=false) => {
       sig.id = msg.id || sig.id;
       sig.createdAt = msg.date || msg.receivedAt || sig.createdAt;
       await signalHydrateMarket(sig);
+      const existingIndex = signalFindExistingSignalIndex(items, sig);
+      if (existingIndex >= 0 && items[existingIndex]) {
+        signalMergeUpdateIntoBase(items[existingIndex], sig);
+        if (sig.telegramId) seen.add(sig.telegramId);
+        merged++;
+        continue;
+      }
       items.unshift(sig);
+      imported++;
     }
     saveSignalInbox(items);
     renderSignals();
-    toast(`${fresh.length} señal${fresh.length === 1 ? '' : 'es'} importada${fresh.length === 1 ? '' : 's'} desde Telegram.`, 'success');
+    const parts = [];
+    if (imported) parts.push(`${imported} nueva${imported === 1 ? '' : 's'}`);
+    if (merged) parts.push(`${merged} update${merged === 1 ? '' : 's'} unido${merged === 1 ? '' : 's'}`);
+    toast(`Telegram: ${parts.join(' + ') || 'sin cambios'}.`, 'success');
   } catch(e) {
     if (!silent) toast('Telegram: ' + e.message, 'error');
   } finally {
@@ -885,6 +958,15 @@ window.parseSignalInboxInput = async () => {
   const sig = parseSignalMessage(raw, { traderId, exchange });
   await signalHydrateMarket(sig);
   const items = loadSignalInbox();
+  const existingIndex = signalFindExistingSignalIndex(items, sig);
+  if (existingIndex >= 0) {
+    signalMergeUpdateIntoBase(items[existingIndex], sig);
+    saveSignalInbox(items);
+    document.getElementById('signalRawInput').value = '';
+    renderSignals();
+    toast('Update unido a la señal existente.', 'success');
+    return;
+  }
   items.unshift(sig);
   saveSignalInbox(items);
   document.getElementById('signalRawInput').value = '';
