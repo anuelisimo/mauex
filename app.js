@@ -820,6 +820,9 @@ function signalCardHtml(sig) {
   const updates = Array.isArray(sig.updates) ? sig.updates : [];
   const chips = [
     ...(sig.market ? [`<span class="signal-chip ${signalEsc(sig.market.tone || '')}">${signalEsc(sig.market.label)}${sig.market.price ? ' · $'+fmtPx(sig.market.price) : ''}</span>`] : []),
+    ...(sig.hasImage ? ['<span class="signal-chip blue">Imagen Telegram</span>'] : []),
+    ...(sig.aiInterpreted ? [`<span class="signal-chip blue">AI interpretó${sig.aiUsedImage ? ' imagen' : ''} · revisar</span>`] : []),
+    ...(sig.aiError ? [`<span class="signal-chip red">AI: ${signalEsc(sig.aiError)}</span>`] : []),
     ...(updates.length ? [`<span class="signal-chip blue">${updates.length} update${updates.length === 1 ? '' : 's'} Telegram</span>`] : []),
     ...(sig.missing || []).map(x => `<span class="signal-chip red">Falta ${signalEsc(x)}</span>`),
     ...(sig.warnings || []).map(x => `<span class="signal-chip">${signalEsc(x)}</span>`),
@@ -831,6 +834,9 @@ function signalCardHtml(sig) {
   const confidenceTip = 'Confianza mide que tan fiable es la lectura automatica del mensaje: datos completos, coherencia entre entry, SL y TPs, estado del precio actual y si parece una senal nueva o una actualizacion. No mide probabilidad de ganar.';
   const updatesHtml = updates.length
     ? `<div style="margin-top:10px;"><div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-bottom:6px;">Updates de Telegram</div>${updates.slice().reverse().map(u => `<div class="signal-raw" style="margin-top:6px;max-height:110px;">${signalEsc(fmtD(u.createdAt))}\n${signalEsc(u.raw)}</div>`).join('')}</div>`
+    : '';
+  const aiHtml = sig.aiInterpreted
+    ? `<div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--t2);line-height:1.5;"><strong style="color:var(--blue);">AI</strong>${sig.aiConfidence ? ' · confianza '+Math.round(sig.aiConfidence) : ''}${sig.aiUsedImage ? ' · usó imagen' : ''}${sig.aiNotes ? '<br>'+signalEsc(sig.aiNotes) : ''}</div>`
     : '';
   return `
     <div class="signal-card ${stateCls}">
@@ -866,6 +872,7 @@ function signalCardHtml(sig) {
         </button>
         <div id="signalRawPanel-${sig.id}" class="signal-raw-panel" style="display:none;">
           <div class="signal-raw">${signalEsc(sig.raw)}</div>
+          ${aiHtml}
           ${updatesHtml}
         </div>
         <button class="signal-toggle" type="button" onclick="toggleSignalChart('${sig.id}')">
@@ -924,6 +931,96 @@ async function fetchTelegramSignals(secret='') {
   return r.json();
 }
 
+function signalNeedsAi(sig={}) {
+  const criticalMissing = (sig.missing || []).some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
+  const structuralWarning = (sig.warnings || []).some(x => /raro|update|Sin precio live/i.test(x));
+  return criticalMissing || (sig.hasImage && (criticalMissing || structuralWarning || Number(sig.confidence || 0) < 86));
+}
+
+async function fetchSignalAi(sig={}, secret='') {
+  if (!PROXY_URL) return null;
+  const qs = new URLSearchParams({ t: Date.now().toString() });
+  if (secret) qs.set('secret', secret);
+  const r = await fetch(`${PROXY_URL}/telegram-signal-ai?${qs.toString()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      raw: sig.raw || '',
+      sourceName: sig.sourceName || sig.traderName || '',
+      photoFileId: sig.imageFileId || '',
+    }),
+  });
+  if (r.status === 403) {
+    const e = new Error('secret_required');
+    e.status = 403;
+    throw e;
+  }
+  if (r.status === 501) return null;
+  if (!r.ok) throw new Error(`AI HTTP ${r.status}`);
+  return r.json();
+}
+
+function signalApplyAiInterpretation(sig={}, ai={}) {
+  const data = ai.interpretation || ai;
+  if (!data || typeof data !== 'object') return sig;
+  const p = sig.parsed || {};
+  if (data.ticker) p.ticker = String(data.ticker).replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
+  if (data.direction) p.dir = String(data.direction).toLowerCase();
+  if (data.exchange) p.exchange = String(data.exchange).toUpperCase();
+  if (Number(data.leverage) > 0) p.leverage = Math.max(1, Math.min(125, Number(data.leverage)));
+  if (Array.isArray(data.entryRange) && data.entryRange.length) p.entryRange = data.entryRange.map(Number).filter(Boolean).slice(0, 2);
+  if (Number(data.entry) > 0) p.entry = Number(data.entry);
+  else if (p.entryRange?.length) p.entry = signalChooseEntry(p.entryRange, p.ticker, p.dir);
+  if (Number(data.sl) > 0) p.sl = Number(data.sl);
+  if (Array.isArray(data.targets)) {
+    const targets = [...new Set(data.targets.map(Number).filter(Boolean))]
+      .filter(n => signalTargetLooksValid(n, p))
+      .slice(0, 12);
+    if (targets.length) {
+      p.targets = targets;
+      const pct = Math.round((100 / targets.length) * 100) / 100;
+      p.targetPercents = targets.map((_, i) => i === targets.length - 1 ? Math.round((100 - pct * (targets.length - 1)) * 100) / 100 : pct);
+      [p.tp1, p.tp2, p.tp3] = [targets[0] || 0, targets[1] || 0, targets[2] || 0];
+    }
+  }
+  if (data.providerSignalId) {
+    sig.providerSignalId = String(data.providerSignalId).toUpperCase();
+    p.providerSignalId = sig.providerSignalId;
+  }
+  if (data.type) p.type = data.type;
+  sig.parsed = p;
+  sig.aiInterpreted = true;
+  sig.aiModel = ai.model || '';
+  sig.aiUsedImage = !!ai.usedImage;
+  sig.aiNotes = data.notes || '';
+  sig.aiConfidence = Number(data.confidence || 0) || 0;
+  const missing = [];
+  if (!p.ticker) missing.push('ticker');
+  if (!p.dir) missing.push('direccion');
+  if (!p.entry) missing.push('entry');
+  if (!p.sl) missing.push('SL');
+  if (!p.tp1) missing.push('TP');
+  sig.missing = missing;
+  const aiWarnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+  sig.warnings = [...new Set([...(sig.warnings || []).filter(x => !/^Falta /i.test(x)), ...aiWarnings])];
+  sig.confidence = Math.max(5, Math.min(98, Number(data.confidence || sig.confidence || 50)));
+  sig.status = missing.length ? 'review' : 'ready';
+  sig.rrFirst = p.sl && p.entry && p.tp1 ? Math.abs((p.tp1 - p.entry) / (p.sl - p.entry)) : null;
+  sig.rr = signalWeightedRR(p);
+  return sig;
+}
+
+async function signalMaybeInterpretWithAi(sig={}, secret='') {
+  if (!signalNeedsAi(sig)) return sig;
+  try {
+    const ai = await fetchSignalAi(sig, secret);
+    if (ai?.interpretation) signalApplyAiInterpretation(sig, ai);
+  } catch(e) {
+    sig.aiError = e.message;
+  }
+  return sig;
+}
+
 window.syncTelegramSignals = async (silent=false) => {
   if (_signalTelegramSyncing) return;
   if (!PROXY_URL) { if (!silent) toast('Falta configurar el Worker de MAUex.', 'error'); return; }
@@ -966,6 +1063,11 @@ window.syncTelegramSignals = async (silent=false) => {
       });
       sig.id = msg.id || sig.id;
       sig.createdAt = msg.date || msg.receivedAt || sig.createdAt;
+      sig.hasImage = !!msg.hasImage;
+      sig.imageFileId = msg.imageFileId || '';
+      sig.imageWidth = Number(msg.imageWidth || 0);
+      sig.imageHeight = Number(msg.imageHeight || 0);
+      await signalMaybeInterpretWithAi(sig, secret);
       await signalHydrateMarket(sig);
       const existingIndex = signalFindExistingSignalIndex(items, sig);
       if (existingIndex >= 0 && items[existingIndex]) {
@@ -996,6 +1098,7 @@ window.parseSignalInboxInput = async () => {
   const traderId = document.getElementById('signalTraderSelect')?.value || '';
   const exchange = document.getElementById('signalExchangeSelect')?.value || 'BINANCE';
   const sig = parseSignalMessage(raw, { traderId, exchange });
+  await signalMaybeInterpretWithAi(sig, localStorage.getItem(SIGNAL_TELEGRAM_SECRET_KEY) || '');
   await signalHydrateMarket(sig);
   const items = loadSignalInbox();
   const existingIndex = signalFindExistingSignalIndex(items, sig);

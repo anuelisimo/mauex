@@ -29,6 +29,7 @@ if exist PROBAR_IBKR_MAUEX.bat git add PROBAR_IBKR_MAUEX.bat
 if exist PROBAR_IBKR_MAUEX.ps1 git add PROBAR_IBKR_MAUEX.ps1
 if exist PROBAR_CONEXIONES_DASH_MAUEX.bat git add PROBAR_CONEXIONES_DASH_MAUEX.bat
 if exist PROBAR_CONEXIONES_DASH_MAUEX.ps1 git add PROBAR_CONEXIONES_DASH_MAUEX.ps1
+if exist CONFIGURAR_TELEGRAM_MAUEX.bat git add CONFIGURAR_TELEGRAM_MAUEX.bat
 
 echo Guardando cambios locales...
 git commit -m "Add IBKR dashboard support and spot card cleanup"
