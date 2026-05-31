@@ -267,6 +267,9 @@ window.showPage = page => {
     traders:   renderTraders,
   };
   if (renders[page]) renders[page]();
+  if (page === 'signals') {
+    setTimeout(() => window.syncTelegramSignals?.(true), 250);
+  }
   markNavAlertsSeen(page);
   if (page === 'settings') { loadProxyUrlField(); }
 
@@ -344,6 +347,8 @@ window.showPage = page => {
 // ── Themes ─────────────────────────────────────────────────────────────────
 // Signal Desk: local inbox for Telegram-style signals
 const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
+const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
+let _signalTelegramSyncing = false;
 const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS']);
 
 function signalEsc(v) {
@@ -357,6 +362,33 @@ function loadSignalInbox() {
 
 function saveSignalInbox(items) {
   localStorage.setItem(SIGNAL_INBOX_KEY, JSON.stringify(items.slice(0, 200)));
+}
+
+function signalNormText(v) {
+  return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+}
+
+function signalTraderIdFromSource(sourceName='') {
+  const source = signalNormText(sourceName);
+  if (!source) return '';
+  const aliases = [
+    ['binance killers', 'binance killer'],
+    ['bitcoin bullets', 'bitcoin bullet'],
+  ];
+  const list = window.G?.traders?.() || [];
+  let found = list.find(t => {
+    const n = signalNormText(t.name);
+    const c = signalNormText(t.channel);
+    return n && (source.includes(n) || n.includes(source) || c && (source.includes(c) || c.includes(source)));
+  });
+  if (found) return found.id;
+  const alias = aliases.find(row => row.some(a => source.includes(a)));
+  if (!alias) return '';
+  found = list.find(t => {
+    const n = signalNormText(t.name + ' ' + (t.channel || ''));
+    return alias.some(a => n.includes(a));
+  });
+  return found?.id || '';
 }
 
 function signalParseNumber(token) {
@@ -635,7 +667,10 @@ function parseSignalMessage(raw, opts={}) {
     createdAt: new Date().toISOString(),
     status: missing.length ? 'review' : 'ready',
     traderId: opts.traderId || '',
-    traderName: trader?.name || '',
+    traderName: trader?.name || opts.traderName || '',
+    source: opts.source || '',
+    sourceName: opts.sourceName || '',
+    telegramId: opts.telegramId || '',
     parsed,
     missing,
     warnings,
@@ -775,6 +810,72 @@ function renderSignals() {
     ? visible.map(signalCardHtml).join('')
     : `<div class="empty"><div class="empty-icon">◇</div><div class="empty-text">No hay señales en inbox</div><div class="empty-sub">Pegá un mensaje de Telegram para empezar.</div></div>`;
 }
+
+async function fetchTelegramSignals(secret='') {
+  const qs = new URLSearchParams({ t: Date.now().toString() });
+  if (secret) qs.set('secret', secret);
+  const r = await fetch(`${PROXY_URL}/telegram-signals?${qs.toString()}`, { cache:'no-store' });
+  if (r.status === 403) {
+    const e = new Error('secret_required');
+    e.status = 403;
+    throw e;
+  }
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+window.syncTelegramSignals = async (silent=false) => {
+  if (_signalTelegramSyncing) return;
+  if (!PROXY_URL) { if (!silent) toast('Falta configurar el Worker de MAUex.', 'error'); return; }
+  _signalTelegramSyncing = true;
+  try {
+    let secret = localStorage.getItem(SIGNAL_TELEGRAM_SECRET_KEY) || '';
+    let data;
+    try {
+      data = await fetchTelegramSignals(secret);
+    } catch(e) {
+      if (e.status === 403 && !silent) {
+        secret = prompt('Ingresá la clave de la bandeja Telegram de MAUex:') || '';
+        if (!secret) return;
+        localStorage.setItem(SIGNAL_TELEGRAM_SECRET_KEY, secret);
+        data = await fetchTelegramSignals(secret);
+      } else if (e.status === 403) {
+        return;
+      } else {
+        throw e;
+      }
+    }
+    const incoming = Array.isArray(data?.signals) ? data.signals : [];
+    if (!incoming.length) { if (!silent) toast('No hay señales nuevas en Telegram.'); return; }
+    const items = loadSignalInbox();
+    const seen = new Set(items.map(x => x.telegramId || x.id).filter(Boolean));
+    const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id));
+    if (!fresh.length) { if (!silent) toast('Telegram ya está al día.'); return; }
+    for (const msg of fresh.reverse()) {
+      const sourceName = msg.sourceName || 'Telegram';
+      const traderId = signalTraderIdFromSource(sourceName);
+      const sig = parseSignalMessage(msg.raw, {
+        traderId,
+        traderName: sourceName,
+        source: 'telegram',
+        sourceName,
+        telegramId: msg.telegramId || msg.id || '',
+        exchange: 'BINANCE',
+      });
+      sig.id = msg.id || sig.id;
+      sig.createdAt = msg.date || msg.receivedAt || sig.createdAt;
+      await signalHydrateMarket(sig);
+      items.unshift(sig);
+    }
+    saveSignalInbox(items);
+    renderSignals();
+    toast(`${fresh.length} señal${fresh.length === 1 ? '' : 'es'} importada${fresh.length === 1 ? '' : 's'} desde Telegram.`, 'success');
+  } catch(e) {
+    if (!silent) toast('Telegram: ' + e.message, 'error');
+  } finally {
+    _signalTelegramSyncing = false;
+  }
+};
 
 window.parseSignalInboxInput = async () => {
   const raw = document.getElementById('signalRawInput')?.value || '';
