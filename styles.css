@@ -357,9 +357,17 @@ textarea{resize:vertical;min-height:70px;}
 .signal-stat{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 12px;}
 .signal-stat div{font-family:var(--mono);font-size:9px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em;margin-bottom:5px;}
 .signal-stat strong{font-family:var(--mono);font-size:18px;color:var(--t1);}
+.signal-filters{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:rgba(255,255,255,.025);border:0.5px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:12px;}
+.signal-filter-group{display:flex;gap:6px;flex-wrap:wrap;}
+.signal-filter-btn{border:0.5px solid var(--border2);background:rgba(255,255,255,.025);color:var(--t3);border-radius:7px;padding:7px 9px;font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;}
+.signal-filter-btn:hover{color:var(--t1);border-color:rgba(255,255,255,.18);}
+.signal-filter-btn.active{background:var(--accent);border-color:var(--accent);color:#020806;}
+.signal-filter-note{font-family:var(--mono);font-size:10px;color:var(--t3);}
 .signal-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);margin-bottom:10px;overflow:hidden;}
 .signal-card.review{border-color:rgba(245,158,11,.45);}
 .signal-card.ready{border-color:rgba(0,196,122,.35);}
+.signal-card.reviewed{border-color:rgba(56,189,248,.35);}
+.signal-card.converted{border-color:rgba(0,196,122,.55);opacity:.72;}
 .signal-card.discarded{opacity:.55;}
 .signal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:0.5px solid var(--border);}
 .signal-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-weight:800;color:var(--t1);}
@@ -414,6 +422,10 @@ textarea{resize:vertical;min-height:70px;}
   .signal-layout{grid-template-columns:1fr;}
   .signal-input-card{position:static;}
   .signal-stats{grid-template-columns:repeat(2,1fr);}
+  .signal-filters{align-items:stretch;}
+  .signal-filter-group{width:100%;}
+  .signal-filter-btn{flex:1;min-width:calc(50% - 4px);}
+  .signal-filter-note{width:100%;}
   .signal-grid{grid-template-columns:repeat(2,1fr);}
   .signal-actions{grid-template-columns:1fr;}
   #aiChartGrid{grid-template-columns:1fr!important;}

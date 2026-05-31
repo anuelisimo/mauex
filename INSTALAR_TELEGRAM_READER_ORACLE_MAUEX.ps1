@@ -20,8 +20,8 @@ if ([string]::IsNullOrWhiteSpace($secret)) { throw "Falta TELEGRAM_WEBHOOK_SECRE
 $workerUrl = Read-Host "URL del Worker [Enter = https://mauex-proxy.mauaparo.workers.dev]"
 if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = "https://mauex-proxy.mauaparo.workers.dev" }
 
-$channels = Read-Host "Canales a leer [Enter = binance killers,bitcoin bullets]"
-if ([string]::IsNullOrWhiteSpace($channels)) { $channels = "binance killers,bitcoin bullets" }
+$channels = Read-Host "Canales a leer [Enter = BinanceKillersVipOfficial,BitcoinBullets_VipOfficial]"
+if ([string]::IsNullOrWhiteSpace($channels)) { $channels = "BinanceKillersVipOfficial,BitcoinBullets_VipOfficial" }
 
 function EnvQuote($value) {
   $s = [string]$value
@@ -57,7 +57,7 @@ TELEGRAM_API_HASH=$(EnvQuote $apiHash)
 TELEGRAM_WEBHOOK_SECRET=$(EnvQuote $secret)
 MAUEX_WORKER_URL=$(EnvQuote $workerUrl)
 MAUEX_TELEGRAM_CHANNELS=$(EnvQuote $channels)
-MAUEX_TELEGRAM_BACKFILL=20
+MAUEX_TELEGRAM_BACKFILL=0
 "@
 $tmpEnv = Join-Path $env:TEMP ("mauex-telegram-" + [guid]::NewGuid().ToString("N") + ".env")
 $envContent | Set-Content -LiteralPath $tmpEnv -Encoding ascii

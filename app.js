@@ -348,6 +348,7 @@ window.showPage = page => {
 // Signal Desk: local inbox for Telegram-style signals
 const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
 const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
+const SIGNAL_FILTER_KEY = 'mauex_signal_filters_v1';
 let _signalTelegramSyncing = false;
 let _signalTelegramAutoTimer = null;
 const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING']);
@@ -363,6 +364,19 @@ function loadSignalInbox() {
 
 function saveSignalInbox(items) {
   localStorage.setItem(SIGNAL_INBOX_KEY, JSON.stringify(items.slice(0, 200)));
+}
+
+function signalFilters() {
+  try { return { status:'open', channel:'all', ...(JSON.parse(localStorage.getItem(SIGNAL_FILTER_KEY) || '{}') || {}) }; }
+  catch(e) { return { status:'open', channel:'all' }; }
+}
+
+function saveSignalFilters(next) {
+  localStorage.setItem(SIGNAL_FILTER_KEY, JSON.stringify({ ...signalFilters(), ...(next || {}) }));
+}
+
+function currentVisiblePage() {
+  return document.querySelector('.bnav-btn.active')?.dataset?.page || '';
 }
 
 function signalNormText(v) {
@@ -835,11 +849,65 @@ function renderSignalStats(items) {
   if (!el) return;
   const active = items.filter(x => x.status !== 'discarded');
   const ready = active.filter(x => x.status === 'ready').length;
+  const reviewed = active.filter(x => x.status === 'reviewed').length;
   const review = active.filter(x => x.status === 'review').length;
   const converted = active.filter(x => x.status === 'converted').length;
-  el.innerHTML = [['Inbox', active.length], ['Listas', ready], ['A revisar', review], ['Convertidas', converted]]
+  el.innerHTML = [['Nuevas', ready], ['Revisadas', reviewed], ['A revisar', review], ['Convertidas', converted]]
     .map(([l,v]) => `<div class="signal-stat"><div>${l}</div><strong>${v}</strong></div>`).join('');
 }
+
+function signalChannelKey(sig={}) {
+  const src = signalNormText(`${sig.sourceName || ''} ${sig.traderName || ''}`);
+  if (/binance\s*killers/.test(src)) return 'binance';
+  if (/bitcoin\s*bullets/.test(src)) return 'bullets';
+  return 'other';
+}
+
+function signalStatusKey(sig={}) {
+  if (sig.status === 'converted') return 'converted';
+  if (sig.status === 'reviewed') return 'reviewed';
+  if (sig.status === 'review') return 'review';
+  if (sig.status === 'discarded') return 'discarded';
+  return 'ready';
+}
+
+function signalMatchesFilters(sig={}, filters=signalFilters()) {
+  const status = signalStatusKey(sig);
+  if (filters.status === 'open' && ['converted','discarded'].includes(status)) return false;
+  if (filters.status !== 'all' && filters.status !== 'open' && status !== filters.status) return false;
+  if (filters.channel !== 'all' && signalChannelKey(sig) !== filters.channel) return false;
+  return true;
+}
+
+function renderSignalFilters(items=[]) {
+  const el = document.getElementById('signalFilters');
+  if (!el) return;
+  const filters = signalFilters();
+  const active = filters.status === 'all' || filters.status === 'discarded' ? items : items.filter(x => x.status !== 'discarded');
+  const count = items.filter(x => signalMatchesFilters(x, filters)).length;
+  const btn = (kind, value, label) => `<button class="signal-filter-btn ${filters[kind] === value ? 'active' : ''}" onclick="setSignalFilter('${kind}','${value}')">${label}</button>`;
+  el.innerHTML = `
+    <div class="signal-filter-group">
+      ${btn('status','open','Abiertas')}
+      ${btn('status','ready','Nuevas')}
+      ${btn('status','review','A revisar')}
+      ${btn('status','reviewed','Revisadas')}
+      ${btn('status','converted','Convertidas')}
+      ${btn('status','discarded','Descartadas')}
+      ${btn('status','all','Todas')}
+    </div>
+    <div class="signal-filter-group">
+      ${btn('channel','all','Todos')}
+      ${btn('channel','binance','Binance Killers')}
+      ${btn('channel','bullets','Bitcoin Bullets')}
+    </div>
+    <div class="signal-filter-note">${count} visible${count === 1 ? '' : 's'} de ${active.length}</div>`;
+}
+
+window.setSignalFilter = (kind, value) => {
+  saveSignalFilters({ [kind]: value });
+  renderSignals();
+};
 
 function signalFieldHtml(label, value, color, sub='') {
   return `<div class="signal-field"><span>${signalEsc(label)}</span><strong style="color:${color};">${value}</strong>${sub ? `<small>${signalEsc(sub)}</small>` : ''}</div>`;
@@ -859,7 +927,7 @@ function signalBestTargetLabel(parsed={}) {
 function signalCardHtml(sig) {
   const p = sig.parsed || {};
   const dirCls = p.dir === 'short' ? 'bs' : p.dir === 'spot' ? 'bsp' : 'bl';
-  const stateCls = sig.status === 'ready' ? 'ready' : sig.status === 'discarded' ? 'discarded' : 'review';
+  const stateCls = ['ready','reviewed','converted','discarded'].includes(sig.status) ? sig.status : 'review';
   const confColor = sig.confidence >= 80 ? 'var(--accent)' : sig.confidence >= 55 ? 'var(--amber)' : 'var(--red)';
   const liq = p.dir !== 'spot' ? estimatedLiquidationPrice({ dir:p.dir, entry:p.entry, leverage:p.leverage, exchange:p.exchange }) : null;
   const tpSummary = signalBestTargetLabel(p);
@@ -875,7 +943,15 @@ function signalCardHtml(sig) {
     ...(sig.warnings || []).map(x => `<span class="signal-chip">${signalEsc(x)}</span>`),
     ...(sig.status === 'converted' ? ['<span class="signal-chip green">Convertida</span>'] : []),
   ].join('');
-  const statusText = sig.status === 'ready' ? 'Lectura confiable' : sig.status === 'converted' ? 'Ya convertida' : sig.status === 'discarded' ? 'Descartada' : 'Revisar lectura';
+  const statusText = sig.status === 'ready'
+    ? 'Lectura confiable'
+    : sig.status === 'reviewed'
+      ? 'Revisada'
+      : sig.status === 'converted'
+        ? 'Ya convertida'
+        : sig.status === 'discarded'
+          ? 'Descartada'
+          : 'Revisar lectura';
   const targetsLabel = p.targets?.length ? p.targets.map((x,i)=>`TP${i+1} $${fmtPx(x)}`).join(' · ') : '';
   const entryRangeLabel = p.entryIsCurrentMarket
     ? 'CMP precio actual'
@@ -958,9 +1034,10 @@ window.toggleSignalRaw = id => {
 function renderSignals() {
   const items = loadSignalInbox();
   renderSignalStats(items);
+  renderSignalFilters(items);
   const el = document.getElementById('signalInbox');
   if (!el) return;
-  const visible = items.filter(x => x.status !== 'discarded');
+  const visible = items.filter(x => signalMatchesFilters(x));
   el.innerHTML = visible.length
     ? visible.map(signalCardHtml).join('')
     : `<div class="empty"><div class="empty-icon">◇</div><div class="empty-text">No hay señales en inbox</div><div class="empty-sub">Pegá un mensaje de Telegram para empezar.</div></div>`;
@@ -1160,6 +1237,12 @@ window.syncTelegramSignals = async (silent=false) => {
     }
     saveSignalInbox(items);
     renderSignals();
+    if (currentVisiblePage() === 'signals') {
+      const seenNow = navAlertSeen();
+      seenNow.signals = Date.now();
+      saveNavAlertSeen(seenNow);
+    }
+    updateNavAlertBadges?.();
     const parts = [];
     if (imported) parts.push(`${imported} nueva${imported === 1 ? '' : 's'}`);
     if (merged) parts.push(`${merged} update${merged === 1 ? '' : 's'} unido${merged === 1 ? '' : 's'}`);
@@ -1251,7 +1334,13 @@ window.signalToCalculator = async id => {
   const items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
   await signalHydrateMarket(sig);
+  if (sig && !['converted','discarded'].includes(sig.status)) {
+    sig.status = 'reviewed';
+    sig.reviewedAt = new Date().toISOString();
+  }
   saveSignalInbox(items);
+  renderSignals();
+  updateNavAlertBadges?.();
   if (applySignalToCalculator(sig)) toast('Señal cargada en Calculadora.');
 };
 
@@ -1411,6 +1500,8 @@ window.signalConvert = async (id, status) => {
     sig.convertedAt = new Date().toISOString();
     sig.convertedTo = status;
     saveSignalInbox(items);
+    renderSignals();
+    updateNavAlertBadges?.();
   } catch(e) {
     toast('No pude convertir la señal: ' + e.message, 'error');
   }
@@ -1423,11 +1514,13 @@ window.discardSignal = id => {
   else if (sig) sig.status = 'discarded';
   saveSignalInbox(items);
   renderSignals();
+  updateNavAlertBadges?.();
 };
 
 window.clearSignalInbox = () => {
   saveSignalInbox(loadSignalInbox().filter(x => x.status !== 'discarded'));
   renderSignals();
+  updateNavAlertBadges?.();
   toast('Borradores descartados limpiados.');
 };
 
@@ -3756,9 +3849,36 @@ function sectionOfTrade(t) {
   if (['active','zombie'].includes(t?.status)) return 'positions';
   return '';
 }
+
+function signalNavTimeOf(sig) {
+  const raw = sig?.createdAt || sig?.receivedAt || sig?.date || sig?.updatedAt;
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function signalNavSummary(seen={}) {
+  const lastSeen = Number(seen.signals) || 0;
+  const summary = { count:0, color:'blue', rank:0 };
+  loadSignalInbox().forEach(sig => {
+    if (!sig || ['converted','discarded'].includes(sig.status)) return;
+    const createdAt = signalNavTimeOf(sig) || Date.now();
+    if (createdAt <= lastSeen) return;
+    summary.count += 1;
+    const rank = sig.status === 'review' ? 2 : 1;
+    const color = sig.status === 'review' ? 'amber' : 'blue';
+    if (rank > summary.rank) {
+      summary.rank = rank;
+      summary.color = color;
+    }
+  });
+  return summary;
+}
+
 function navAlertSummary() {
   const seen = navAlertSeen();
   const summary = {
+    signals: signalNavSummary(seen),
     watchlist: { count:0, color:'amber', rank:0 },
     orders: { count:0, color:'amber', rank:0 },
     positions: { count:0, color:'green', rank:0 },
@@ -3807,7 +3927,7 @@ function updateNavAlertBadges() {
   });
 }
 function markNavAlertsSeen(page) {
-  if (!NAV_ALERT_SECTIONS[page]) {
+  if (page !== 'signals' && !NAV_ALERT_SECTIONS[page]) {
     updateNavAlertBadges();
     return;
   }

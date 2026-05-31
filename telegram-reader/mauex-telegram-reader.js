@@ -13,7 +13,7 @@ const apiId = Number(process.env.TELEGRAM_API_ID || 0);
 const apiHash = process.env.TELEGRAM_API_HASH || '';
 const workerUrl = (process.env.MAUEX_WORKER_URL || 'https://mauex-proxy.mauaparo.workers.dev').replace(/\/+$/, '');
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_INBOX_SECRET || '';
-const channelNeedles = (process.env.MAUEX_TELEGRAM_CHANNELS || 'binance killers,bitcoin bullets')
+const channelNeedles = (process.env.MAUEX_TELEGRAM_CHANNELS || 'BinanceKillersVipOfficial,BitcoinBullets_VipOfficial')
   .split(',')
   .map(s => normalize(s))
   .filter(Boolean);
