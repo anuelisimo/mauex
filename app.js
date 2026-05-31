@@ -373,8 +373,11 @@ function signalParseNumber(token) {
 
 function signalNumbersFromText(text) {
   const clean = String(text || '')
+    .replace(/\(\s*\d+(?:[.,]\d+)?\s*-\s*\d+(?:[.,]\d+)?\s*x\s*\)/ig,' ')
     .replace(/\b\d{1,3}\s*x\b/ig,' ')
     .replace(/\bx\s*\d{1,3}\b/ig,' ')
+    .replace(/\bsignal\s*id\s*[:#]?\s*\d+\b/ig,' ')
+    .replace(/#\d+\b/g,' ')
     .replace(/\d+(?:[.,]\d+)?\s*%/g,' ');
   return (clean.match(/\$?\d+(?:[.,]\d+)?\s*[kK]?/g) || [])
     .map(signalParseNumber)
@@ -412,6 +415,27 @@ function signalLineHas(line, words) {
   return words.some(w => upper.includes(w));
 }
 
+function signalLineIsEntry(line) {
+  const raw = String(line || '').trim();
+  return /^(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\b/i.test(raw)
+    || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=]/i.test(raw);
+}
+
+function signalCurrentPriceFor(ticker, dir='long') {
+  const sym = String(ticker || '').replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
+  const p = window.G?.getPrice?.(sym, dir);
+  return Number(p || window.G?.prices?.[sym]?.spot || window.G?.prices?.[sym]?.futures || 0) || 0;
+}
+
+function signalChooseEntry(entryRange, ticker, dir) {
+  const entries = (entryRange || []).filter(n => Number(n) > 0);
+  if (!entries.length) return 0;
+  if (entries.length === 1) return entries[0];
+  const price = signalCurrentPriceFor(ticker, dir);
+  if (price) return entries.reduce((best, n) => Math.abs(n - price) < Math.abs(best - price) ? n : best, entries[0]);
+  return Math.round((entries.reduce((s,n)=>s+n,0) / entries.length) * 100000000) / 100000000;
+}
+
 function parseSignalMessage(raw, opts={}) {
   const text = String(raw || '').trim();
   const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
@@ -423,11 +447,13 @@ function parseSignalMessage(raw, opts={}) {
     exchange: signalDetectExchange(joined, opts.exchange || 'BINANCE'),
     leverage: 1,
     entry: 0, sl: 0, tp1: 0, tp2: 0, tp3: 0,
-    entryRange: [],
+    entryRange: [], targets: [], targetPercents: [],
     type: 'new_signal',
   };
+  const levRange = upper.match(/\(\s*(\d{1,3})\s*-\s*(\d{1,3})\s*X\s*\)/) || upper.match(/\b(\d{1,3})\s*-\s*(\d{1,3})\s*X\b/);
   const levMatch = upper.match(/\b(?:LEV|LEVERAGE|APALANCAMIENTO|MARGIN)\s*[:=]?\s*(\d{1,3})\s*X?\b/) || upper.match(/\bX\s*(\d{1,3})\b/) || upper.match(/\b(\d{1,3})\s*X\b/);
-  if (levMatch) parsed.leverage = Math.max(1, Math.min(125, Number(levMatch[1]) || 1));
+  if (levRange) parsed.leverage = Math.max(1, Math.min(125, Number(levRange[2]) || Number(levRange[1]) || 1));
+  else if (levMatch) parsed.leverage = Math.max(1, Math.min(125, Number(levMatch[1]) || 1));
   if (/\b(MOVE|MOVER|TRAIL|UPDATE|ACTUALIZA|BE|BREAK\s*EVEN|CANCEL|CANCELAR|CLOSE|CERRAR|CLOSED|TP\s*HIT|TOCO|TOCÓ)\b/i.test(joined)) parsed.type = 'update_or_management';
 
   const targetNums = [];
@@ -435,9 +461,9 @@ function parseSignalMessage(raw, opts={}) {
     const work = line.replace(/\bTP\s*\d+\b/ig,'TP').replace(/\bTARGET\s*\d+\b/ig,'TARGET').replace(/\bTAKE\s*PROFIT\s*\d+\b/ig,'TAKE PROFIT');
     const nums = signalNumbersFromText(work);
     if (!nums.length) return;
-    if (signalLineHas(line, ['ENTRY','ENTRADA','ENTRIES','ZONE','ZONA','LIMIT','BUY LIMIT','SELL LIMIT'])) {
+    if (signalLineIsEntry(line)) {
       parsed.entryRange = nums.slice(0, 2);
-      parsed.entry = nums.length >= 2 ? Math.round(((nums[0] + nums[1]) / 2) * 100000000) / 100000000 : nums[0];
+      parsed.entry = signalChooseEntry(parsed.entryRange, parsed.ticker, parsed.dir);
     } else if (signalLineHas(line, ['STOP','SL','INVALIDATION','INVALIDACION'])) {
       parsed.sl = nums[0];
     } else if (signalLineHas(line, ['TP','TARGET','TAKE PROFIT','OBJETIVO'])) {
@@ -449,12 +475,15 @@ function parseSignalMessage(raw, opts={}) {
     const nums = entryMatch ? signalNumbersFromText(entryMatch[1]) : [];
     if (nums.length) {
       parsed.entryRange = nums.slice(0, 2);
-      parsed.entry = nums.length >= 2 ? Math.round(((nums[0] + nums[1]) / 2) * 100000000) / 100000000 : nums[0];
+      parsed.entry = signalChooseEntry(parsed.entryRange, parsed.ticker, parsed.dir);
     }
   }
   const cleanTargets = [...new Set(targetNums)]
     .filter(n => !parsed.entry || Math.abs(n - parsed.entry) / Math.max(1, parsed.entry) > 0.001)
-    .slice(0, 3);
+    .slice(0, 12);
+  parsed.targets = cleanTargets;
+  const pct = cleanTargets.length ? Math.round((100 / cleanTargets.length) * 100) / 100 : 0;
+  parsed.targetPercents = cleanTargets.map((_, i) => i === cleanTargets.length - 1 ? Math.round((100 - pct * (cleanTargets.length - 1)) * 100) / 100 : pct);
   [parsed.tp1, parsed.tp2, parsed.tp3] = [cleanTargets[0] || 0, cleanTargets[1] || 0, cleanTargets[2] || 0];
 
   const missing = [];
@@ -467,7 +496,7 @@ function parseSignalMessage(raw, opts={}) {
   if (parsed.type !== 'new_signal') warnings.push('Parece update, no señal nueva');
   if (parsed.dir === 'long' && parsed.sl && parsed.entry && parsed.sl >= parsed.entry) warnings.push('SL raro para LONG');
   if (parsed.dir === 'short' && parsed.sl && parsed.entry && parsed.sl <= parsed.entry) warnings.push('SL raro para SHORT');
-  if (parsed.entryRange.length > 1) warnings.push('Entry tomado como promedio del rango');
+  if (parsed.entryRange.length > 1) warnings.push('Entry operativo elegido dentro del rango');
   const confidence = Math.max(5, Math.min(98, 100 - missing.length * 16 - warnings.length * 8));
   const rr = parsed.sl && parsed.entry && parsed.tp1 ? Math.abs((parsed.tp1 - parsed.entry) / (parsed.sl - parsed.entry)) : null;
   const trader = (window.G?.traders?.() || []).find(t => t.id === opts.traderId);
@@ -517,6 +546,8 @@ function signalCardHtml(sig) {
     ...(sig.status === 'converted' ? ['<span class="signal-chip green">Convertida</span>'] : []),
   ].join('');
   const statusText = sig.status === 'ready' ? 'Lectura confiable' : sig.status === 'converted' ? 'Ya convertida' : sig.status === 'discarded' ? 'Descartada' : 'Revisar lectura';
+  const targetsLabel = p.targets?.length ? p.targets.map((x,i)=>`TP${i+1} $${fmtPx(x)}`).join(' · ') : '';
+  const entryRangeLabel = p.entryRange?.length > 1 ? p.entryRange.map(fmtPx).join(' - ') : '';
   return `
     <div class="signal-card ${stateCls}">
       <div class="signal-head">
@@ -533,13 +564,14 @@ function signalCardHtml(sig) {
       </div>
       <div class="signal-body">
         <div class="signal-grid">
-          <div class="signal-field"><span>Entry</span><strong>${p.entry ? '$'+fmtPx(p.entry) : '—'}</strong></div>
+          <div class="signal-field"><span>Entry operativo</span><strong>${p.entry ? '$'+fmtPx(p.entry) : '—'}</strong>${entryRangeLabel ? `<small>zona ${signalEsc(entryRangeLabel)}</small>` : ''}</div>
           <div class="signal-field"><span>SL</span><strong>${p.sl ? '$'+fmtPx(p.sl) : '—'}</strong></div>
           <div class="signal-field"><span>TP1</span><strong>${p.tp1 ? '$'+fmtPx(p.tp1) : '—'}</strong></div>
           <div class="signal-field"><span>TP2</span><strong>${p.tp2 ? '$'+fmtPx(p.tp2) : '—'}</strong></div>
           <div class="signal-field"><span>TP3</span><strong>${p.tp3 ? '$'+fmtPx(p.tp3) : '—'}</strong></div>
           <div class="signal-field"><span>R:R TP1</span><strong>${sig.rr ? sig.rr.toFixed(2)+':1' : '—'}</strong></div>
         </div>
+        ${targetsLabel ? `<div style="font-family:var(--mono);font-size:10px;color:var(--accent);line-height:1.6;margin:-2px 0 10px;">${signalEsc(targetsLabel)}</div>` : ''}
         <div class="signal-raw">${signalEsc(sig.raw)}</div>
         ${chips ? `<div class="signal-warnings">${chips}</div>` : ''}
       </div>
@@ -597,9 +629,26 @@ function applySignalToCalculator(sig) {
   set('cTP1', p.tp1 || '');
   set('cTP2', p.tp2 || '');
   set('cTP3', p.tp3 || '');
+  const visibleTpPct = p.targets?.length > 3 ? [33,33,34] : (p.targetPercents || [33,33,34]);
+  set('cTP1pct', visibleTpPct[0] || 33);
+  set('cTP2pct', visibleTpPct[1] || 33);
+  set('cTP3pct', visibleTpPct[2] || 34);
   set('cSize', '');
   if (sig.traderId) set('cTrader', sig.traderId);
-  set('cNotes', [sig.traderName ? `Trader: ${sig.traderName}` : '', p.entryRange?.length > 1 ? `Entry original: ${p.entryRange.map(fmtPx).join(' - ')}` : '', 'Señal original:', sig.raw].filter(Boolean).join('\n'));
+  const fullTargetsNote = p.targets?.length
+    ? `Targets completos: ${p.targets.map((x,i)=>`TP${i+1} ${fmtPx(x)} (${p.targetPercents?.[i] || 0}%)`).join(' / ')}`
+    : '';
+  set('cNotes', [sig.traderName ? `Trader: ${sig.traderName}` : '', p.entryRange?.length > 1 ? `Entry original: ${p.entryRange.map(fmtPx).join(' - ')}` : '', fullTargetsNote, 'Señal original:', sig.raw].filter(Boolean).join('\n'));
+  window._signalTradeExtras = {
+    source: 'signal_desk',
+    signalId: sig.id || '',
+    ticker: p.ticker || '',
+    entry: p.entry || 0,
+    entryRange: Array.isArray(p.entryRange) ? p.entryRange : [],
+    targets: Array.isArray(p.targets) ? p.targets : [],
+    targetPercents: Array.isArray(p.targetPercents) ? p.targetPercents : [],
+    raw: sig.raw || '',
+  };
   compute();
   return true;
 }

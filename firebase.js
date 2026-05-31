@@ -224,6 +224,10 @@ window.saveTrade = async status => {
   const lev = calcState.dir === 'spot' ? 1 : (calcState.lev || 1);
   // Use manual size if provided; without SL, risk USD acts as margin/max loss.
   const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : (risk ? (calcState.dir === 'spot' ? risk : risk * lev) : 0));
+  const signalExtras = window._signalTradeExtras || null;
+  const signalExtrasMatch = !!(signalExtras
+    && signalExtras.ticker === ticker
+    && (!signalExtras.entry || Math.abs(Number(signalExtras.entry || 0) - entry) / Math.max(1, Math.abs(entry)) < 0.01));
 
   try {
     const currentWatchOrders = status === 'watchlist'
@@ -238,6 +242,14 @@ window.saveTrade = async status => {
       leverage: lev,
       traderId, traderName, notes, invalidations, status,
       ...(watchOrder ? { watchOrder } : {}),
+      ...(signalExtrasMatch ? {
+        signalSource: String(signalExtras.source || 'signal_desk'),
+        signalId: String(signalExtras.signalId || ''),
+        signalRaw: String(signalExtras.raw || ''),
+        signalEntryRange: Array.isArray(signalExtras.entryRange) ? signalExtras.entryRange.filter(v => Number.isFinite(Number(v))).map(Number) : [],
+        signalTargets: Array.isArray(signalExtras.targets) ? signalExtras.targets.filter(v => Number.isFinite(Number(v))).map(Number) : [],
+        signalTargetPercents: Array.isArray(signalExtras.targetPercents) ? signalExtras.targetPercents.filter(v => Number.isFinite(Number(v))).map(Number) : [],
+      } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -249,6 +261,7 @@ window.saveTrade = async status => {
     const dest = status==='watchlist' ? 'watchlist' : status==='pending' ? 'orders' : 'positions';
     const label = status==='watchlist' ? 'Watchlist' : status==='pending' ? 'Órdenes abiertas' : 'Posiciones';
     toast(`Guardado en ${label}!`);
+    if (signalExtrasMatch) window._signalTradeExtras = null;
     showPage(dest);
     if(dest==='orders') setTimeout(()=>window.syncAllOrders?.(), 300);
   } catch(e) {

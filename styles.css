@@ -367,6 +367,7 @@ textarea{resize:vertical;min-height:70px;}
 .signal-field{background:rgba(255,255,255,.025);border:0.5px solid var(--border2);border-radius:8px;padding:8px;}
 .signal-field span{display:block;font-family:var(--mono);font-size:8px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em;margin-bottom:4px;}
 .signal-field strong{display:block;font-family:var(--mono);font-size:13px;color:var(--t1);}
+.signal-field small{display:block;font-family:var(--mono);font-size:9px;color:var(--t3);margin-top:3px;line-height:1.3;}
 .signal-raw{font-family:var(--mono);font-size:10px;color:var(--t3);line-height:1.55;background:rgba(0,0,0,.18);border-radius:8px;padding:9px;white-space:pre-wrap;max-height:110px;overflow:auto;}
 .signal-actions{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:10px 16px;background:rgba(0,0,0,.16);}
 .signal-warnings{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
