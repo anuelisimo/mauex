@@ -439,13 +439,130 @@ function signalCurrentPriceFor(ticker, dir='long') {
   return Number(p || window.G?.prices?.[sym]?.spot || window.G?.prices?.[sym]?.futures || 0) || 0;
 }
 
-function signalChooseEntry(entryRange, ticker, dir) {
+function signalChooseEntry(entryRange, ticker, dir, livePrice=0) {
   const entries = (entryRange || []).filter(n => Number(n) > 0);
   if (!entries.length) return 0;
   if (entries.length === 1) return entries[0];
-  const price = signalCurrentPriceFor(ticker, dir);
-  if (price) return entries.reduce((best, n) => Math.abs(n - price) < Math.abs(best - price) ? n : best, entries[0]);
+  const price = Number(livePrice || 0) || signalCurrentPriceFor(ticker, dir);
+  if (price) {
+    const low = Math.min(...entries);
+    const high = Math.max(...entries);
+    if (price >= low && price <= high) return Math.round(price * 100000000) / 100000000;
+    return price < low ? low : high;
+  }
   return Math.round((entries.reduce((s,n)=>s+n,0) / entries.length) * 100000000) / 100000000;
+}
+
+function signalWeightedRR(parsed={}) {
+  const entry = Number(parsed.entry || 0);
+  const sl = Number(parsed.sl || 0);
+  const targets = Array.isArray(parsed.targets) && parsed.targets.length
+    ? parsed.targets.map(Number).filter(Boolean)
+    : [parsed.tp1, parsed.tp2, parsed.tp3].map(Number).filter(Boolean);
+  if (!entry || !sl || !targets.length || sl === entry) return null;
+  const pcts = Array.isArray(parsed.targetPercents) && parsed.targetPercents.length
+    ? parsed.targetPercents.map(Number)
+    : targets.map((_, i) => i === targets.length - 1 ? 100 - Math.floor(100 / targets.length) * (targets.length - 1) : Math.floor(100 / targets.length));
+  const risk = Math.abs(entry - sl);
+  const weight = targets.reduce((s, _, i) => s + (Number(pcts[i]) || 0), 0);
+  if (!risk || !weight) return null;
+  return targets.reduce((s, tp, i) => s + Math.abs(tp - entry) / risk * (Number(pcts[i]) || 0), 0) / weight;
+}
+
+async function signalFetchCurrentPrice(ticker, exchange='BINANCE', dir='long') {
+  const sym = String(ticker || '').replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
+  if (!sym) return 0;
+  const local = signalCurrentPriceFor(sym, dir);
+  if (local) return local;
+  const isCrypto = appIsCryptoTicker(sym, exchange);
+  try {
+    let px = 0;
+    if (isCrypto) {
+      const urls = String(exchange || '').toUpperCase() === 'KUCOIN'
+        ? [
+            `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`,
+            `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`,
+          ]
+        : [
+            `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`,
+            `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`,
+          ];
+      for (const url of urls) {
+        try {
+          const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+          const d = await r.json();
+          px = Number(d?.price || d?.data?.price || 0);
+          if (px) break;
+        } catch(e) {}
+      }
+    } else {
+      px = await fetchYahooSpotPrice(sym);
+    }
+    if (px && window.G?.prices) {
+      window.G.prices[sym] = {
+        ...(window.G.prices[sym] || {}),
+        spot: px,
+        ...(dir !== 'spot' ? { futures: px } : {}),
+      };
+    }
+    return px || 0;
+  } catch(e) {
+    return 0;
+  }
+}
+
+function signalMarketState(parsed={}, price=0) {
+  const current = Number(price || 0);
+  const entries = (parsed.entryRange || []).map(Number).filter(Boolean);
+  const entry = Number(parsed.entry || 0);
+  const sl = Number(parsed.sl || 0);
+  const dir = String(parsed.dir || '').toLowerCase();
+  if (!current || (!entries.length && !entry) || !dir) return null;
+  const low = entries.length ? Math.min(...entries) : entry;
+  const high = entries.length ? Math.max(...entries) : entry;
+  const inZone = current >= low && current <= high;
+  let state = { price: current, code: 'unknown', label: 'Precio leído', tone: 'blue', detail: '' };
+  if (dir === 'short') {
+    if (sl && current >= sl) state = { price: current, code:'invalidated', label:'Invalidada por SL', tone:'red', detail:'El precio actual ya está arriba del SL del short.' };
+    else if (current > high) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasó la entrada y está yendo contra el short.' };
+    else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual está dentro del rango de entrada.' };
+    else if (current < low) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se movió a favor del short desde la zona de entrada.' };
+  } else {
+    if (sl && current <= sl) state = { price: current, code:'invalidated', label:'Invalidada por SL', tone:'red', detail:'El precio actual ya está debajo del SL del long.' };
+    else if (current < low) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasó la entrada y está yendo contra el long.' };
+    else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual está dentro del rango de entrada.' };
+    else if (current > high) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se movió a favor del long desde la zona de entrada.' };
+  }
+  return state;
+}
+
+function signalApplyMarketState(sig, price=0) {
+  const p = sig?.parsed || {};
+  const current = Number(price || 0);
+  if (current && p.entryRange?.length > 1) p.entry = signalChooseEntry(p.entryRange, p.ticker, p.dir, current);
+  sig.market = signalMarketState(p, current);
+  sig.rrFirst = p.sl && p.entry && p.tp1 ? Math.abs((p.tp1 - p.entry) / (p.sl - p.entry)) : null;
+  sig.rr = signalWeightedRR(p);
+  sig.warnings = (sig.warnings || []).filter(x => !String(x).startsWith('Precio: '));
+  if (sig.market) {
+    sig.warnings.push(`Precio: ${sig.market.label}`);
+    if (sig.market.code === 'invalidated') {
+      sig.status = 'review';
+      sig.confidence = Math.min(Number(sig.confidence || 0), 40);
+    } else if (sig.market.code === 'active_against') {
+      sig.confidence = Math.min(Number(sig.confidence || 0), 72);
+    } else if (sig.market.code === 'missed_favor') {
+      sig.confidence = Math.min(Number(sig.confidence || 0), 78);
+    }
+  }
+  return sig;
+}
+
+async function signalHydrateMarket(sig) {
+  const p = sig?.parsed || {};
+  if (!p.ticker) return sig;
+  const price = await signalFetchCurrentPrice(p.ticker, p.exchange, p.dir);
+  return signalApplyMarketState(sig, price);
 }
 
 function parseSignalMessage(raw, opts={}) {
@@ -510,7 +627,8 @@ function parseSignalMessage(raw, opts={}) {
   if (parsed.dir === 'short' && parsed.sl && parsed.entry && parsed.sl <= parsed.entry) warnings.push('SL raro para SHORT');
   if (parsed.entryRange.length > 1) warnings.push('Entry operativo elegido dentro del rango');
   const confidence = Math.max(5, Math.min(98, 100 - missing.length * 16 - warnings.length * 8));
-  const rr = parsed.sl && parsed.entry && parsed.tp1 ? Math.abs((parsed.tp1 - parsed.entry) / (parsed.sl - parsed.entry)) : null;
+  const rrFirst = parsed.sl && parsed.entry && parsed.tp1 ? Math.abs((parsed.tp1 - parsed.entry) / (parsed.sl - parsed.entry)) : null;
+  const rr = signalWeightedRR(parsed);
   const trader = (window.G?.traders?.() || []).find(t => t.id === opts.traderId);
   return {
     id: `sig-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -523,6 +641,7 @@ function parseSignalMessage(raw, opts={}) {
     missing,
     warnings,
     confidence,
+    rrFirst,
     rr,
   };
 }
@@ -553,6 +672,7 @@ function signalCardHtml(sig) {
   const stateCls = sig.status === 'ready' ? 'ready' : sig.status === 'discarded' ? 'discarded' : 'review';
   const confColor = sig.confidence >= 80 ? 'var(--accent)' : sig.confidence >= 55 ? 'var(--amber)' : 'var(--red)';
   const chips = [
+    ...(sig.market ? [`<span class="signal-chip ${signalEsc(sig.market.tone || '')}">${signalEsc(sig.market.label)}${sig.market.price ? ' · $'+fmtPx(sig.market.price) : ''}</span>`] : []),
     ...(sig.missing || []).map(x => `<span class="signal-chip red">Falta ${signalEsc(x)}</span>`),
     ...(sig.warnings || []).map(x => `<span class="signal-chip">${signalEsc(x)}</span>`),
     ...(sig.status === 'converted' ? ['<span class="signal-chip green">Convertida</span>'] : []),
@@ -579,9 +699,9 @@ function signalCardHtml(sig) {
           <div class="signal-field"><span>Entry operativo</span><strong>${p.entry ? '$'+fmtPx(p.entry) : '—'}</strong>${entryRangeLabel ? `<small>zona ${signalEsc(entryRangeLabel)}</small>` : ''}</div>
           <div class="signal-field"><span>SL</span><strong>${p.sl ? '$'+fmtPx(p.sl) : '—'}</strong></div>
           <div class="signal-field"><span>TP1</span><strong>${p.tp1 ? '$'+fmtPx(p.tp1) : '—'}</strong></div>
-          <div class="signal-field"><span>TP2</span><strong>${p.tp2 ? '$'+fmtPx(p.tp2) : '—'}</strong></div>
-          <div class="signal-field"><span>TP3</span><strong>${p.tp3 ? '$'+fmtPx(p.tp3) : '—'}</strong></div>
-          <div class="signal-field"><span>R:R TP1</span><strong>${sig.rr ? sig.rr.toFixed(2)+':1' : '—'}</strong></div>
+          <div class="signal-field"><span>Precio actual</span><strong>${sig.market?.price ? '$'+fmtPx(sig.market.price) : '—'}</strong>${sig.market?.label ? `<small>${signalEsc(sig.market.label)}</small>` : ''}</div>
+          <div class="signal-field"><span>TPs</span><strong>${p.targets?.length || [p.tp1,p.tp2,p.tp3].filter(Boolean).length || '—'}</strong>${p.targets?.length ? `<small>salidas proporcionales</small>` : ''}</div>
+          <div class="signal-field"><span>R:R plan</span><strong>${sig.rr ? sig.rr.toFixed(2)+':1' : '—'}</strong>${sig.rrFirst ? `<small>TP1 ${sig.rrFirst.toFixed(2)}:1</small>` : ''}</div>
         </div>
         ${targetsLabel ? `<div style="font-family:var(--mono);font-size:10px;color:var(--accent);line-height:1.6;margin:-2px 0 10px;">${signalEsc(targetsLabel)}</div>` : ''}
         <div class="signal-raw">${signalEsc(sig.raw)}</div>
@@ -589,6 +709,7 @@ function signalCardHtml(sig) {
       </div>
       <div class="signal-actions">
         <button class="btn sm" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
+        <button class="btn sm" onclick="signalOpenChart('${sig.id}')">📈 Gráfico</button>
         <button class="btn sm" onclick="signalConvert('${sig.id}','watchlist')">Watch</button>
         <button class="btn sm" style="background:var(--amber);color:#000;border-color:var(--amber);" onclick="signalConvert('${sig.id}','pending')">Orden</button>
         <button class="btn sm acc" onclick="signalConvert('${sig.id}','active')">Posición</button>
@@ -609,12 +730,13 @@ function renderSignals() {
     : `<div class="empty"><div class="empty-icon">◇</div><div class="empty-text">No hay señales en inbox</div><div class="empty-sub">Pegá un mensaje de Telegram para empezar.</div></div>`;
 }
 
-window.parseSignalInboxInput = () => {
+window.parseSignalInboxInput = async () => {
   const raw = document.getElementById('signalRawInput')?.value || '';
   if (!raw.trim()) { toast('Pegá primero el mensaje del trader.', 'error'); return; }
   const traderId = document.getElementById('signalTraderSelect')?.value || '';
   const exchange = document.getElementById('signalExchangeSelect')?.value || 'BINANCE';
   const sig = parseSignalMessage(raw, { traderId, exchange });
+  await signalHydrateMarket(sig);
   const items = loadSignalInbox();
   items.unshift(sig);
   saveSignalInbox(items);
@@ -665,14 +787,32 @@ function applySignalToCalculator(sig) {
   return true;
 }
 
-window.signalToCalculator = id => {
-  const sig = loadSignalInbox().find(x => x.id === id);
+window.signalToCalculator = async id => {
+  const items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  await signalHydrateMarket(sig);
+  saveSignalInbox(items);
   if (applySignalToCalculator(sig)) toast('Señal cargada en Calculadora.');
+};
+
+window.signalOpenChart = async id => {
+  const items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  await signalHydrateMarket(sig);
+  saveSignalInbox(items);
+  if (applySignalToCalculator(sig)) {
+    setTimeout(() => {
+      renderCalcSignalChart?.();
+      document.getElementById('calcSignalChart')?.scrollIntoView({ behavior:'smooth', block:'center' });
+    }, 150);
+  }
 };
 
 window.signalConvert = async (id, status) => {
   const items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
+  await signalHydrateMarket(sig);
+  saveSignalInbox(items);
   if (!applySignalToCalculator(sig)) return;
   try {
     await window.saveTrade(status);
