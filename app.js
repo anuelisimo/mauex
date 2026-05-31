@@ -349,7 +349,7 @@ window.showPage = page => {
 const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
 const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
 let _signalTelegramSyncing = false;
-const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS']);
+const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING']);
 
 function signalEsc(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -410,12 +410,16 @@ function signalInboxKey(sig={}) {
 function signalFindExistingSignalIndex(items=[], sig={}) {
   const p = sig.parsed || {};
   const signalId = String(sig.providerSignalId || p.providerSignalId || '').toUpperCase();
-  if (!signalId) return -1;
   const provider = signalNormText(sig.sourceName || sig.traderName || sig.source || '');
+  const ticker = String(p.ticker || '').toUpperCase();
+  const isLooseUpdate = !signalId && ticker && p.type === 'update_or_management';
+  if (!signalId && !isLooseUpdate) return -1;
   return items.findIndex(item => {
     const ip = item.parsed || {};
     const itemSignalId = String(item.providerSignalId || ip.providerSignalId || '').toUpperCase();
-    if (itemSignalId !== signalId) return false;
+    const itemTicker = String(ip.ticker || '').toUpperCase();
+    if (signalId && itemSignalId !== signalId) return false;
+    if (isLooseUpdate && itemTicker !== ticker) return false;
     const itemProvider = signalNormText(item.sourceName || item.traderName || item.source || '');
     if (!provider || !itemProvider) return true;
     return provider === itemProvider || provider.includes(itemProvider) || itemProvider.includes(provider);
@@ -468,6 +472,17 @@ function signalNumbersFromText(text) {
 
 function signalDetectTicker(raw) {
   const upper = String(raw || '').toUpperCase();
+  const lines = upper.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (/\bSIGNAL\s*ID\b/.test(line)) continue;
+    const coin = line.match(/\bCOIN\s*:\s*#?\$?\s*([A-Z0-9]{2,12})(?:\s*[-/]?\s*(USDT|USDC|USD|PERP))?/);
+    if (coin && !SIGNAL_STOPWORDS.has(coin[1])) return coin[1].replace(/USDT|USDC|USD|PERP/g,'');
+  }
+  for (const line of lines.slice(0, 8)) {
+    if (/\bSIGNAL\s*ID\b/.test(line)) continue;
+    const hash = line.match(/[$#]([A-Z][A-Z0-9]{1,11})\b/);
+    if (hash && !SIGNAL_STOPWORDS.has(hash[1]) && !/^B?\d+$/.test(hash[1])) return hash[1];
+  }
   const pair = upper.match(/\b([A-Z0-9]{2,12})\s*[-/]?\s*(USDT|USDC|USD|PERP)\b/);
   if (pair && !SIGNAL_STOPWORDS.has(pair[1])) return pair[1].replace(/PERP$/,'');
   for (const c of APP_CRYPTOS) {
@@ -489,6 +504,8 @@ function signalDetectDirection(raw) {
   if (/\bSPOT\b/.test(upper)) return 'spot';
   if (/\b(SHORT|SELL|VENTA|BAJISTA)\b/.test(upper)) return 'short';
   if (/\b(LONG|BUY|COMPRA|ALCISTA)\b/.test(upper)) return 'long';
+  if (/\b(BULLISH|BOTTOMED|ACCUMULATION|BREAKOUT|SUPPORT|UPTREND|BOUNCE)\b/.test(upper)) return 'long';
+  if (/\b(BEARISH|BREAKDOWN|DOWNTREND|RESISTANCE|REJECTION)\b/.test(upper)) return 'short';
   return '';
 }
 
@@ -662,11 +679,15 @@ function parseSignalMessage(raw, opts={}) {
     providerSignalId,
     type: 'new_signal',
   };
+  const levExplicitRange = upper.match(/\b(?:LEV|LEVERAGE|APALANCAMIENTO|MARGIN)\s*[:=]?\s*(\d{1,3})\s*-\s*(\d{1,3})\s*X?\b/);
+  const levExplicit = upper.match(/\b(?:LEV|LEVERAGE|APALANCAMIENTO|MARGIN)\s*[:=]?\s*(\d{1,3})\s*X?\b/);
   const levRange = upper.match(/\(\s*(\d{1,3})\s*-\s*(\d{1,3})\s*X\s*\)/) || upper.match(/\b(\d{1,3})\s*-\s*(\d{1,3})\s*X\b/);
-  const levMatch = upper.match(/\b(?:LEV|LEVERAGE|APALANCAMIENTO|MARGIN)\s*[:=]?\s*(\d{1,3})\s*X?\b/) || upper.match(/\bX\s*(\d{1,3})\b/) || upper.match(/\b(\d{1,3})\s*X\b/);
-  if (levRange) parsed.leverage = Math.max(1, Math.min(125, Number(levRange[2]) || Number(levRange[1]) || 1));
+  const levMatch = upper.match(/\bX\s*(\d{1,3})\b/) || upper.match(/\b(\d{1,3})\s*X\b/);
+  if (levExplicitRange) parsed.leverage = Math.max(1, Math.min(125, Number(levExplicitRange[2]) || Number(levExplicitRange[1]) || 1));
+  else if (levExplicit) parsed.leverage = Math.max(1, Math.min(125, Number(levExplicit[1]) || 1));
+  else if (levRange) parsed.leverage = Math.max(1, Math.min(125, Number(levRange[2]) || Number(levRange[1]) || 1));
   else if (levMatch) parsed.leverage = Math.max(1, Math.min(125, Number(levMatch[1]) || 1));
-  if (/\b(MOVE|MOVER|TRAIL|UPDATE|ACTUALIZA|BE|BREAK\s*EVEN|CANCEL|CANCELAR|CLOSE|CERRAR|CLOSED|TP\s*HIT|TOCO|TOCÓ)\b/i.test(joined)) parsed.type = 'update_or_management';
+  if (/\b(MOVE|MOVER|TRAIL|UPDATE|ACTUALIZA|BE|BREAK\s*EVEN|BREAKEVEN|CANCEL|CANCELAR|CLOSE|CLOSING|CERRAR|CLOSED|TP\s*HIT|TOCO|TOCÓ)\b/i.test(joined)) parsed.type = 'update_or_management';
 
   const targetNums = [];
   lines.forEach(line => {
@@ -697,6 +718,12 @@ function parseSignalMessage(raw, opts={}) {
   const pct = cleanTargets.length ? Math.round((100 / cleanTargets.length) * 100) / 100 : 0;
   parsed.targetPercents = cleanTargets.map((_, i) => i === cleanTargets.length - 1 ? Math.round((100 - pct * (cleanTargets.length - 1)) * 100) / 100 : pct);
   [parsed.tp1, parsed.tp2, parsed.tp3] = [cleanTargets[0] || 0, cleanTargets[1] || 0, cleanTargets[2] || 0];
+  if (!parsed.dir && parsed.entry && parsed.sl && cleanTargets.length) {
+    const upTargets = cleanTargets.filter(x => x > parsed.entry).length;
+    const downTargets = cleanTargets.filter(x => x < parsed.entry).length;
+    if (parsed.sl < parsed.entry && upTargets >= Math.max(1, downTargets)) parsed.dir = 'long';
+    else if (parsed.sl > parsed.entry && downTargets >= Math.max(1, upTargets)) parsed.dir = 'short';
+  }
   if (providerSignalId && !parsed.entry && !parsed.sl && cleanTargets.length) parsed.type = 'update_or_management';
 
   const missing = [];
