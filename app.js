@@ -1068,6 +1068,7 @@ window.toggleSignalTarget = (id, index) => {
   if (!sig) return;
   const targets = signalAllTargets(sig.parsed || {});
   if (!targets[index]) return;
+  const chartWasOpen = document.getElementById(`signalChartPanel-${id}`)?.style.display !== 'none';
   let selected = sig.targetSelectionManual ? signalSelectedTargetIndexes(sig) : [];
   if (!sig.targetSelectionManual) {
     sig.targetSelectionManual = true;
@@ -1089,6 +1090,13 @@ window.toggleSignalTarget = (id, index) => {
   }
   saveSignalInbox(items);
   renderSignals();
+  if (chartWasOpen) {
+    const panel = document.getElementById(`signalChartPanel-${id}`);
+    const arrow = document.getElementById(`signalChartArrow-${id}`);
+    if (panel) panel.style.display = 'block';
+    if (arrow) arrow.textContent = '▲';
+    renderSignalInlineChart(sig);
+  }
 };
 window.toggleSignalRaw = id => {
   const panel = document.getElementById(`signalRawPanel-${id}`);
@@ -1437,13 +1445,24 @@ function signalChartInfo(sig) {
 function signalChartLevels(sig) {
   const p = sig?.parsed || {};
   const liq = p.dir !== 'spot' ? estimatedLiquidationPrice({ dir:p.dir, entry:p.entry, leverage:p.leverage, exchange:p.exchange }) : null;
-  const targets = Array.isArray(p.targets) && p.targets.length ? p.targets : [p.tp1,p.tp2,p.tp3].filter(Boolean);
+  const targets = signalAllTargets(p);
+  const selectedTargets = new Set(signalSelectedTargetIndexes(sig));
+  const targetLevels = targets.slice(0, 12).map((price, i) => {
+    const selected = selectedTargets.has(i);
+    return {
+      price,
+      title:`TP${i+1}`,
+      color:selected ? 'rgba(0,196,122,.96)' : 'rgba(0,196,122,.28)',
+      lineWidth:selected ? 2 : 1,
+      lineStyle:selected ? 0 : 1,
+    };
+  });
   return [
     ...(sig?.market?.price ? [{ price:sig.market.price, title:'Actual', color:'rgba(224,64,251,.98)' }] : []),
     ...(p.entry ? [{ price:p.entry, title:'Entry', color:'rgba(232,237,243,.95)' }] : []),
     ...(p.sl ? [{ price:p.sl, title:'SL', color:'rgba(240,61,61,.95)' }] : []),
     ...(liq ? [{ price:liq, title:'Liq', color:'rgba(245,158,11,.95)' }] : []),
-    ...targets.slice(0, 12).map((price, i) => ({ price, title:`TP${i+1}`, color:'rgba(0,196,122,.92)' })),
+    ...targetLevels,
   ];
 }
 
@@ -1493,8 +1512,8 @@ async function renderSignalInlineChart(sig) {
     const lastTime = candles[candles.length - 1]?.time;
     signalChartLevels(sig).forEach(lvl => {
       try {
-        addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:2 });
-        series.createPriceLine({ price:lvl.price, color:lvl.color, lineWidth:1, lineStyle:2, axisLabelVisible:true, title:lvl.title });
+        addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:lvl.lineStyle ?? 2, lineWidth:lvl.lineWidth || 1 });
+        series.createPriceLine({ price:lvl.price, color:lvl.color, lineWidth:lvl.lineWidth || 1, lineStyle:lvl.lineStyle ?? 2, axisLabelVisible:true, title:lvl.title });
       } catch(e) {}
     });
     chart.timeScale().fitContent();
@@ -1547,6 +1566,7 @@ window.signalOpenChart = async id => {
   window._aiSource = info.source;
   window._aiType = info.type;
   if (typeof setMarketType === 'function') setMarketType(p.dir === 'spot' ? 'spot' : 'futures');
+  const selectedTargets = signalOperationalTargets(sig);
   _analysisTradeData = {
     ticker: info.raw,
     dir: p.dir || 'long',
@@ -1554,9 +1574,9 @@ window.signalOpenChart = async id => {
     leverage: p.leverage || 1,
     entry: p.entry || 0,
     sl: p.sl || 0,
-    tp1: p.targets?.[0] || p.tp1 || 0,
-    tp2: p.targets?.[1] || p.tp2 || 0,
-    tp3: p.targets?.[2] || p.tp3 || 0,
+    tp1: selectedTargets[0] || 0,
+    tp2: selectedTargets[1] || 0,
+    tp3: selectedTargets[2] || 0,
     notes: sig.raw || '',
   };
   window.showPage('analysis');
