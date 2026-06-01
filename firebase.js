@@ -198,6 +198,25 @@ window.buildOriginalTraderPlan = t => {
   };
 };
 
+function markSignalConvertedFromCalculator(signalExtras, status) {
+  try {
+    if (!signalExtras?.signalId) return;
+    const key = 'mauex_signal_inbox_v1';
+    const items = JSON.parse(localStorage.getItem(key) || '[]');
+    let changed = false;
+    items.forEach(sig => {
+      if (sig?.id !== signalExtras.signalId) return;
+      sig.status = 'converted';
+      sig.convertedAt = new Date().toISOString();
+      sig.convertedTo = status;
+      changed = true;
+    });
+    if (!changed) return;
+    localStorage.setItem(key, JSON.stringify(items.slice(0, 200)));
+    window.renderSignals?.();
+    window.updateNavAlertBadges?.();
+  } catch(e) {}
+}
 window.saveTrade = async status => {
   if (_savingTrade) return;
   _savingTrade = true;
@@ -226,8 +245,8 @@ window.saveTrade = async status => {
   const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : (risk ? (calcState.dir === 'spot' ? risk : risk * lev) : 0));
   const signalExtras = window._signalTradeExtras || null;
   const signalExtrasMatch = !!(signalExtras
-    && signalExtras.ticker === ticker
-    && (!signalExtras.entry || Math.abs(Number(signalExtras.entry || 0) - entry) / Math.max(1, Math.abs(entry)) < 0.01));
+    && signalExtras.signalId
+    && signalExtras.ticker === ticker);
 
   try {
     const currentWatchOrders = status === 'watchlist'
@@ -261,7 +280,10 @@ window.saveTrade = async status => {
     const dest = status==='watchlist' ? 'watchlist' : status==='pending' ? 'orders' : 'positions';
     const label = status==='watchlist' ? 'Watchlist' : status==='pending' ? 'Órdenes abiertas' : 'Posiciones';
     toast(`Guardado en ${label}!`);
-    if (signalExtrasMatch) window._signalTradeExtras = null;
+    if (signalExtrasMatch) {
+      markSignalConvertedFromCalculator(signalExtras, status);
+      window._signalTradeExtras = null;
+    }
     showPage(dest);
     if(dest==='orders') setTimeout(()=>window.syncAllOrders?.(), 300);
   } catch(e) {
@@ -1545,3 +1567,4 @@ async function loadExchangeKeys() {
 // Expose prices for render functions
 G.getPrice = getPrice;
 G.prices   = prices;
+

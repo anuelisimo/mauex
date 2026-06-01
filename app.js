@@ -924,6 +924,18 @@ function signalBestTargetLabel(parsed={}) {
   };
 }
 
+function signalTargetsHtml(parsed={}) {
+  const targets = Array.isArray(parsed.targets) && parsed.targets.length
+    ? parsed.targets
+    : [parsed.tp1, parsed.tp2, parsed.tp3].filter(Boolean);
+  if (!targets.length) return '';
+  const pcts = Array.isArray(parsed.targetPercents) ? parsed.targetPercents : [];
+  return `<div class="signal-targets-grid">${targets.map((price, i) => `
+    <div class="signal-target-pill">
+      <span>TP${i + 1}${pcts[i] ? ` · ${Number(pcts[i]).toFixed(1)}%` : ''}</span>
+      <strong>$${fmtPx(price)}</strong>
+    </div>`).join('')}</div>`;
+}
 function signalCardHtml(sig) {
   const p = sig.parsed || {};
   const dirCls = p.dir === 'short' ? 'bs' : p.dir === 'spot' ? 'bsp' : 'bl';
@@ -952,7 +964,6 @@ function signalCardHtml(sig) {
         : sig.status === 'discarded'
           ? 'Descartada'
           : 'Revisar lectura';
-  const targetsLabel = p.targets?.length ? p.targets.map((x,i)=>`TP${i+1} $${fmtPx(x)}`).join(' · ') : '';
   const entryRangeLabel = p.entryIsCurrentMarket
     ? 'CMP precio actual'
     : (p.entryRange?.length > 1 ? p.entryRange.map(fmtPx).join(' - ') : '');
@@ -989,7 +1000,7 @@ function signalCardHtml(sig) {
           ${signalFieldHtml('TP', tpSummary.value, 'var(--accent)', tpSummary.sub)}
           ${signalFieldHtml('R:R', sig.rr ? sig.rr.toFixed(2)+':1' : '—', rrColor, sig.rrFirst ? `TP1 ${sig.rrFirst.toFixed(2)}:1` : '')}
         </div>
-        ${targetsLabel ? `<div style="font-family:var(--mono);font-size:10px;color:var(--accent);line-height:1.6;margin:-2px 0 10px;">${signalEsc(targetsLabel)}</div>` : ''}
+        ${targetsHtml}
         ${chips ? `<div class="signal-warnings">${chips}</div>` : ''}
         <button class="signal-toggle" type="button" onclick="toggleSignalRaw('${sig.id}')">
           <span>Texto de la se&ntilde;al</span>
@@ -1012,11 +1023,8 @@ function signalCardHtml(sig) {
         </div>
       </div>
       <div class="signal-actions">
-        <button class="btn sm" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
+        <button class="btn sm acc" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
         <button class="btn sm signal-chart-btn" title="Abrir en Charts" onclick="signalOpenChart('${sig.id}')">📈</button>
-        <button class="btn sm" onclick="signalConvert('${sig.id}','watchlist')">Watch</button>
-        <button class="btn sm" style="background:var(--amber);color:#000;border-color:var(--amber);" onclick="signalConvert('${sig.id}','pending')">Orden</button>
-        <button class="btn sm acc" onclick="signalConvert('${sig.id}','active')">Posición</button>
         <button class="btn sm" onclick="discardSignal('${sig.id}')">${sig.status === 'discarded' ? 'Borrar' : 'Descartar'}</button>
       </div>
     </div>`;
@@ -9311,3 +9319,6 @@ buildLevGrid();
 installGlobalTooltips();
 loadUserPrefs();
 document.getElementById('dashDate').textContent = new Date().toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+
+
