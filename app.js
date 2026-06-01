@@ -1069,6 +1069,9 @@ window.toggleSignalTarget = (id, index) => {
   const targets = signalAllTargets(sig.parsed || {});
   if (!targets[index]) return;
   const chartWasOpen = document.getElementById(`signalChartPanel-${id}`)?.style.display !== 'none';
+  const visibleLogicalRange = chartWasOpen
+    ? signalChartState[id]?.chart?.timeScale?.()?.getVisibleLogicalRange?.()
+    : null;
   let selected = sig.targetSelectionManual ? signalSelectedTargetIndexes(sig) : [];
   if (!sig.targetSelectionManual) {
     sig.targetSelectionManual = true;
@@ -1095,7 +1098,7 @@ window.toggleSignalTarget = (id, index) => {
     const arrow = document.getElementById(`signalChartArrow-${id}`);
     if (panel) panel.style.display = 'block';
     if (arrow) arrow.textContent = '▲';
-    renderSignalInlineChart(sig);
+    renderSignalInlineChart(sig, { visibleLogicalRange });
   }
 };
 window.toggleSignalRaw = id => {
@@ -1473,7 +1476,7 @@ function destroySignalChart(id) {
   delete signalChartState[id];
 }
 
-async function renderSignalInlineChart(sig) {
+async function renderSignalInlineChart(sig, opts={}) {
   const id = sig?.id;
   const el = document.getElementById(`signalChart-${id}`);
   if (!id || !el) return;
@@ -1516,7 +1519,11 @@ async function renderSignalInlineChart(sig) {
         series.createPriceLine({ price:lvl.price, color:lvl.color, lineWidth:lvl.lineWidth || 1, lineStyle:lvl.lineStyle ?? 2, axisLabelVisible:true, title:lvl.title });
       } catch(e) {}
     });
-    chart.timeScale().fitContent();
+    if (opts.visibleLogicalRange) {
+      chart.timeScale().setVisibleLogicalRange(opts.visibleLogicalRange);
+    } else {
+      chart.timeScale().fitContent();
+    }
     const resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 280 }));
     resize.observe(el);
     signalChartState[id] = { chart, resize };
