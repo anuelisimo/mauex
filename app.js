@@ -847,13 +847,7 @@ function fillSignalTraderSelect() {
 function renderSignalStats(items) {
   const el = document.getElementById('signalInboxStats');
   if (!el) return;
-  const active = items.filter(x => x.status !== 'discarded');
-  const ready = active.filter(x => x.status === 'ready').length;
-  const reviewed = active.filter(x => x.status === 'reviewed').length;
-  const review = active.filter(x => x.status === 'review').length;
-  const converted = active.filter(x => x.status === 'converted').length;
-  el.innerHTML = [['Nuevas', ready], ['Revisadas', reviewed], ['A revisar', review], ['Convertidas', converted]]
-    .map(([l,v]) => `<div class="signal-stat"><div>${l}</div><strong>${v}</strong></div>`).join('');
+  el.innerHTML = '';
 }
 
 function signalChannelKey(sig={}) {
@@ -879,29 +873,39 @@ function signalMatchesFilters(sig={}, filters=signalFilters()) {
   return true;
 }
 
+function signalMatchesStatusFilter(sig={}, statusFilter='open') {
+  const status = signalStatusKey(sig);
+  if (statusFilter === 'open') return !['converted','discarded'].includes(status);
+  if (statusFilter === 'all') return true;
+  return status === statusFilter;
+}
+
+function signalMatchesChannelFilter(sig={}, channelFilter='all') {
+  return channelFilter === 'all' || signalChannelKey(sig) === channelFilter;
+}
+
 function renderSignalFilters(items=[]) {
   const el = document.getElementById('signalFilters');
   if (!el) return;
   const filters = signalFilters();
-  const active = filters.status === 'all' || filters.status === 'discarded' ? items : items.filter(x => x.status !== 'discarded');
-  const count = items.filter(x => signalMatchesFilters(x, filters)).length;
-  const btn = (kind, value, label) => `<button class="signal-filter-btn ${filters[kind] === value ? 'active' : ''}" onclick="setSignalFilter('${kind}','${value}')">${label}</button>`;
+  const statusCount = value => items.filter(x => signalMatchesStatusFilter(x, value) && signalMatchesChannelFilter(x, filters.channel)).length;
+  const channelCount = value => items.filter(x => signalMatchesStatusFilter(x, filters.status) && signalMatchesChannelFilter(x, value)).length;
+  const btn = (kind, value, label, count) => `<button class="signal-filter-btn ${filters[kind] === value ? 'active' : ''}" onclick="setSignalFilter('${kind}','${value}')">${label} (${count})</button>`;
   el.innerHTML = `
     <div class="signal-filter-group">
-      ${btn('status','open','Abiertas')}
-      ${btn('status','ready','Nuevas')}
-      ${btn('status','review','A revisar')}
-      ${btn('status','reviewed','Revisadas')}
-      ${btn('status','converted','Convertidas')}
-      ${btn('status','discarded','Descartadas')}
-      ${btn('status','all','Todas')}
+      ${btn('status','open','Abiertas', statusCount('open'))}
+      ${btn('status','ready','Nuevas', statusCount('ready'))}
+      ${btn('status','review','A revisar', statusCount('review'))}
+      ${btn('status','reviewed','Revisadas', statusCount('reviewed'))}
+      ${btn('status','converted','Convertidas', statusCount('converted'))}
+      ${btn('status','discarded','Descartadas', statusCount('discarded'))}
+      ${btn('status','all','Todas', statusCount('all'))}
     </div>
     <div class="signal-filter-group">
-      ${btn('channel','all','Todos')}
-      ${btn('channel','binance','Binance Killers')}
-      ${btn('channel','bullets','Bitcoin Bullets')}
-    </div>
-    <div class="signal-filter-note">${count} visible${count === 1 ? '' : 's'} de ${active.length}</div>`;
+      ${btn('channel','all','Todos', channelCount('all'))}
+      ${btn('channel','binance','Binance Killers', channelCount('binance'))}
+      ${btn('channel','bullets','Bitcoin Bullets', channelCount('bullets'))}
+    </div>`;
 }
 
 window.setSignalFilter = (kind, value) => {
