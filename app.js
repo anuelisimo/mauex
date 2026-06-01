@@ -943,6 +943,7 @@ function signalCardHtml(sig) {
   const confColor = sig.confidence >= 80 ? 'var(--accent)' : sig.confidence >= 55 ? 'var(--amber)' : 'var(--red)';
   const liq = p.dir !== 'spot' ? estimatedLiquidationPrice({ dir:p.dir, entry:p.entry, leverage:p.leverage, exchange:p.exchange }) : null;
   const tpSummary = signalBestTargetLabel(p);
+  const targetsHtml = signalTargetsHtml(p);
   const rrColor = sig.rr && sig.rr >= 2 ? 'var(--accent)' : 'var(--red)';
   const updates = Array.isArray(sig.updates) ? sig.updates : [];
   const chips = [
