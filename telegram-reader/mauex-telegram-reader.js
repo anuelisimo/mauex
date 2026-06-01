@@ -67,22 +67,27 @@ function providerSignalId(text) {
   return m ? m[1].toUpperCase() : '';
 }
 
-function looksLikeNewSignal(text) {
+function messageKind(text) {
   const raw = String(text || '');
   const t = normalize(raw);
-  if (!t) return false;
-  if (/\b(update|target\s*\d+|tp\s*\d+|profit|closing|closed|breakeven|break even)\b/i.test(raw) && !/\b(entry|stop\s*loss|targets?)\b/i.test(raw)) return false;
+  if (!t) return '';
+  const signalId = providerSignalId(raw);
+  const hasUpdateWords = /\b(update|target\s*\d+|tp\s*\d+|profit|closing|closed|breakeven|break\s*even|hit|reached)\b/i.test(raw);
   const hasTicker = /(?:coin|symbol)\s*[:=]?\s*[$#]?[A-Z0-9]{2,12}/i.test(raw) || /[$#][A-Z0-9]{2,12}\s*(?:\/|-)?\s*USDT/i.test(raw);
   const hasDirection = /\b(long|short)\b/i.test(raw);
-  const hasEntry = /\b(entry|entries|buy\s+limit|sell\s+limit)\b/i.test(raw);
+  const hasEntry = /\b(entry|entries|buy\s+limit|sell\s+limit|cmp|current\s+market)\b/i.test(raw);
   const hasStop = /\b(stop\s*loss|stoploss|\bsl\b)\b/i.test(raw);
   const hasTarget = /\b(targets?|take\s*profit|\btp\d*)\b/i.test(raw);
-  return hasTicker && (hasDirection || hasEntry) && (hasEntry || hasTarget) && (hasStop || hasTarget);
+  if (signalId && hasUpdateWords) return 'update';
+  if (signalId && (hasTicker || hasDirection) && (hasEntry || hasStop || hasTarget)) return 'signal';
+  if (hasTicker && (hasDirection || hasEntry) && (hasEntry || hasTarget) && (hasStop || hasTarget)) return 'signal';
+  return '';
 }
 
 async function postToMauex(entity, msg) {
   const raw = msg.message || '';
-  if (!looksLikeNewSignal(raw)) return false;
+  const kind = messageKind(raw);
+  if (!kind) return false;
 
   const chatId = entity?.id?.toString?.() || 'telegram';
   const id = `${chatId}:${msg.id}`;
@@ -103,7 +108,8 @@ async function postToMauex(entity, msg) {
       caption: raw,
       entities: [],
       mauex_source: 'telegram-user-reader',
-      mauex_provider_signal_id: providerSignalId(raw)
+      mauex_provider_signal_id: providerSignalId(raw),
+      mauex_message_kind: kind
     }
   };
 
@@ -123,7 +129,7 @@ async function postToMauex(entity, msg) {
 
   seen.add(id);
   saveSeen(seen);
-  console.log(`[MAUex] Senal enviada: ${sourceName(entity)} #${msg.id}${providerSignalId(raw) ? ' ID ' + providerSignalId(raw) : ''}`);
+  console.log(`[MAUex] ${kind === 'update' ? 'Update' : 'Senal'} enviada: ${sourceName(entity)} #${msg.id}${providerSignalId(raw) ? ' ID ' + providerSignalId(raw) : ''}`);
   return true;
 }
 
@@ -187,3 +193,4 @@ main().catch(err => {
   console.error('[MAUex] Error fatal:', err.message);
   process.exit(1);
 });
+
