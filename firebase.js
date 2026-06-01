@@ -268,6 +268,8 @@ window.saveTrade = async status => {
         signalEntryRange: Array.isArray(signalExtras.entryRange) ? signalExtras.entryRange.filter(v => Number.isFinite(Number(v))).map(Number) : [],
         signalTargets: Array.isArray(signalExtras.targets) ? signalExtras.targets.filter(v => Number.isFinite(Number(v))).map(Number) : [],
         signalTargetPercents: Array.isArray(signalExtras.targetPercents) ? signalExtras.targetPercents.filter(v => Number.isFinite(Number(v))).map(Number) : [],
+        signalSelectedTargets: Array.isArray(signalExtras.selectedTargets) ? signalExtras.selectedTargets.filter(v => Number.isFinite(Number(v))).map(Number) : [],
+        signalSelectedTargetIndexes: Array.isArray(signalExtras.selectedTargetIndexes) ? signalExtras.selectedTargetIndexes.filter(v => Number.isFinite(Number(v))).map(Number) : [],
       } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
