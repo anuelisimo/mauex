@@ -351,6 +351,7 @@ const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
 const SIGNAL_FILTER_KEY = 'mauex_signal_filters_v1';
 let _signalTelegramSyncing = false;
 let _signalTelegramAutoTimer = null;
+let _signalTelegramRunAgain = false;
 const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING']);
 
 function signalEsc(v) {
@@ -1255,7 +1256,10 @@ async function signalMaybeInterpretWithAi(sig={}, secret='') {
 }
 
 window.syncTelegramSignals = async (silent=false) => {
-  if (_signalTelegramSyncing) return;
+  if (_signalTelegramSyncing) {
+    if (!silent) _signalTelegramRunAgain = true;
+    return;
+  }
   if (!PROXY_URL) { if (!silent) toast('Falta configurar el Worker de MAUex.', 'error'); return; }
   _signalTelegramSyncing = true;
   try {
@@ -1276,11 +1280,19 @@ window.syncTelegramSignals = async (silent=false) => {
       }
     }
     const incoming = Array.isArray(data?.signals) ? data.signals : [];
-    if (!incoming.length) { if (!silent) toast('No hay señales nuevas en Telegram.'); return; }
+    if (!incoming.length) {
+      if (currentVisiblePage() === 'signals') renderSignals();
+      if (!silent) toast('No hay señales nuevas en Telegram.');
+      return;
+    }
     const items = loadSignalInbox();
     const seen = new Set(items.map(x => x.telegramId || x.id).filter(Boolean));
     const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id));
-    if (!fresh.length) { if (!silent) toast('Telegram ya está al día.'); return; }
+    if (!fresh.length) {
+      if (currentVisiblePage() === 'signals') renderSignals();
+      if (!silent) toast('Telegram ya está al día.');
+      return;
+    }
     let imported = 0;
     let merged = 0;
     let ignored = 0;
@@ -1335,6 +1347,10 @@ window.syncTelegramSignals = async (silent=false) => {
     if (!silent) toast('Telegram: ' + e.message, 'error');
   } finally {
     _signalTelegramSyncing = false;
+    if (_signalTelegramRunAgain) {
+      _signalTelegramRunAgain = false;
+      setTimeout(() => window.syncTelegramSignals?.(false), 300);
+    }
   }
 };
 
@@ -1343,7 +1359,7 @@ function startTelegramAutoSync() {
   setTimeout(() => window.syncTelegramSignals?.(true), 2500);
   _signalTelegramAutoTimer = setInterval(() => {
     window.syncTelegramSignals?.(true);
-  }, 45000);
+  }, 15000);
 }
 
 window.parseSignalInboxInput = async () => {
