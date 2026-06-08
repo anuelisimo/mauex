@@ -218,11 +218,11 @@
           <div class="card-sm" style="margin-bottom:12px;" id="exchSec">
             <div class="sec-label">Exchange</div>
             <div class="exch-tabs">
-              <div class="exch-tab active" data-ex="binance" onclick="setEx('binance')">BINANCE</div>
-              <div class="exch-tab" data-ex="bybit" onclick="setEx('bybit')">BYBIT</div>
-              <div class="exch-tab" data-ex="okx" onclick="setEx('okx')">OKX</div>
-              <div class="exch-tab" data-ex="mexc" onclick="setEx('mexc')">MEXC</div>
-              <div class="exch-tab" data-ex="kucoin" onclick="setEx('kucoin')">KUCOIN</div>
+              <div class="exch-tab active" data-ex="binance" data-calc-ex="BINANCE" onclick="setEx('binance')"><span>BINANCE</span><small>—</small></div>
+              <div class="exch-tab" data-ex="bybit" data-calc-ex="BYBIT" onclick="setEx('bybit')"><span>BYBIT</span><small>—</small></div>
+              <div class="exch-tab" data-ex="okx" data-calc-ex="OKX" onclick="setEx('okx')"><span>OKX</span><small>—</small></div>
+              <div class="exch-tab" data-ex="mexc" data-calc-ex="MEXC" onclick="setEx('mexc')"><span>MEXC</span><small>—</small></div>
+              <div class="exch-tab" data-ex="kucoin" data-calc-ex="KUCOIN" onclick="setEx('kucoin')"><span>KUCOIN</span><small>—</small></div>
             </div>
             <div style="font-size:10px;color:var(--t3);margin-top:6px;font-family:var(--mono);" id="mmrLabel">Binance · MMR 0.5%</div>
           </div>
@@ -249,11 +249,11 @@
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
               <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
               <input type="number" id="cTP1" placeholder="TP1 precio" oninput="compute()">
-              <input type="number" id="cTP1pct" value="33" oninput="compute()" style="text-align:center;">
+              <input type="number" id="cTP1pct" placeholder="%" oninput="compute()" style="text-align:center;">
               <input type="number" id="cTP2" placeholder="TP2 precio" oninput="compute()">
-              <input type="number" id="cTP2pct" value="33" oninput="compute()" style="text-align:center;">
+              <input type="number" id="cTP2pct" placeholder="%" oninput="compute()" style="text-align:center;">
               <input type="number" id="cTP3" placeholder="TP3 precio" oninput="compute()">
-              <input type="number" id="cTP3pct" value="34" oninput="compute()" style="text-align:center;">
+              <input type="number" id="cTP3pct" placeholder="%" oninput="compute()" style="text-align:center;">
             </div>
             <div style="display:grid;grid-template-columns:1fr 116px;gap:6px;margin-top:10px;align-items:end;">
               <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>

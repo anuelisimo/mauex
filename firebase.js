@@ -91,6 +91,7 @@ onAuthStateChanged(auth, async user => {
     await loadPrefs();
     await loadExchangeKeys();
     await loadAll();
+    setTimeout(() => window.refreshSignalRemoteStates?.(), 500);
     setTimeout(() => window.checkMissedTradeLevels?.(), 1200);
     showPage('positions');
     startLivePrices();
@@ -217,9 +218,37 @@ function markSignalConvertedFromCalculator(signalExtras, status) {
     window.updateNavAlertBadges?.();
   } catch(e) {}
 }
+
+function signalStateDocId(id='') {
+  return encodeURIComponent(String(id || '').trim()).replace(/\./g, '%2E');
+}
+
+window._loadSignalStates = async () => {
+  if (!CU) return {};
+  const snap = await getDoc(doc(db, 'userPrefs', CU.uid));
+  const out = {};
+  const states = snap.exists() ? (snap.data().signalStates || {}) : {};
+  Object.values(states).forEach(data => {
+    if (data.id) out[String(data.id)] = data;
+  });
+  return out;
+};
+
+window._saveSignalState = async (id, patch={}) => {
+  if (!CU || !id) return;
+  const key = signalStateDocId(id);
+  await setDoc(doc(db, 'userPrefs', CU.uid), { signalStates: { [key]: {
+    userId: CU.uid,
+    id: String(id),
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  } } }, { merge:true });
+};
+
 window.saveTrade = async status => {
   if (_savingTrade) return;
   _savingTrade = true;
+  window.syncCalcTpPercents?.();
   const ticker = document.getElementById('cTicker').value.trim().toUpperCase();
   const entry  = parseFloat(document.getElementById('cEntry').value) || 0;
   const sl     = parseFloat(document.getElementById('cSL').value) || 0;
@@ -284,6 +313,7 @@ window.saveTrade = async status => {
     toast(`Guardado en ${label}!`);
     if (signalExtrasMatch) {
       markSignalConvertedFromCalculator(signalExtras, status);
+      window._saveSignalState?.(signalExtras.signalId, { status:'converted', convertedTo:status, convertedAt:new Date().toISOString() }).catch(()=>{});
       window._signalTradeExtras = null;
     }
     showPage(dest);
@@ -1569,4 +1599,3 @@ async function loadExchangeKeys() {
 // Expose prices for render functions
 G.getPrice = getPrice;
 G.prices   = prices;
-

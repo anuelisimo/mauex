@@ -352,6 +352,7 @@ const SIGNAL_FILTER_KEY = 'mauex_signal_filters_v1';
 let _signalTelegramSyncing = false;
 let _signalTelegramAutoTimer = null;
 let _signalTelegramRunAgain = false;
+let _signalRemoteStates = {};
 const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING']);
 
 function signalEsc(v) {
@@ -366,6 +367,42 @@ function loadSignalInbox() {
 function saveSignalInbox(items) {
   localStorage.setItem(SIGNAL_INBOX_KEY, JSON.stringify(items.slice(0, 200)));
 }
+
+function signalRemoteId(sig={}) {
+  return String(sig.telegramId || sig.id || signalInboxKey(sig) || '').trim();
+}
+
+function applySignalRemoteStates(items=[]) {
+  if (!_signalRemoteStates || !Object.keys(_signalRemoteStates).length) return items;
+  items.forEach(sig => {
+    const remote = _signalRemoteStates[signalRemoteId(sig)];
+    if (!remote) return;
+    ['status','convertedAt','convertedTo','discardedAt','reviewedAt','targetSelectionManual'].forEach(k => {
+      if (remote[k] !== undefined) sig[k] = remote[k];
+    });
+    if (Array.isArray(remote.selectedTargetIndexes)) sig.selectedTargetIndexes = remote.selectedTargetIndexes;
+  });
+  return items;
+}
+
+function saveSignalStateRemote(sig={}, patch={}) {
+  const id = signalRemoteId(sig);
+  if (!id || !window._saveSignalState) return;
+  const state = { ...patch, id, telegramId: sig.telegramId || '', sourceName: sig.sourceName || sig.traderName || '', providerSignalId: sig.providerSignalId || sig.parsed?.providerSignalId || '' };
+  _signalRemoteStates[id] = { ...(_signalRemoteStates[id] || {}), ...state };
+  window._saveSignalState(id, state).catch(()=>{});
+}
+
+window.refreshSignalRemoteStates = async () => {
+  if (!window._loadSignalStates) return;
+  try {
+    _signalRemoteStates = await window._loadSignalStates() || {};
+    const items = applySignalRemoteStates(loadSignalInbox());
+    saveSignalInbox(items);
+    if (currentVisiblePage() === 'signals') renderSignals();
+    updateNavAlertBadges?.();
+  } catch(e) {}
+};
 
 function signalFilters() {
   try { return { status:'open', channel:'all', ...(JSON.parse(localStorage.getItem(SIGNAL_FILTER_KEY) || '{}') || {}) }; }
@@ -1096,6 +1133,10 @@ window.toggleSignalTarget = (id, index) => {
   } else {
     sig.selectedTargetIndexes = [...new Set(selected)].sort((a,b) => a - b).slice(0, 3);
   }
+  saveSignalStateRemote(sig, {
+    targetSelectionManual: !!sig.targetSelectionManual,
+    selectedTargetIndexes: sig.selectedTargetIndexes || [],
+  });
   saveSignalInbox(items);
   renderSignals();
   if (chartWasOpen) {
@@ -1116,7 +1157,8 @@ window.toggleSignalRaw = id => {
 };
 
 function renderSignals() {
-  const items = loadSignalInbox();
+  const items = applySignalRemoteStates(loadSignalInbox());
+  saveSignalInbox(items);
   renderSignalStats(items);
   renderSignalFilters(items);
   const el = document.getElementById('signalInbox');
@@ -1285,7 +1327,7 @@ window.syncTelegramSignals = async (silent=false) => {
       if (!silent) toast('No hay señales nuevas en Telegram.');
       return;
     }
-    const items = loadSignalInbox();
+    const items = applySignalRemoteStates(loadSignalInbox());
     const seen = new Set(items.map(x => x.telegramId || x.id).filter(Boolean));
     const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id));
     if (!fresh.length) {
@@ -1330,6 +1372,7 @@ window.syncTelegramSignals = async (silent=false) => {
       items.unshift(sig);
       imported++;
     }
+    applySignalRemoteStates(items);
     saveSignalInbox(items);
     renderSignals();
     if (currentVisiblePage() === 'signals') {
@@ -1356,8 +1399,10 @@ window.syncTelegramSignals = async (silent=false) => {
 
 function startTelegramAutoSync() {
   if (_signalTelegramAutoTimer) clearInterval(_signalTelegramAutoTimer);
+  setTimeout(() => window.refreshSignalRemoteStates?.(), 1200);
   setTimeout(() => window.syncTelegramSignals?.(true), 2500);
   _signalTelegramAutoTimer = setInterval(() => {
+    window.refreshSignalRemoteStates?.();
     window.syncTelegramSignals?.(true);
   }, 15000);
 }
@@ -1408,9 +1453,9 @@ function applySignalToCalculator(sig) {
   set('cTP2', calcTargets[1] || '');
   set('cTP3', calcTargets[2] || '');
   const visibleTpPct = signalOperationalPercents(calcTargets.length);
-  set('cTP1pct', visibleTpPct[0] || 33);
-  set('cTP2pct', visibleTpPct[1] || 33);
-  set('cTP3pct', visibleTpPct[2] || 34);
+  set('cTP1pct', visibleTpPct[0] || '');
+  set('cTP2pct', visibleTpPct[1] || '');
+  set('cTP3pct', visibleTpPct[2] || '');
   set('cSize', '');
   const signalTraderId = sig.traderId || signalTraderIdFromSource(sig.sourceName || sig.traderName || '');
   if (signalTraderId) set('cTrader', signalTraderId);
@@ -1444,6 +1489,7 @@ window.signalToCalculator = async id => {
   if (sig && !['converted','discarded'].includes(sig.status)) {
     sig.status = 'reviewed';
     sig.reviewedAt = new Date().toISOString();
+    saveSignalStateRemote(sig, { status:'reviewed', reviewedAt:sig.reviewedAt });
   }
   saveSignalInbox(items);
   renderSignals();
@@ -1622,6 +1668,7 @@ window.signalConvert = async (id, status) => {
     sig.status = 'converted';
     sig.convertedAt = new Date().toISOString();
     sig.convertedTo = status;
+    saveSignalStateRemote(sig, { status:'converted', convertedAt:sig.convertedAt, convertedTo:status });
     saveSignalInbox(items);
     renderSignals();
     updateNavAlertBadges?.();
@@ -1634,7 +1681,11 @@ window.discardSignal = id => {
   let items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
   if (sig?.status === 'discarded') items = items.filter(x => x.id !== id);
-  else if (sig) sig.status = 'discarded';
+  else if (sig) {
+    sig.status = 'discarded';
+    sig.discardedAt = new Date().toISOString();
+    saveSignalStateRemote(sig, { status:'discarded', discardedAt:sig.discardedAt });
+  }
   saveSignalInbox(items);
   renderSignals();
   updateNavAlertBadges?.();
@@ -1905,6 +1956,64 @@ window.setEx = ex => {
   compute();
 };
 
+function syncCalcTpPercents() {
+  const tpIds = ['cTP1','cTP2','cTP3'];
+  const pctIds = ['cTP1pct','cTP2pct','cTP3pct'];
+  const active = tpIds.map(id => {
+    const el = document.getElementById(id);
+    return !!(parseFloat(el?.value) > 0);
+  });
+  const count = active.filter(Boolean).length;
+  const dist = count === 1 ? [100,0,0] : count === 2 ? [50,50,0] : count >= 3 ? [33,33,34] : [0,0,0];
+  let used = 0;
+  pctIds.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!active[i]) {
+      el.value = '';
+      return;
+    }
+    el.value = dist[used++] || '';
+  });
+}
+window.syncCalcTpPercents = syncCalcTpPercents;
+
+function calcRequiredMarginEstimate() {
+  const entry = parseFloat(document.getElementById('cEntry')?.value) || 0;
+  const sl = parseFloat(document.getElementById('cSL')?.value) || 0;
+  const risk = parseFloat(document.getElementById('cRisk')?.value) || 0;
+  const sizeManual = parseFloat(document.getElementById('cSize')?.value) || 0;
+  const lev = Math.max(1, Number(calcState.lev) || 1);
+  if (sizeManual > 0) return calcState.dir === 'spot' ? sizeManual : sizeManual / lev;
+  if (!risk) return 0;
+  if (calcState.dir === 'spot') return risk;
+  if (!entry || !sl) return risk;
+  const slDist = Math.abs(sl - entry) / entry;
+  if (!slDist) return risk;
+  return (risk / slDist) / lev;
+}
+
+function updateCalcExchangeCapitalButtons(requiredMargin=0) {
+  const balances = window._liquidityCache?.balances || {};
+  document.querySelectorAll('[data-calc-ex]').forEach(btn => {
+    const ex = btn.dataset.calcEx;
+    const small = btn.querySelector('small');
+    const free = Number(balances?.[ex]?.free);
+    btn.classList.remove('cap-ok','cap-warn','cap-bad');
+    if (!small) return;
+    if (!Number.isFinite(free)) {
+      small.textContent = '—';
+      return;
+    }
+    small.textContent = '$' + fmt(free);
+    if (requiredMargin > 0) {
+      btn.classList.add(free >= requiredMargin ? 'cap-ok' : free >= requiredMargin * .65 ? 'cap-warn' : 'cap-bad');
+    } else if (free > 0) {
+      btn.classList.add('cap-ok');
+    }
+  });
+}
+
 function buildLevGrid() {
   const g = document.getElementById('levGrid');
   g.innerHTML = LEVS.map(l=>`
@@ -1958,6 +2067,7 @@ window.syncEditFields = (changed) => {
 
 window.compute = () => {
   renderRiskSuggestionPanel();
+  syncCalcTpPercents();
   const entry = parseFloat(document.getElementById('cEntry').value)||0;
   const sl    = parseFloat(document.getElementById('cSL').value)||0;
   const risk  = parseFloat(document.getElementById('cRisk').value)||0;
@@ -1970,6 +2080,7 @@ window.compute = () => {
   const tp3pct= (parseFloat(document.getElementById('cTP3pct').value)||34)/100;
 
   if (!entry) {
+    updateCalcExchangeCapitalButtons(calcRequiredMarginEstimate());
     ['calcMetrics','calcLevels','calcBar'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.innerHTML='';
     });
@@ -1988,6 +2099,7 @@ window.compute = () => {
   // Use manual size if provided, otherwise calculate from risk+SL
   const posSize = sizeManual > 0 ? sizeManual : (hasSL && hasRisk ? risk/slDist : (hasRisk ? (sp ? risk : risk * lev) : 0));
   const margin  = posSize ? (sp?posSize:posSize/lev) : 0;
+  updateCalcExchangeCapitalButtons(margin || calcRequiredMarginEstimate());
   const liq     = !sp ? estimatedLiquidationPrice({ dir:calcState.dir, entry, leverage:lev, exchange:calcState.ex }) : null;
   const liqSafe = !liq||(sh?liq>sl:liq<sl);
 
@@ -2357,6 +2469,7 @@ window._updateLiquidityCache = (data) => {
     window._liquidityCache = displayData;
     if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
     window.syncApiModalStatus?.();
+    updateCalcExchangeCapitalButtons?.(calcRequiredMarginEstimate?.() || 0);
   }
   fetchAndRenderLiquidity();
 };
@@ -7167,7 +7280,7 @@ window.renderDashHistory = () => {
           <td style="font-size:11px;color:var(--t2);">${t.traderName||'—'}</td>
           <td style="font-family:var(--mono);">$${t.entry||'—'}</td>
           <td style="font-family:var(--mono);">$${t.closePrice||t.exitPrice||t.exit||'—'}</td>
-          <td class="${cls}" style="font-family:var(--mono);">${pnl>=0?'+':''}$${Math.abs(pnl).toFixed(0)}</td>
+          <td class="${cls}" style="font-family:var(--mono);">${pnl>=0?'+':'-'}$${Math.abs(pnl).toFixed(0)}</td>
           <td class="${cls}" style="font-family:var(--mono);">${t.pnlPct!=null?(t.pnlPct>=0?'+':'')+t.pnlPct.toFixed(1)+'%':'—'}</td>
           <td style="font-size:11px;color:var(--t2);">${fmtD(historyCloseDateOf(t))}</td>
           <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;">

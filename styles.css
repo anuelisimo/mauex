@@ -301,8 +301,21 @@ textarea{resize:vertical;min-height:70px;}
 .dir-btn.as{background:var(--red-dim);color:var(--red);border:0.5px solid var(--red);}
 .dir-btn.asp{background:var(--blue-dim);color:var(--blue);border:0.5px solid var(--blue);}
 .exch-tabs{display:flex;gap:4px;flex-wrap:wrap;}
-.exch-tab{padding:5px 10px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;font-weight:600;cursor:pointer;transition:all .2s;}
+.exch-tab{padding:5px 10px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:10px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;gap:2px;min-width:70px;}
+.exch-tab small{font-size:9px;color:var(--t3);font-weight:700;line-height:1;}
+.exch-tab.cap-ok small{color:var(--accent);}
+.exch-tab.cap-warn small{color:var(--amber);}
+.exch-tab.cap-bad small{color:var(--red);}
 .exch-tab.active{border-color:var(--accent);background:var(--accent-dim);color:var(--t1);}
+.calc-layout>div:first-child{display:flex;flex-direction:column;}
+.calc-layout>div:first-child>.card-sm:nth-child(1){order:2;}
+.calc-layout>div:first-child>.card-sm:nth-child(2){order:5;}
+.calc-layout>div:first-child>.card-sm:nth-child(3){order:4;}
+.calc-layout>div:first-child>.card-sm:nth-child(4){order:1;}
+.calc-layout>div:first-child>.card-sm:nth-child(5){order:3;}
+.calc-layout>div:first-child>.card-sm:nth-child(6){order:6;}
+.calc-layout>div:first-child>.card-sm:nth-child(7){order:7;}
+.calc-layout>div:first-child>.card-sm:nth-child(8){order:8;}
 .lev-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:8px;}
 .lev-btn{padding:7px 2px;text-align:center;border-radius:6px;border:0.5px solid var(--border);background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;transition:all .2s;}
 .lev-btn.sel{background:var(--accent-dim);color:var(--accent);border-color:var(--accent);}
@@ -436,4 +449,3 @@ textarea{resize:vertical;min-height:70px;}
   #monthlyCard{min-height:auto;}
   #monthlyCard #cs1M{height:260px!important;}
 }
-
