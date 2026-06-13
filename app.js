@@ -393,6 +393,21 @@ function saveSignalStateRemote(sig={}, patch={}) {
   window._saveSignalState(id, state).catch(()=>{});
 }
 
+const SIGNAL_SUPPRESSED_STATUSES = new Set(['discarded','converted','cleared']);
+
+function signalRemoteStateForIncoming(msg={}) {
+  const ids = [msg.telegramId, msg.id].map(x => String(x || '').trim()).filter(Boolean);
+  for (const id of ids) {
+    if (_signalRemoteStates[id]) return _signalRemoteStates[id];
+  }
+  return null;
+}
+
+function signalIsRemotelySuppressed(msg={}) {
+  const remote = signalRemoteStateForIncoming(msg);
+  return !!remote && SIGNAL_SUPPRESSED_STATUSES.has(remote.status);
+}
+
 window.refreshSignalRemoteStates = async () => {
   if (!window._loadSignalStates) return;
   try {
@@ -899,6 +914,7 @@ function signalStatusKey(sig={}) {
   if (sig.status === 'converted') return 'converted';
   if (sig.status === 'reviewed') return 'reviewed';
   if (sig.status === 'review') return 'review';
+  if (sig.status === 'cleared') return 'discarded';
   if (sig.status === 'discarded') return 'discarded';
   return 'ready';
 }
@@ -1324,6 +1340,9 @@ window.syncTelegramSignals = async (silent=false) => {
       }
     }
     const incoming = Array.isArray(data?.signals) ? data.signals : [];
+    if (window._loadSignalStates) {
+      try { _signalRemoteStates = await window._loadSignalStates() || {}; } catch(e) {}
+    }
     if (!incoming.length) {
       if (currentVisiblePage() === 'signals') renderSignals();
       if (!silent) toast('No hay señales nuevas en Telegram.');
@@ -1331,7 +1350,7 @@ window.syncTelegramSignals = async (silent=false) => {
     }
     const items = applySignalRemoteStates(loadSignalInbox());
     const seen = new Set(items.map(x => x.telegramId || x.id).filter(Boolean));
-    const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id));
+    const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id) && !signalIsRemotelySuppressed(x));
     if (!fresh.length) {
       if (currentVisiblePage() === 'signals') renderSignals();
       if (!silent) toast('Telegram ya está al día.');
@@ -1706,11 +1725,12 @@ window.clearSignalInbox = async () => {
     return;
   }
   if (!confirm(`¿Limpiar ${discarded.length} señal${discarded.length === 1 ? '' : 'es'} descartada${discarded.length === 1 ? '' : 's'}?`)) return;
-  const discardedIds = discarded.map(signalRemoteId).filter(Boolean);
+  const clearedAt = new Date().toISOString();
   saveSignalInbox(items.filter(x => x.status !== 'discarded'));
-  discardedIds.forEach(id => {
-    delete _signalRemoteStates[id];
-    window._deleteSignalState?.(id).catch(()=>{});
+  discarded.forEach(sig => {
+    sig.status = 'cleared';
+    sig.clearedAt = clearedAt;
+    saveSignalStateRemote(sig, { status:'cleared', clearedAt });
   });
   renderSignals();
   updateNavAlertBadges?.();
