@@ -15,6 +15,10 @@ echo   3. Sube backend/Worker al repo backend
 echo   4. Copia el Worker actualizado para pegarlo en Cloudflare
 echo.
 
+if exist "%~dp0WORKER_CLOUDFLARE_MAUEX_SIGNAL_VISION_2026-06-13.js" (
+  copy /Y "%~dp0WORKER_CLOUDFLARE_MAUEX_SIGNAL_VISION_2026-06-13.js" "%~dp0worker.js" >nul
+)
+
 node --check app.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
