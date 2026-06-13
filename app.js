@@ -1221,6 +1221,8 @@ async function fetchSignalAi(sig={}, secret='') {
       raw: sig.raw || '',
       sourceName: sig.sourceName || sig.traderName || '',
       photoFileId: sig.imageFileId || '',
+      imageBase64: sig.imageBase64 || '',
+      imageMimeType: sig.imageMimeType || '',
     }),
   });
   if (r.status === 403) {
@@ -1360,6 +1362,11 @@ window.syncTelegramSignals = async (silent=false) => {
       sig.imageFileId = msg.imageFileId || '';
       sig.imageWidth = Number(msg.imageWidth || 0);
       sig.imageHeight = Number(msg.imageHeight || 0);
+      sig.imageBase64 = msg.imageBase64 || '';
+      sig.imageMimeType = msg.imageMimeType || '';
+      sig.imageBytes = Number(msg.imageBytes || 0);
+      sig.imageError = msg.imageError || '';
+      sig.imageSkipped = !!msg.imageSkipped;
       await signalMaybeInterpretWithAi(sig, secret);
       await signalHydrateMarket(sig);
       const existingIndex = signalFindExistingSignalIndex(items, sig);

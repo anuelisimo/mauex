@@ -18,6 +18,7 @@ const channelNeedles = (process.env.MAUEX_TELEGRAM_CHANNELS || 'BinanceKillersVi
   .map(s => normalize(s))
   .filter(Boolean);
 const backfillLimit = Math.max(0, Number(process.env.MAUEX_TELEGRAM_BACKFILL || 20));
+const maxImageBytes = Math.max(0, Number(process.env.MAUEX_TELEGRAM_MAX_IMAGE_BYTES || 700000));
 
 function normalize(v) {
   return String(v || '')
@@ -84,7 +85,35 @@ function messageKind(text) {
   return '';
 }
 
-async function postToMauex(entity, msg) {
+function mediaMimeType(msg) {
+  const mime = msg?.document?.mimeType || msg?.media?.document?.mimeType || '';
+  if (mime && /^image\//i.test(mime)) return mime;
+  if (msg?.photo || msg?.media?.photo) return 'image/jpeg';
+  return '';
+}
+
+async function readMessageImage(client, msg) {
+  const mimeType = mediaMimeType(msg);
+  if (!mimeType || !msg?.media || maxImageBytes <= 0) return null;
+  try {
+    const buffer = await client.downloadMedia(msg.media, { workers: 1 });
+    if (!buffer || !buffer.length) return null;
+    if (buffer.length > maxImageBytes) {
+      console.log(`[MAUex] Imagen omitida por tamaño (${buffer.length} bytes). Max: ${maxImageBytes}.`);
+      return { skipped: true, bytes: buffer.length, mimeType };
+    }
+    return {
+      imageBase64: Buffer.from(buffer).toString('base64'),
+      imageMimeType: mimeType,
+      imageBytes: buffer.length,
+    };
+  } catch (error) {
+    console.error(`[MAUex] No pude leer imagen Telegram: ${error.message}`);
+    return { error: error.message, mimeType };
+  }
+}
+
+async function postToMauex(client, entity, msg) {
   const raw = msg.message || '';
   const kind = messageKind(raw);
   if (!kind) return false;
@@ -112,6 +141,16 @@ async function postToMauex(entity, msg) {
       mauex_message_kind: kind
     }
   };
+
+  const image = await readMessageImage(client, msg);
+  if (image) {
+    payload.channel_post.mauex_has_image = true;
+    payload.channel_post.mauex_image_mime = image.imageMimeType || image.mimeType || '';
+    payload.channel_post.mauex_image_bytes = image.imageBytes || image.bytes || 0;
+    payload.channel_post.mauex_image_base64 = image.imageBase64 || '';
+    payload.channel_post.mauex_image_error = image.error || '';
+    payload.channel_post.mauex_image_skipped = !!image.skipped;
+  }
 
   const res = await fetch(`${workerUrl}/telegram-webhook`, {
     method: 'POST',
@@ -166,7 +205,7 @@ async function main() {
     if (!backfillLimit) continue;
     const messages = await client.getMessages(entity, { limit: backfillLimit });
     for (const msg of messages.reverse()) {
-      try { await postToMauex(entity, msg); } catch (e) { console.error(`[MAUex] Backfill error: ${e.message}`); }
+      try { await postToMauex(client, entity, msg); } catch (e) { console.error(`[MAUex] Backfill error: ${e.message}`); }
     }
   }
 
@@ -181,7 +220,7 @@ async function main() {
     if (!msg?.message) return;
     const entity = await msg.getChat();
     if (!sourceMatches(entity)) return;
-    try { await postToMauex(entity, msg); } catch (e) { console.error(`[MAUex] Error enviando senal: ${e.message}`); }
+    try { await postToMauex(client, entity, msg); } catch (e) { console.error(`[MAUex] Error enviando senal: ${e.message}`); }
   }, new NewMessage({}));
 
   console.log('[MAUex] Lector Telegram activo. Puede quedar corriendo con la PC apagada.');
