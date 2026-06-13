@@ -245,6 +245,14 @@ window._saveSignalState = async (id, patch={}) => {
   } } }, { merge:true });
 };
 
+window._deleteSignalState = async id => {
+  if (!CU || !id) return;
+  const key = signalStateDocId(id);
+  await updateDoc(doc(db, 'userPrefs', CU.uid), {
+    [`signalStates.${key}`]: deleteField(),
+  });
+};
+
 window.saveTrade = async status => {
   if (_savingTrade) return;
   _savingTrade = true;

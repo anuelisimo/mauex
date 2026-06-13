@@ -1698,11 +1698,23 @@ window.discardSignal = id => {
   updateNavAlertBadges?.();
 };
 
-window.clearSignalInbox = () => {
-  saveSignalInbox(loadSignalInbox().filter(x => x.status !== 'discarded'));
+window.clearSignalInbox = async () => {
+  const items = loadSignalInbox();
+  const discarded = items.filter(x => x.status === 'discarded');
+  if (!discarded.length) {
+    toast('No hay señales descartadas para limpiar.');
+    return;
+  }
+  if (!confirm(`¿Limpiar ${discarded.length} señal${discarded.length === 1 ? '' : 'es'} descartada${discarded.length === 1 ? '' : 's'}?`)) return;
+  const discardedIds = discarded.map(signalRemoteId).filter(Boolean);
+  saveSignalInbox(items.filter(x => x.status !== 'discarded'));
+  discardedIds.forEach(id => {
+    delete _signalRemoteStates[id];
+    window._deleteSignalState?.(id).catch(()=>{});
+  });
   renderSignals();
   updateNavAlertBadges?.();
-  toast('Borradores descartados limpiados.');
+  toast('Señales descartadas limpiadas.');
 };
 
 const THEMES = [
