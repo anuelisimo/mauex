@@ -1377,19 +1377,39 @@ function signalApplyAiInterpretation(sig={}, ai={}) {
   const data = ai.interpretation || ai;
   if (!data || typeof data !== 'object') return sig;
   const p = sig.parsed || {};
+  const aiWarnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+  const aiFallback = /fallback|respaldo|no disponible|local no disponible/i.test(`${ai.warning || ''} ${data.notes || ''} ${aiWarnings.join(' ')}`);
+  const sameScale = (next, current) => {
+    const a = Number(next || 0);
+    const b = Number(current || 0);
+    if (!(a > 0)) return false;
+    if (!(b > 0)) return true;
+    const ratio = Math.max(a, b) / Math.max(1e-9, Math.min(a, b));
+    return ratio < 20;
+  };
+  const applyLevel = (key, value) => {
+    const next = Number(value || 0);
+    if (!(next > 0)) return;
+    if (!p[key] || (!aiFallback && sameScale(next, p[key]))) p[key] = next;
+  };
   if (data.ticker) p.ticker = String(data.ticker).replace(/USDT|USDC|USD|PERP/ig,'').toUpperCase();
   if (data.direction) p.dir = String(data.direction).toLowerCase();
   if (data.exchange) p.exchange = String(data.exchange).toUpperCase();
   if (Number(data.leverage) > 0) p.leverage = Math.max(1, Math.min(125, Number(data.leverage)));
-  if (Array.isArray(data.entryRange) && data.entryRange.length) p.entryRange = data.entryRange.map(Number).filter(Boolean).slice(0, 2);
-  if (Number(data.entry) > 0) p.entry = Number(data.entry);
-  else if (p.entryRange?.length) p.entry = signalChooseEntry(p.entryRange, p.ticker, p.dir);
-  if (Number(data.sl) > 0) p.sl = Number(data.sl);
+  if (Array.isArray(data.entryRange) && data.entryRange.length) {
+    const nextRange = data.entryRange.map(Number).filter(Boolean).slice(0, 2);
+    const currentRef = p.entry || p.entryRange?.[0] || 0;
+    if (nextRange.length && (!p.entryRange?.length || (!aiFallback && sameScale(nextRange[0], currentRef)))) p.entryRange = nextRange;
+  }
+  applyLevel('entry', data.entry);
+  if (!p.entry && p.entryRange?.length) p.entry = signalChooseEntry(p.entryRange, p.ticker, p.dir);
+  applyLevel('sl', data.sl);
   if (Array.isArray(data.targets)) {
     const targets = [...new Set(data.targets.map(Number).filter(Boolean))]
       .filter(n => signalTargetLooksValid(n, p))
+      .filter(n => !p.entry || sameScale(n, p.entry))
       .slice(0, 12);
-    if (targets.length) {
+    if (targets.length && (!p.targets?.length || !aiFallback)) {
       p.targets = targets;
       const pct = Math.round((100 / targets.length) * 100) / 100;
       p.targetPercents = targets.map((_, i) => i === targets.length - 1 ? Math.round((100 - pct * (targets.length - 1)) * 100) / 100 : pct);
@@ -1415,9 +1435,8 @@ function signalApplyAiInterpretation(sig={}, ai={}) {
   if (!p.sl) missing.push('SL');
   if (!p.tp1) missing.push('TP');
   sig.missing = missing;
-  const aiWarnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
   sig.warnings = [...new Set([...(sig.warnings || []).filter(x => !/^Falta /i.test(x)), ...aiWarnings])];
-  sig.confidence = Math.max(5, Math.min(98, Number(data.confidence || sig.confidence || 50)));
+  sig.confidence = aiFallback ? Math.max(5, Math.min(98, Number(sig.confidence || 50))) : Math.max(5, Math.min(98, Number(data.confidence || sig.confidence || 50)));
   sig.status = missing.length ? 'review' : 'ready';
   sig.rrFirst = p.sl && p.entry && p.tp1 ? Math.abs((p.tp1 - p.entry) / (p.sl - p.entry)) : null;
   sig.rr = signalWeightedRR(p);
