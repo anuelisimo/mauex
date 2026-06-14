@@ -1229,13 +1229,16 @@ function signalLooksActionableMessage(raw='', hasImage=false) {
   if (!text) return false;
   const upper = text.toUpperCase();
   const hasTicker = /(?:COIN|PAIR|SYMBOL)\s*[:=]?\s*[$#]?[A-Z0-9]{2,15}/i.test(text) || /[$#][A-Z0-9]{2,15}(?:\/?(?:USDT|USDC|USD|PERP))?\b/i.test(text);
-  const hasSetupWord = /\b(LONG|SHORT|BUYING\s+SETUP|SELLING\s+SETUP|LIMIT\s+LONG|LIMIT\s+SHORT)\b/i.test(text);
+  const hasSetupWord = /\b(LONG|SHORT|LONGS|SHORTS|BUYING\s+SETUP|SELLING\s+SETUP|LIMIT\s+LONG|LIMIT\s+SHORT|SCALP\s+LONGS?|SCALP\s+SHORTS?)\b/i.test(text);
   const hasLevels = /\b(ENTRY|ENTRADA|CMP|TARGETS?|TAKE\s*PROFIT|TP\d*|STOP\s*LOSS|SL)\b/i.test(text);
+  const hasPriceZone = /(?:\d+(?:\.\d+)?\s*K?|\d+\.\d+)\s*[-–]\s*(?:\d+(?:\.\d+)?\s*K?|\d+\.\d+)/i.test(text);
+  const hasTargetLanguage = /\b(TARGET|TARGETS?|SUB\s*[- ]?\s*\d+K?|SL|STOP|ZONE|AREA)\b/i.test(text);
   const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|✅))\b/i.test(text);
   const looksLikeAdOnly = /\b(SUBSCRIBE|PROMO|DISCOUNT|JOIN\s+VIP|SALE|RESULTS?|PROFIT\s+TODAY)\b/i.test(text) && !hasLevels;
   const looksLikeMacroOnly = /\b(MACRO|MARKET\s+UPDATE|NEWS|CPI|FOMC|FED|INFLATION|DXY|YIELDS?)\b/i.test(text) && !hasLevels;
   if (looksLikeAdOnly || looksLikeMacroOnly) return false;
   if (hasTicker && (hasSetupWord || hasLevels || hasManagement)) return true;
+  if (hasImage && hasSetupWord && (hasLevels || hasPriceZone || hasTargetLanguage)) return true;
   return !!(hasImage && hasTicker && hasLevels);
 }
 
