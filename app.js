@@ -377,7 +377,7 @@ function applySignalRemoteStates(items=[]) {
   items.forEach(sig => {
     const remote = _signalRemoteStates[signalRemoteId(sig)];
     if (!remote) return;
-    ['status','convertedAt','convertedTo','discardedAt','reviewedAt','targetSelectionManual'].forEach(k => {
+    ['status','convertedAt','convertedTo','discardedAt','clearedAt','reviewedAt','targetSelectionManual'].forEach(k => {
       if (remote[k] !== undefined) sig[k] = remote[k];
     });
     if (Array.isArray(remote.selectedTargetIndexes)) sig.selectedTargetIndexes = remote.selectedTargetIndexes;
@@ -385,15 +385,28 @@ function applySignalRemoteStates(items=[]) {
   return items;
 }
 
-function saveSignalStateRemote(sig={}, patch={}) {
+async function saveSignalStateRemoteAsync(sig={}, patch={}) {
   const id = signalRemoteId(sig);
-  if (!id || !window._saveSignalState) return;
+  if (!id) return null;
   const state = { ...patch, id, telegramId: sig.telegramId || '', sourceName: sig.sourceName || sig.traderName || '', providerSignalId: sig.providerSignalId || sig.parsed?.providerSignalId || '' };
   _signalRemoteStates[id] = { ...(_signalRemoteStates[id] || {}), ...state };
-  window._saveSignalState(id, state).catch(()=>{});
+  if (window._saveSignalState) await window._saveSignalState(id, state);
+  return state;
+}
+
+function saveSignalStateRemote(sig={}, patch={}) {
+  saveSignalStateRemoteAsync(sig, patch).catch(()=>{});
 }
 
 const SIGNAL_SUPPRESSED_STATUSES = new Set(['discarded','converted','cleared']);
+
+function signalIsSuppressedStatus(status='') {
+  return SIGNAL_SUPPRESSED_STATUSES.has(String(status || '').trim());
+}
+
+function pruneSignalInbox(items=[]) {
+  return items.filter(sig => sig?.status !== 'cleared');
+}
 
 function signalRemoteStateForIncoming(msg={}) {
   const ids = [msg.telegramId, msg.id].map(x => String(x || '').trim()).filter(Boolean);
@@ -405,14 +418,14 @@ function signalRemoteStateForIncoming(msg={}) {
 
 function signalIsRemotelySuppressed(msg={}) {
   const remote = signalRemoteStateForIncoming(msg);
-  return !!remote && SIGNAL_SUPPRESSED_STATUSES.has(remote.status);
+  return !!remote && signalIsSuppressedStatus(remote.status);
 }
 
 window.refreshSignalRemoteStates = async () => {
   if (!window._loadSignalStates) return;
   try {
     _signalRemoteStates = await window._loadSignalStates() || {};
-    const items = applySignalRemoteStates(loadSignalInbox());
+    const items = pruneSignalInbox(applySignalRemoteStates(loadSignalInbox()));
     saveSignalInbox(items);
     if (currentVisiblePage() === 'signals') renderSignals();
     updateNavAlertBadges?.();
@@ -1173,7 +1186,7 @@ window.toggleSignalRaw = id => {
 };
 
 function renderSignals() {
-  const items = applySignalRemoteStates(loadSignalInbox());
+  const items = pruneSignalInbox(applySignalRemoteStates(loadSignalInbox()));
   saveSignalInbox(items);
   renderSignalStats(items);
   renderSignalFilters(items);
@@ -1348,7 +1361,7 @@ window.syncTelegramSignals = async (silent=false) => {
       if (!silent) toast('No hay señales nuevas en Telegram.');
       return;
     }
-    const items = applySignalRemoteStates(loadSignalInbox());
+    const items = pruneSignalInbox(applySignalRemoteStates(loadSignalInbox()));
     const seen = new Set(items.map(x => x.telegramId || x.id).filter(Boolean));
     const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id) && !signalIsRemotelySuppressed(x));
     if (!fresh.length) {
@@ -1398,8 +1411,7 @@ window.syncTelegramSignals = async (silent=false) => {
       items.unshift(sig);
       imported++;
     }
-    applySignalRemoteStates(items);
-    saveSignalInbox(items);
+    saveSignalInbox(pruneSignalInbox(applySignalRemoteStates(items)));
     renderSignals();
     if (currentVisiblePage() === 'signals') {
       const seenNow = navAlertSeen();
@@ -1703,35 +1715,40 @@ window.signalConvert = async (id, status) => {
   }
 };
 
-window.discardSignal = id => {
+window.discardSignal = async id => {
   let items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
-  if (sig?.status === 'discarded') items = items.filter(x => x.id !== id);
+  if (sig?.status === 'discarded') {
+    sig.status = 'cleared';
+    sig.clearedAt = new Date().toISOString();
+    await saveSignalStateRemoteAsync(sig, { status:'cleared', clearedAt:sig.clearedAt }).catch(()=>{});
+    items = items.filter(x => x.id !== id);
+  }
   else if (sig) {
     sig.status = 'discarded';
     sig.discardedAt = new Date().toISOString();
-    saveSignalStateRemote(sig, { status:'discarded', discardedAt:sig.discardedAt });
+    await saveSignalStateRemoteAsync(sig, { status:'discarded', discardedAt:sig.discardedAt }).catch(()=>{});
   }
-  saveSignalInbox(items);
+  saveSignalInbox(pruneSignalInbox(items));
   renderSignals();
   updateNavAlertBadges?.();
 };
 
 window.clearSignalInbox = async () => {
   const items = loadSignalInbox();
-  const discarded = items.filter(x => x.status === 'discarded');
+  const discarded = items.filter(x => signalStatusKey(x) === 'discarded');
   if (!discarded.length) {
     toast('No hay señales descartadas para limpiar.');
     return;
   }
   if (!confirm(`¿Limpiar ${discarded.length} señal${discarded.length === 1 ? '' : 'es'} descartada${discarded.length === 1 ? '' : 's'}?`)) return;
   const clearedAt = new Date().toISOString();
-  saveSignalInbox(items.filter(x => x.status !== 'discarded'));
-  discarded.forEach(sig => {
+  await Promise.all(discarded.map(sig => {
     sig.status = 'cleared';
     sig.clearedAt = clearedAt;
-    saveSignalStateRemote(sig, { status:'cleared', clearedAt });
-  });
+    return saveSignalStateRemoteAsync(sig, { status:'cleared', clearedAt }).catch(()=>{});
+  }));
+  saveSignalInbox(pruneSignalInbox(items.filter(x => signalStatusKey(x) !== 'discarded')));
   renderSignals();
   updateNavAlertBadges?.();
   toast('Señales descartadas limpiadas.');
@@ -4136,7 +4153,7 @@ function signalNavSummary(seen={}) {
   const lastSeen = Number(seen.signals) || 0;
   const summary = { count:0, color:'blue', rank:0 };
   loadSignalInbox().forEach(sig => {
-    if (!sig || ['converted','discarded'].includes(sig.status)) return;
+    if (!sig || signalIsSuppressedStatus(sig.status)) return;
     const createdAt = signalNavTimeOf(sig) || Date.now();
     if (createdAt <= lastSeen) return;
     summary.count += 1;
