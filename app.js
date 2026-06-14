@@ -640,6 +640,8 @@ function signalDetectTicker(raw) {
   const lines = upper.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   for (const line of lines) {
     if (/\bSIGNAL\s*ID\b/.test(line)) continue;
+    const newSignal = line.match(/\bNEW\s+SIGNAL\s*[-—:]\s*#?\$?\s*([A-Z0-9]{2,12})(?:\s*[-/]?\s*(USDT|USDC|USD|PERP))?/);
+    if (newSignal && !SIGNAL_STOPWORDS.has(newSignal[1])) return newSignal[1].replace(/USDT|USDC|USD|PERP/g,'');
     const coin = line.match(/\bCOIN\s*:\s*#?\$?\s*([A-Z0-9]{2,12})(?:\s*[-/]?\s*(USDT|USDC|USD|PERP))?/);
     if (coin && !SIGNAL_STOPWORDS.has(coin[1])) return coin[1].replace(/USDT|USDC|USD|PERP/g,'');
   }
@@ -682,7 +684,7 @@ function signalLineHas(line, words) {
 }
 
 function signalLineIsEntry(line) {
-  const raw = String(line || '').trim();
+  const raw = String(line || '').trim().replace(/^[^\w$#]+/u, '');
   return /^(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\b/i.test(raw)
     || /\b(ENTRY|ENTRADA|ENTRIES|ZONE|ZONA|LIMIT|BUY LIMIT|SELL LIMIT)\s*[:=]/i.test(raw);
 }
@@ -693,14 +695,14 @@ function signalLineIsCmpEntry(line) {
 }
 
 function signalLineIsStop(line) {
-  const raw = String(line || '').trim();
+  const raw = String(line || '').trim().replace(/^[^\w$#]+/u, '');
   return /^(STOP\s*LOSS|STOP|SL|INVALIDATION|INVALIDACION)\b/i.test(raw)
     || /\b(STOP\s*LOSS|STOP|SL|INVALIDATION|INVALIDACION)\s*[:=]/i.test(raw);
 }
 
 function signalLineIsTarget(line) {
-  const raw = String(line || '').trim();
-  return /^(TP|TARGET|TARGETS|TAKE\s*PROFIT|OBJETIVO)\b/i.test(raw)
+  const raw = String(line || '').trim().replace(/^[^\w$#]+/u, '');
+  return /^(TP\s*\d*|TARGET|TARGETS|TAKE\s*PROFIT|OBJETIVO)\b/i.test(raw)
     || /\b(TP|TARGET|TARGETS|TAKE\s*PROFIT|OBJETIVO)\s*[:=]/i.test(raw);
 }
 
@@ -1317,10 +1319,10 @@ function signalNeedsAi(sig={}) {
   const p = sig.parsed || {};
   const source = signalNormText(`${sig.sourceName || ''} ${sig.traderName || ''} ${sig.raw || ''}`);
   const isStandardProvider = /binance\s*killers|bitcoin\s*bullets/.test(source);
-  if (isStandardProvider) return false;
   const missing = (sig.missing || []).filter(x => !(x === 'entry' && p.entryIsCurrentMarket));
   const criticalMissing = missing.some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
   const structuralWarning = (sig.warnings || []).some(x => /raro|update|Sin precio live/i.test(x));
+  if (isStandardProvider && !criticalMissing && !structuralWarning) return false;
   if (p.type && p.type !== 'new_signal' && !sig.hasImage && !criticalMissing) return false;
   if (sig.hasImage) return true;
   if (!criticalMissing && !structuralWarning && Number(sig.confidence || 0) >= 72) return false;
@@ -1343,6 +1345,27 @@ function signalLooksActionableMessage(raw='', hasImage=false) {
   if (hasTicker && (hasSetupWord || hasLevels || hasManagement)) return true;
   if (hasImage && hasSetupWord && (hasLevels || hasPriceZone || hasTargetLanguage)) return true;
   return !!(hasImage && hasTicker && hasLevels);
+}
+
+function signalLooksActionableMessage(raw='', hasImage=false) {
+  const text = String(raw || '').trim();
+  if (!text) return false;
+  const hasTicker = /(?:NEW\s+SIGNAL|COIN|PAIR|SYMBOL)\s*[-—:]?\s*[$#]?[A-Z0-9]{2,15}/i.test(text)
+    || /[$#][A-Z0-9]{2,15}(?:\/?(?:USDT|USDC|USD|PERP))?\b/i.test(text)
+    || /\b[A-Z0-9]{2,15}\s*\/\s*(?:USDT|USDC|USD|PERP)\b/i.test(text);
+  const hasSetupWord = /\b(LONG|SHORT|LONGS|SHORTS|BUYING\s+SETUP|SELLING\s+SETUP|LIMIT\s+LONG|LIMIT\s+SHORT|SCALP\s+LONGS?|SCALP\s+SHORTS?)\b/i.test(text);
+  const hasLevels = /\b(ENTRY|ENTRADA|CMP|TARGETS?|TAKE\s*PROFIT|TP\d*|STOP\s*LOSS|SL)\b/i.test(text);
+  const hasPriceZone = /(?:\d+(?:[.,]\d+)?\s*K?|\d+[.,]\d+)\s*[-–—]\s*(?:\d+(?:[.,]\d+)?\s*K?|\d+[.,]\d+)/i.test(text);
+  const hasTargetLanguage = /\b(TARGET|TARGETS?|SUB\s*[- ]?\s*\d+K?|SL|STOP|ZONE|AREA|RISK)\b/i.test(text);
+  const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|OK))\b/i.test(text) || /✅/.test(text);
+  const hasManyPrices = (text.match(/\$?\d+(?:[.,]\d+)?\s*[kK]?/g) || []).length >= 3;
+  const looksLikeAdOnly = /\b(SUBSCRIBE|PROMO|DISCOUNT|JOIN\s+VIP|SALE|RESULTS?|PROFIT\s+TODAY)\b/i.test(text) && !hasLevels;
+  const looksLikeMacroOnly = /\b(MACRO|MARKET\s+UPDATE|NEWS|CPI|FOMC|FED|INFLATION|DXY|YIELDS?)\b/i.test(text) && !hasLevels;
+  if (looksLikeAdOnly || looksLikeMacroOnly) return false;
+  if (hasTicker && (hasSetupWord || hasLevels || hasManagement || hasManyPrices)) return true;
+  if (hasImage && hasSetupWord && (hasLevels || hasPriceZone || hasTargetLanguage)) return true;
+  if ((hasImage || hasTicker) && hasManyPrices && (hasLevels || hasPriceZone || hasTargetLanguage)) return true;
+  return !!(hasImage && (hasTicker || hasLevels || hasManyPrices));
 }
 
 async function fetchSignalAi(sig={}, secret='') {
