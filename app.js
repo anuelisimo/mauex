@@ -349,23 +349,70 @@ window.showPage = page => {
 const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
 const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
 const SIGNAL_FILTER_KEY = 'mauex_signal_filters_v1';
+const SIGNAL_PARSE_VERSION = '2026-06-14-narrative-v2';
 let _signalTelegramSyncing = false;
 let _signalTelegramAutoTimer = null;
 let _signalTelegramRunAgain = false;
 let _signalRemoteStates = {};
-const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING']);
+const SIGNAL_STOPWORDS = new Set(['LONG','SHORT','SPOT','BUY','SELL','ENTRY','ENTRIES','ENTRADA','SL','STOP','LOSS','TP','TPS','TARGET','TARGETS','LEVERAGE','LEV','SIGNAL','SENAL','UPDATE','CLOSE','CLOSING','CERRAR','MOVE','MOVER','PRICE','PRECIO','USDT','USDC','USD','PERP','FUTURES','FUTUROS','BINANCE','BYBIT','OKX','MEXC','KUCOIN','VIP','FULLY','BOTTOMED','ACCUMULATION','BREAKOUT','CONFIRMED','EASY','SUPPORT','RESISTANCE','PROFIT','BREAKEVEN','MARKET','TAKING','TERM','DOWNSIDE','TURN','LOOKING','KILLA','DIGILEAK','DIGI','LEAK','DIGILEAKBOT','TRADER','GAUL']);
 
 function signalEsc(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function loadSignalInbox() {
-  try { return JSON.parse(localStorage.getItem(SIGNAL_INBOX_KEY) || '[]'); }
+  try { return normalizeSignalInbox(JSON.parse(localStorage.getItem(SIGNAL_INBOX_KEY) || '[]')); }
   catch(e) { return []; }
 }
 
 function saveSignalInbox(items) {
   localStorage.setItem(SIGNAL_INBOX_KEY, JSON.stringify(items.slice(0, 200)));
+}
+
+function signalNeedsReparse(sig={}) {
+  if (!sig?.raw) return false;
+  const status = String(sig.status || '').trim();
+  if (['converted','discarded','cleared'].includes(status)) return false;
+  if (sig.parserVersion !== SIGNAL_PARSE_VERSION) return true;
+  const missing = sig.missing || [];
+  const criticalMissing = missing.some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
+  return criticalMissing && /\b(SCALP|LONGS?|SHORTS?|ENTRY|AREA|ZONE|ZONA|TARGET|SUB|SL|STOP)\b/i.test(sig.raw || '');
+}
+
+function normalizeSignalInbox(items=[]) {
+  let changed = false;
+  const normalized = (Array.isArray(items) ? items : []).map(sig => {
+    if (!signalNeedsReparse(sig)) return sig;
+    try {
+      const parsed = parseSignalMessage(sig.raw, {
+        traderId: sig.traderId || '',
+        traderName: sig.traderName || sig.sourceName || '',
+        source: sig.source || 'telegram',
+        sourceName: sig.sourceName || sig.traderName || '',
+        telegramId: sig.telegramId || '',
+        exchange: sig.parsed?.exchange || 'BINANCE',
+      });
+      if (!parsed.parsed.ticker && sig.parsed?.ticker) parsed.parsed.ticker = sig.parsed.ticker;
+      changed = true;
+      return {
+        ...sig,
+        parsed: parsed.parsed,
+        missing: parsed.missing,
+        warnings: parsed.warnings,
+        confidence: parsed.confidence,
+        rrFirst: parsed.rrFirst,
+        rr: parsed.rr,
+        status: parsed.missing.length ? 'review' : 'ready',
+        parserVersion: SIGNAL_PARSE_VERSION,
+      };
+    } catch(e) {
+      return { ...sig, parserVersion: SIGNAL_PARSE_VERSION };
+    }
+  });
+  if (changed) {
+    try { localStorage.setItem(SIGNAL_INBOX_KEY, JSON.stringify(normalized.slice(0, 200))); } catch(e) {}
+  }
+  return normalized;
 }
 
 function signalRemoteId(sig={}) {
@@ -952,6 +999,7 @@ function parseSignalMessage(raw, opts={}) {
     confidence,
     rrFirst,
     rr,
+    parserVersion: SIGNAL_PARSE_VERSION,
   };
 }
 
@@ -1358,6 +1406,7 @@ function signalApplyAiInterpretation(sig={}, ai={}) {
   sig.aiUsedImage = !!ai.usedImage;
   sig.aiNotes = data.notes || '';
   sig.aiConfidence = Number(data.confidence || 0) || 0;
+  sig.parserVersion = SIGNAL_PARSE_VERSION;
   const missing = [];
   if (!p.ticker) missing.push('ticker');
   if (!p.dir) missing.push('direccion');
@@ -1796,6 +1845,25 @@ window.clearSignalInbox = async () => {
   renderSignals();
   updateNavAlertBadges?.();
   toast('Señales descartadas limpiadas.');
+};
+
+window.clearAllSignalInbox = async () => {
+  const items = loadSignalInbox();
+  if (!items.length) {
+    toast('No hay senales para limpiar.');
+    return;
+  }
+  if (!confirm('Limpiar todas las senales del Signal Desk? Esto no borra trades, historial, posiciones ni ordenes.')) return;
+  const clearedAt = new Date().toISOString();
+  await Promise.all(items.map(sig => {
+    sig.status = 'cleared';
+    sig.clearedAt = clearedAt;
+    return saveSignalStateRemoteAsync(sig, { status:'cleared', clearedAt }).catch(()=>{});
+  }));
+  saveSignalInbox([]);
+  renderSignals();
+  updateNavAlertBadges?.();
+  toast('Signal Desk limpiado. Trades e historial no fueron modificados.');
 };
 
 const THEMES = [
