@@ -281,6 +281,15 @@ window.saveTrade = async status => {
   // Use manual size if provided; without SL, risk USD acts as margin/max loss.
   const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : (risk ? (calcState.dir === 'spot' ? risk : risk * lev) : 0));
   const signalExtras = window._signalTradeExtras || null;
+  const calcSignalSelection = window.currentCalcSignalSelection?.() || {};
+  if (signalExtras) {
+    signalExtras.selectedTargets = Array.isArray(calcSignalSelection.selectedTargets)
+      ? calcSignalSelection.selectedTargets
+      : [tp1, tp2, tp3].filter(Boolean);
+    signalExtras.selectedTargetIndexes = Array.isArray(calcSignalSelection.selectedTargetIndexes)
+      ? calcSignalSelection.selectedTargetIndexes
+      : [];
+  }
   const signalExtrasMatch = !!(signalExtras
     && signalExtras.signalId
     && signalExtras.ticker === ticker);
@@ -323,6 +332,7 @@ window.saveTrade = async status => {
       markSignalConvertedFromCalculator(signalExtras, status);
       window._saveSignalState?.(signalExtras.signalId, { status:'converted', convertedTo:status, convertedAt:new Date().toISOString() }).catch(()=>{});
       window._signalTradeExtras = null;
+      window.clearCalcSignalTargets?.();
     }
     showPage(dest);
     if(dest==='orders') setTimeout(()=>window.syncAllOrders?.(), 300);

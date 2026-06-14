@@ -1130,17 +1130,40 @@ function signalOperationalPercents(count=0) {
   return [33, 33, 34];
 }
 
+function signalTargetMeta(parsed={}, price) {
+  const entry = Number(parsed.entry || 0);
+  const sl = Number(parsed.sl || 0);
+  const lev = Math.max(1, Number(parsed.leverage || 1));
+  const sign = parsed.dir === 'short' ? -1 : 1;
+  const risk = entry && sl ? Math.abs(entry - sl) : 0;
+  const movePct = entry ? ((Number(price) - entry) / entry) * 100 * sign : null;
+  const rr = risk ? Math.abs(Number(price) - entry) / risk : null;
+  const pnlLev = movePct !== null ? movePct * lev : null;
+  return {
+    rr,
+    movePct,
+    pnlLev,
+    rrText: rr ? `${rr.toFixed(2)}R` : 'R:R -',
+    moveText: movePct !== null ? `${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}%` : '-',
+    pnlText: pnlLev !== null && lev > 1 ? `${pnlLev >= 0 ? '+' : ''}${pnlLev.toFixed(1)}% x${lev}` : '',
+  };
+}
+
 function signalTargetsHtml(sig={}) {
   const parsed = sig.parsed || {};
   const targets = signalAllTargets(parsed);
   if (!targets.length) return '';
-  const pcts = Array.isArray(parsed.targetPercents) ? parsed.targetPercents : [];
   const selected = new Set(signalSelectedTargetIndexes(sig));
-  return `<div class="signal-targets-grid">${targets.map((price, i) => `
-    <button type="button" class="signal-target-pill ${selected.has(i) ? 'selected' : ''}" onclick="toggleSignalTarget('${sig.id}',${i})" title="Usar TP${i + 1} en Calculadora">
-      <span>${selected.has(i) ? '✓ ' : ''}TP${i + 1}${pcts[i] ? ` · ${Number(pcts[i]).toFixed(1)}%` : ''}</span>
+  const html = targets.map((price, i) => {
+    const m = signalTargetMeta(parsed, price);
+    const extra = m.pnlText ? ` - ${m.pnlText}` : '';
+    return `<div class="signal-target-pill ${selected.has(i) ? 'selected' : ''}" title="TP${i + 1}: ${m.rrText} - ${m.moveText}${extra}">
+      <span>${selected.has(i) ? 'Sugerido ' : ''}TP${i + 1} - ${m.rrText}</span>
       <strong>$${fmtPx(price)}</strong>
-    </button>`).join('')}</div>`;
+      <small>${m.moveText}${extra}</small>
+    </div>`;
+  }).join('');
+  return `<div class="signal-targets-grid">${html}</div>`;
 }
 function signalCardHtml(sig) {
   const p = sig.parsed || {};
@@ -1621,8 +1644,9 @@ function applySignalToCalculator(sig) {
   set('cTicker', p.ticker || '');
   set('cEntry', p.entry || '');
   set('cSL', p.sl || '');
-  const operationalTargets = signalOperationalTargets(sig);
-  const calcTargets = operationalTargets.length ? operationalTargets : [p.tp1, p.tp2, p.tp3].filter(Boolean);
+  const allTargets = signalAllTargets(p);
+  const selectedIndexes = allTargets.length ? signalSelectedTargetIndexes(sig) : [];
+  const calcTargets = selectedIndexes.map(i => allTargets[i]).filter(Boolean);
   set('cTP1', calcTargets[0] || '');
   set('cTP2', calcTargets[1] || '');
   set('cTP3', calcTargets[2] || '');
@@ -1633,11 +1657,20 @@ function applySignalToCalculator(sig) {
   set('cSize', '');
   const signalTraderId = sig.traderId || signalTraderIdFromSource(sig.sourceName || sig.traderName || '');
   if (signalTraderId) set('cTrader', signalTraderId);
+  calcSignalTargetsState = allTargets.length ? {
+    signalId: sig.id || '',
+    targets: allTargets,
+    selectedIndexes: selectedIndexes.slice(0, 3),
+    entry: p.entry || 0,
+    sl: p.sl || 0,
+    dir: p.dir || dir,
+    leverage: p.leverage || 1,
+  } : null;
   const operationalTargetsNote = calcTargets.length
     ? `TP operativos elegidos: ${calcTargets.map((x,i)=>`TP${i+1} ${fmtPx(x)}`).join(' / ')}`
     : '';
   const fullTargetsNote = p.targets?.length
-    ? `Targets completos: ${p.targets.map((x,i)=>`TP${i+1} ${fmtPx(x)} (${p.targetPercents?.[i] || 0}%)`).join(' / ')}`
+    ? `Targets completos: ${p.targets.map((x,i)=>`TP${i+1} ${fmtPx(x)}`).join(' / ')}`
     : '';
   set('cNotes', [sig.traderName ? `Trader: ${sig.traderName}` : '', p.entryRange?.length > 1 ? `Entry original: ${p.entryRange.map(fmtPx).join(' - ')}` : '', operationalTargetsNote, fullTargetsNote, 'Señal original:', sig.raw].filter(Boolean).join('\n') );
   window._signalTradeExtras = {
@@ -1649,9 +1682,10 @@ function applySignalToCalculator(sig) {
     targets: Array.isArray(p.targets) ? p.targets : [],
     targetPercents: Array.isArray(p.targetPercents) ? p.targetPercents : [],
     selectedTargets: calcTargets,
-    selectedTargetIndexes: signalSelectedTargetIndexes(sig),
+    selectedTargetIndexes: selectedIndexes,
     raw: sig.raw || '',
   };
+  renderCalcSignalTargets();
   compute();
   return true;
 }
@@ -1939,6 +1973,7 @@ window.openThemePicker = () => {
 // ── Calc state ─────────────────────────────────────────────────────────────
 const calcState = { dir:'short', ex:'binance', lev:null };
 let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'' };
+let calcSignalTargetsState = null;
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
 const MMR_LBL = {binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%',kucoin:'KuCoin · MMR 0.5%'};
 
@@ -2189,6 +2224,105 @@ function syncCalcTpPercents() {
 }
 window.syncCalcTpPercents = syncCalcTpPercents;
 
+function setCalcTpFieldsFromSelection() {
+  if (!calcSignalTargetsState) return;
+  const targets = calcSignalTargetsState.targets || [];
+  const selected = (calcSignalTargetsState.selectedIndexes || [])
+    .map(Number)
+    .filter(i => Number.isInteger(i) && i >= 0 && i < targets.length)
+    .slice(0, 3);
+  const values = selected.map(i => targets[i]).filter(Boolean);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('cTP1', values[0] || '');
+  set('cTP2', values[1] || '');
+  set('cTP3', values[2] || '');
+  const pcts = signalOperationalPercents(values.length);
+  set('cTP1pct', pcts[0] || '');
+  set('cTP2pct', pcts[1] || '');
+  set('cTP3pct', pcts[2] || '');
+  if (window._signalTradeExtras) {
+    window._signalTradeExtras.selectedTargets = values;
+    window._signalTradeExtras.selectedTargetIndexes = selected;
+  }
+}
+
+function renderCalcSignalTargets() {
+  const panel = document.getElementById('calcSignalTargetsPanel');
+  if (!panel) return;
+  if (!calcSignalTargetsState || !calcSignalTargetsState.targets?.length) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+  const targets = calcSignalTargetsState.targets;
+  const selected = new Set(calcSignalTargetsState.selectedIndexes || []);
+  const parsed = {
+    dir: calcState.dir,
+    entry: parseFloat(document.getElementById('cEntry')?.value) || calcSignalTargetsState.entry || 0,
+    sl: parseFloat(document.getElementById('cSL')?.value) || calcSignalTargetsState.sl || 0,
+    leverage: calcState.lev || calcSignalTargetsState.leverage || 1,
+  };
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="calc-signal-targets-head">
+      <div>
+        <div class="calc-signal-targets-title">TP disponibles de la señal</div>
+        <div class="calc-signal-targets-sub">Elegí hasta 3 para calcular el trade.</div>
+      </div>
+      <div class="calc-signal-targets-sub">${selected.size}/3 seleccionados</div>
+    </div>
+    <div class="calc-signal-targets-grid">
+      ${targets.map((price, i) => {
+        const m = signalTargetMeta(parsed, price);
+        const extra = m.pnlText ? ` - ${m.pnlText}` : '';
+        return `<button type="button" class="calc-signal-target-pill ${selected.has(i) ? 'selected' : ''}" onclick="toggleCalcSignalTarget(${i})" title="TP${i + 1}: ${m.rrText} - ${m.moveText}${extra}">
+          <span>${selected.has(i) ? 'OK ' : ''}TP${i + 1} - ${m.rrText}</span>
+          <strong>$${fmtPx(price)}</strong>
+          <small>${m.moveText}${extra}</small>
+        </button>`;
+      }).join('')}
+    </div>`;
+}
+
+window.toggleCalcSignalTarget = index => {
+  if (!calcSignalTargetsState) return;
+  const targets = calcSignalTargetsState.targets || [];
+  if (!targets[index]) return;
+  let selected = (calcSignalTargetsState.selectedIndexes || [])
+    .map(Number)
+    .filter(i => Number.isInteger(i) && i >= 0 && i < targets.length);
+  if (selected.includes(index)) {
+    selected = selected.filter(i => i !== index);
+  } else {
+    if (selected.length >= 3) {
+      toast('Máximo 3 TP para calcular el trade.', 'error');
+      return;
+    }
+    selected.push(index);
+  }
+  calcSignalTargetsState.selectedIndexes = [...new Set(selected)].sort((a,b) => a - b);
+  setCalcTpFieldsFromSelection();
+  renderCalcSignalTargets();
+  compute();
+};
+
+window.currentCalcSignalSelection = () => {
+  const values = ['cTP1','cTP2','cTP3']
+    .map(id => parseFloat(document.getElementById(id)?.value) || 0)
+    .filter(Boolean);
+  if (!calcSignalTargetsState) return { selectedTargets: values, selectedTargetIndexes: [] };
+  const targets = calcSignalTargetsState.targets || [];
+  const indexes = values
+    .map(v => targets.findIndex(t => Math.abs(Number(t) - v) / Math.max(1e-9, Math.abs(Number(v))) < 0.000001))
+    .filter(i => i >= 0);
+  return { selectedTargets: values, selectedTargetIndexes: indexes };
+};
+
+window.clearCalcSignalTargets = () => {
+  calcSignalTargetsState = null;
+  renderCalcSignalTargets();
+};
+
 function calcRequiredMarginEstimate() {
   const entry = parseFloat(document.getElementById('cEntry')?.value) || 0;
   const sl = parseFloat(document.getElementById('cSL')?.value) || 0;
@@ -2292,6 +2426,7 @@ window.compute = () => {
 
   if (!entry) {
     updateCalcExchangeCapitalButtons(calcRequiredMarginEstimate());
+    renderCalcSignalTargets();
     ['calcMetrics','calcLevels','calcBar'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.innerHTML='';
     });
@@ -2313,6 +2448,7 @@ window.compute = () => {
   updateCalcExchangeCapitalButtons(margin || calcRequiredMarginEstimate());
   const liq     = !sp ? estimatedLiquidationPrice({ dir:calcState.dir, entry, leverage:lev, exchange:calcState.ex }) : null;
   const liqSafe = !liq||(sh?liq>sl:liq<sl);
+  renderCalcSignalTargets();
 
   // Alerts
   const a1=document.getElementById('calcAlert1'),a2=document.getElementById('calcAlert2');
