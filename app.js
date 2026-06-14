@@ -559,6 +559,35 @@ function signalNumbersFromText(text) {
     .filter(n => Number.isFinite(n) && n > 0);
 }
 
+function signalNarrativeNumbers(text) {
+  const raw = String(text || '');
+  const hasK = /\d(?:[.,]\d+)?\s*[kK]\b/.test(raw);
+  return signalNumbersFromText(raw).map(n => hasK && n > 0 && n < 1000 ? n * 1000 : n);
+}
+
+function signalNarrativeRange(raw) {
+  const text = String(raw || '');
+  const re = /(?:\d+(?:[.,]\d+)?|[.,]\d+)\s*[kK]?\s*(?:-|to)\s*(?:\d+(?:[.,]\d+)?|[.,]\d+)\s*[kK]?/ig;
+  let m;
+  while ((m = re.exec(text))) {
+    const context = text.slice(Math.max(0, m.index - 90), Math.min(text.length, m.index + m[0].length + 120));
+    if (/\b(TARGETS?|TP|STOP|STOP\s*LOSS|SL)\b/i.test(context)) continue;
+    if (/\b(ENTRY|ENTRADA|ZONE|ZONA|AREA|SCALP|LONGS?|SHORTS?|BUY|SELL|WAIT|SWEEP)\b/i.test(context)) {
+      const nums = signalNarrativeNumbers(m[0]).slice(0, 2);
+      if (nums.length >= 2) return nums;
+    }
+  }
+  return [];
+}
+
+function signalNarrativeSingleLevel(raw, wordsRe) {
+  const text = String(raw || '');
+  const re = new RegExp(`(?:${wordsRe})[^\\n.]{0,100}?((?:\\d+(?:[.,]\\d+)?|[.,]\\d+)\\s*[kK]?)`, 'i');
+  const m = text.match(re);
+  const nums = m ? signalNarrativeNumbers(m[0]) : [];
+  return nums[0] || 0;
+}
+
 function signalDetectTicker(raw) {
   const upper = String(raw || '').toUpperCase();
   const lines = upper.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
@@ -590,9 +619,11 @@ function signalDetectExchange(raw, fallback='BINANCE') {
 
 function signalDetectDirection(raw) {
   const upper = String(raw || '').toUpperCase();
+  if (/\b(SCALP\s+SHORTS?|LIMIT\s+SHORT|SHORT\s+SETUP|SHORTING\s+SETUP|SELLING\s+SETUP|SELL\s+SETUP|SHORTS?)\b/.test(upper)) return 'short';
+  if (/\b(SCALP\s+LONGS?|LIMIT\s+LONG|LONG\s+SETUP|BUYING\s+SETUP|BUY\s+SETUP|LONGS?)\b/.test(upper)) return 'long';
   if (/\bSPOT\b/.test(upper)) return 'spot';
-  if (/\b(SHORT|SELL|VENTA|BAJISTA|SELLING\s+SETUP|SELL\s+SETUP|SHORTING\s+SETUP)\b/.test(upper)) return 'short';
-  if (/\b(LONG|BUY|COMPRA|ALCISTA|BUYING\s+SETUP|BUY\s+SETUP)\b/.test(upper)) return 'long';
+  if (/\b(SHORT|SELL|VENTA|BAJISTA)\b/.test(upper)) return 'short';
+  if (/\b(LONG|BUY|COMPRA|ALCISTA)\b/.test(upper)) return 'long';
   if (/\b(BULLISH|BOTTOMED|ACCUMULATION|BREAKOUT|SUPPORT|UPTREND|BOUNCE)\b/.test(upper)) return 'long';
   if (/\b(BEARISH|BREAKDOWN|DOWNTREND|RESISTANCE|REJECTION)\b/.test(upper)) return 'short';
   return '';
@@ -858,6 +889,20 @@ function parseSignalMessage(raw, opts={}) {
       parsed.entry = signalChooseEntry(parsed.entryRange, parsed.ticker, parsed.dir);
     }
   }
+  if (!parsed.entry) {
+    const narrativeRange = signalNarrativeRange(joined);
+    if (narrativeRange.length >= 2) {
+      parsed.entryRange = narrativeRange;
+      parsed.entry = signalChooseEntry(parsed.entryRange, parsed.ticker, parsed.dir);
+    }
+  }
+  if (!parsed.sl) {
+    parsed.sl = signalNarrativeSingleLevel(joined, 'SL|STOP\\s*LOSS|STOP');
+  }
+  if (!targetNums.length) {
+    const narrativeTarget = signalNarrativeSingleLevel(joined, 'TARGETS?|TAKE\\s*PROFIT|TP|SUB');
+    if (narrativeTarget) targetNums.push(narrativeTarget);
+  }
   const cleanTargets = [...new Set(targetNums)]
     .filter(n => !parsed.entry || Math.abs(n - parsed.entry) / Math.max(1, parsed.entry) > 0.001)
     .filter(n => signalTargetLooksValid(n, parsed))
@@ -873,6 +918,7 @@ function parseSignalMessage(raw, opts={}) {
     else if (parsed.sl > parsed.entry && downTargets >= Math.max(1, upTargets)) parsed.dir = 'short';
   }
   if (providerSignalId && !parsed.entry && !parsed.sl && cleanTargets.length) parsed.type = 'update_or_management';
+  if (parsed.entry && parsed.sl && cleanTargets.length && /\b(SCALP|LONGS?|SHORTS?|ENTRY|AREA|ZONE|ZONA|TARGET|SL|STOP)\b/i.test(joined)) parsed.type = 'new_signal';
 
   const missing = [];
   if (!parsed.ticker) missing.push('ticker');
@@ -1224,10 +1270,10 @@ function signalNeedsAi(sig={}) {
   const source = signalNormText(`${sig.sourceName || ''} ${sig.traderName || ''} ${sig.raw || ''}`);
   const isStandardProvider = /binance\s*killers|bitcoin\s*bullets/.test(source);
   if (isStandardProvider) return false;
-  if (p.type && p.type !== 'new_signal') return false;
   const missing = (sig.missing || []).filter(x => !(x === 'entry' && p.entryIsCurrentMarket));
   const criticalMissing = missing.some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
   const structuralWarning = (sig.warnings || []).some(x => /raro|update|Sin precio live/i.test(x));
+  if (p.type && p.type !== 'new_signal' && !sig.hasImage && !criticalMissing) return false;
   if (!criticalMissing && !structuralWarning && Number(sig.confidence || 0) >= 72) return false;
   return criticalMissing || (sig.hasImage && (criticalMissing || structuralWarning || Number(sig.confidence || 0) < 86));
 }
