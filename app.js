@@ -488,14 +488,22 @@ function signalInboxKey(sig={}) {
   return '';
 }
 
+function signalIsManagementUpdate(sig={}) {
+  const p = sig.parsed || {};
+  const raw = String(sig.raw || '');
+  if (p.type !== 'update_or_management') return false;
+  return /\b(UPDATE|TARGET\s*\d+\s*(?:HIT|TOC|✅)|TP\s*\d+\s*(?:HIT|TOC|✅)|CLOSING|CLOSED|CLOSE|BREAKEVEN|BREAK\s*EVEN|MOVE\s+SL|MOVER\s+SL|TRAIL|CANCEL|CANCELAR|STOP\s*HIT|SL\s*HIT)\b/i.test(raw);
+}
+
 function signalFindExistingSignalIndex(items=[], sig={}) {
   const p = sig.parsed || {};
   const signalId = String(sig.providerSignalId || p.providerSignalId || '').toUpperCase();
   const provider = signalNormText(sig.sourceName || sig.traderName || sig.source || '');
   const ticker = String(p.ticker || '').toUpperCase();
-  const isLooseUpdate = !signalId && ticker && p.type === 'update_or_management';
+  const isLooseUpdate = !signalId && ticker && signalIsManagementUpdate(sig);
   if (!signalId && !isLooseUpdate) return -1;
   return items.findIndex(item => {
+    if (!item || signalIsSuppressedStatus(item.status)) return false;
     const ip = item.parsed || {};
     const itemSignalId = String(item.providerSignalId || ip.providerSignalId || '').toUpperCase();
     const itemTicker = String(ip.ticker || '').toUpperCase();
@@ -1361,7 +1369,6 @@ window.syncTelegramSignals = async (silent=false) => {
     }
     if (!incoming.length) {
       if (currentVisiblePage() === 'signals') renderSignals();
-      if (!silent) toast('No hay señales nuevas en Telegram.');
       return;
     }
     const items = pruneSignalInbox(applySignalRemoteStates(loadSignalInbox()));
@@ -1369,7 +1376,6 @@ window.syncTelegramSignals = async (silent=false) => {
     const fresh = incoming.filter(x => x?.raw && !seen.has(x.telegramId || x.id) && !signalIsRemotelySuppressed(x));
     if (!fresh.length) {
       if (currentVisiblePage() === 'signals') renderSignals();
-      if (!silent) toast('Telegram ya está al día.');
       return;
     }
     let imported = 0;
@@ -1416,17 +1422,7 @@ window.syncTelegramSignals = async (silent=false) => {
     }
     saveSignalInbox(pruneSignalInbox(applySignalRemoteStates(items)));
     renderSignals();
-    if (currentVisiblePage() === 'signals') {
-      const seenNow = navAlertSeen();
-      seenNow.signals = Date.now();
-      saveNavAlertSeen(seenNow);
-    }
     updateNavAlertBadges?.();
-    const parts = [];
-    if (imported) parts.push(`${imported} nueva${imported === 1 ? '' : 's'}`);
-    if (merged) parts.push(`${merged} update${merged === 1 ? '' : 's'} unido${merged === 1 ? '' : 's'}`);
-    if (ignored && !silent) parts.push(`${ignored} ignorada${ignored === 1 ? '' : 's'}`);
-    if (!silent || imported || merged) toast(`Telegram: ${parts.join(' + ') || 'sin cambios'}.`, 'success');
   } catch(e) {
     if (!silent) toast('Telegram: ' + e.message, 'error');
   } finally {
@@ -1463,7 +1459,6 @@ window.parseSignalInboxInput = async () => {
     saveSignalInbox(items);
     document.getElementById('signalRawInput').value = '';
     renderSignals();
-    toast('Update unido a la señal existente.', 'success');
     return;
   }
   items.unshift(sig);
@@ -4146,7 +4141,7 @@ function sectionOfTrade(t) {
 }
 
 function signalNavTimeOf(sig) {
-  const raw = sig?.createdAt || sig?.receivedAt || sig?.date || sig?.updatedAt;
+  const raw = sig?.lastTelegramUpdateAt || sig?.createdAt || sig?.receivedAt || sig?.date || sig?.updatedAt;
   if (!raw) return 0;
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : 0;
