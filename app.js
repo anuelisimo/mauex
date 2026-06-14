@@ -1322,6 +1322,7 @@ function signalNeedsAi(sig={}) {
   const criticalMissing = missing.some(x => ['ticker','direccion','entry','SL','TP'].includes(x));
   const structuralWarning = (sig.warnings || []).some(x => /raro|update|Sin precio live/i.test(x));
   if (p.type && p.type !== 'new_signal' && !sig.hasImage && !criticalMissing) return false;
+  if (sig.hasImage) return true;
   if (!criticalMissing && !structuralWarning && Number(sig.confidence || 0) >= 72) return false;
   return criticalMissing || (sig.hasImage && (criticalMissing || structuralWarning || Number(sig.confidence || 0) < 86));
 }
