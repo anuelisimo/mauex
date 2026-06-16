@@ -2447,7 +2447,8 @@ window.compute = () => {
   const margin  = posSize ? (sp?posSize:posSize/lev) : 0;
   updateCalcExchangeCapitalButtons(margin || calcRequiredMarginEstimate());
   const liq     = !sp ? estimatedLiquidationPrice({ dir:calcState.dir, entry, leverage:lev, exchange:calcState.ex }) : null;
-  const liqSafe = !liq||(sh?liq>sl:liq<sl);
+  const liqSafe = !liq || !hasSL || (sh?liq>sl:liq<sl);
+  const liqLoss = !sp && liq && margin ? Math.round(Math.abs(margin) * 100) / 100 : null;
   renderCalcSignalTargets();
 
   // Alerts
@@ -2460,35 +2461,42 @@ window.compute = () => {
   a1.style.display=danger.length?'block':'none'; a1.textContent=danger.join(' · ');
   a2.style.display=other.length?'block':'none';  a2.textContent=other.join(' · ');
 
-  // Metrics — solo si hay SL y riesgo
+  // Metrics
+  const riskPrice = hasSL ? sl : (!sp && liq ? liq : 0);
+  const riskDist = riskPrice ? Math.abs(riskPrice-entry)/entry : 0;
   const rrParts = [[tp1,tp1pct],[tp2,tp2pct],[tp3,tp3pct]]
-    .filter(([price,pct]) => hasSL && price > 0 && pct > 0)
-    .map(([price,pct]) => ({ rr: Math.abs((price-entry)/(sl-entry)), pct }));
+    .filter(([price,pct]) => riskDist && price > 0 && pct > 0)
+    .map(([price,pct]) => ({ rr: Math.abs((price-entry)/(riskPrice-entry)), pct }));
   const rrWeight = rrParts.reduce((s,r) => s + r.pct, 0);
   const weightedRR = rrWeight ? rrParts.reduce((s,r) => s + r.rr * r.pct, 0) / rrWeight : null;
-
-  document.getElementById('calcMetrics').innerHTML= hasSL && hasRisk ? [
-    {l:'Tamaño posición',v:'$'+fmt(posSize)},
-    {l:sp?'Capital':'Margen isolated',v:'$'+fmt(margin)},
-    {l:'SL % margen',v:(slDist*(sp?1:lev)*100).toFixed(1)+'%',cls:slDist*lev*100>50?'red':''},
+  const marginRiskPct = hasSL ? slDist*(sp?1:lev)*100 : (!sp && liqLoss ? 100 : null);
+  const metricRows = [
+    {l:'Tamaño posición',v:'$'+fmt(posSize||0)},
+    {l:sp?'Capital':'Margen isolated',v:'$'+fmt(margin||0)},
+    ...(marginRiskPct!=null?[{l:hasSL?'SL % margen':'Liq % margen',v:marginRiskPct.toFixed(1)+'%',cls:marginRiskPct>50?'red':''}]:[]),
     ...(weightedRR!=null?[{l:'R:R ponderado',v:weightedRR.toFixed(2)+':1',cls:weightedRR>=2?'green':weightedRR>=1?'':'red'}]:[]),
     ...(!sp&&liq?[{l:'Liquidación',v:'$'+fmtPx(liq),cls:liqSafe?'':'red'}]:[]),
-  ].map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div></div>`).join('') : '';
+    ...(!hasSL&&!sp&&liqLoss!=null?[{l:'Pérdida en liq.',v:'-$'+fmt(liqLoss),cls:'red'}]:[]),
+  ];
+
+  document.getElementById('calcMetrics').innerHTML= metricRows
+    .map(m=>`<div class="metric"><div class="metric-lbl">${m.l}</div><div class="metric-val ${m.cls||''}">${m.v}</div></div>`)
+    .join('');
 
   // Levels table
   const sign = sh ? -1 : 1;
   const pnlAtTP = (tpPrice, pct) => posSize ? Math.round((tpPrice-entry)/entry * posSize * pct * sign * 100)/100 : null;
   let cumPnl = 0;
   const tpRows = [];
-  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp1-entry)/(sl-entry)):null,pct:tp1pct}); }
-  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp2-entry)/(sl-entry)):null,pct:tp2pct}); }
-  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:hasSL?Math.abs((tp3-entry)/(sl-entry)):null,pct:tp3pct}); }
+  if(tp1){ const p=pnlAtTP(tp1,tp1pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP1',price:tp1,pnl:p,cum:p!=null?cumPnl:null,rr:riskPrice?Math.abs((tp1-entry)/(riskPrice-entry)):null,pct:tp1pct}); }
+  if(tp2){ const p=pnlAtTP(tp2,tp2pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP2',price:tp2,pnl:p,cum:p!=null?cumPnl:null,rr:riskPrice?Math.abs((tp2-entry)/(riskPrice-entry)):null,pct:tp2pct}); }
+  if(tp3){ const p=pnlAtTP(tp3,tp3pct); if(p!=null) cumPnl+=p; tpRows.push({l:'TP3',price:tp3,pnl:p,cum:p!=null?cumPnl:null,rr:riskPrice?Math.abs((tp3-entry)/(riskPrice-entry)):null,pct:tp3pct}); }
 
   const levelRows = [
     {l:'Entry',price:entry,pnl:null,cum:null,rr:null,pct:null,isEntry:true},
     ...tpRows,
     ...(hasSL?[{l:'SL',price:sl,pnl:hasRisk?-risk:null,cum:hasRisk?-risk:null,rr:null,pct:null,isSL:true}]:[]),
-    ...(!sp&&liq?[{l:'LIQ',price:liq,pnl:null,cum:null,rr:null,pct:null,isLiq:true}]:[]),
+    ...(!sp&&liq?[{l:'LIQ',price:liq,pnl:liqLoss!=null?-liqLoss:null,cum:liqLoss!=null?-liqLoss:null,rr:null,pct:null,isLiq:true}]:[]),
   ];
 
   document.getElementById('calcLevels').innerHTML= levelRows.length > 1 ? `
@@ -2510,7 +2518,7 @@ window.compute = () => {
   const all=[entry,...(hasSL?[sl]:[]),...(tp1?[tp1]:[]),...(tp2?[tp2]:[]),...(tp3?[tp3]:[]),...(liq?[liq]:[]),...calcInvs.map(x=>x.price)].filter(v=>v>0);
   const minP=Math.min(...all)*.985, maxP=Math.max(...all)*1.015, range=maxP-minP||1;
   const pct=v=>Math.min(98,Math.max(2,((v-minP)/range*100))).toFixed(2);
-  const pts=[{v:entry,l:'Entry',c:'var(--t1)'},{v:sl,l:'SL',c:'var(--red)'},
+  const pts=[{v:entry,l:'Entry',c:'var(--t1)'},...(hasSL?[{v:sl,l:'SL',c:'var(--red)'}]:[]),
     ...(tp1?[{v:tp1,l:'TP1',c:'var(--accent)'}]:[]),
     ...(tp2?[{v:tp2,l:'TP2',c:'var(--accent)'}]:[]),
     ...(tp3?[{v:tp3,l:'TP3',c:'var(--accent)'}]:[]),
@@ -2524,7 +2532,8 @@ window.compute = () => {
   ];
   document.getElementById('calcBar').innerHTML=`
     <div style="position:absolute;width:100%;height:6px;background:var(--bg4);border-radius:3px;top:0;"></div>
-    <div style="position:absolute;left:${pct(Math.min(entry,sl))}%;width:${Math.abs(pct(sl)-pct(entry))}%;height:6px;background:var(--red);opacity:.5;border-radius:3px;top:0;"></div>
+    ${hasSL?`<div style="position:absolute;left:${pct(Math.min(entry,sl))}%;width:${Math.abs(pct(sl)-pct(entry))}%;height:6px;background:var(--red);opacity:.5;border-radius:3px;top:0;"></div>`:''}
+    ${!hasSL&&liq?`<div style="position:absolute;left:${pct(Math.min(entry,liq))}%;width:${Math.abs(pct(liq)-pct(entry))}%;height:6px;background:var(--amber);opacity:.5;border-radius:3px;top:0;"></div>`:''}
     ${tpZones.map(z=>`<div style="position:absolute;left:${pct(Math.min(entry,z.to))}%;width:${Math.abs(pct(z.to)-pct(z.from))}%;height:6px;background:var(--accent);opacity:${z.op};border-radius:3px;top:0;"></div>`).join('')}
     ${pts.map(p=>`
       <div style="position:absolute;left:${pct(p.v)}%;transform:translateX(-50%);top:-20px;text-align:center;">
