@@ -4093,8 +4093,12 @@ function chartsIconButton(id, label='Abrir en Charts') {
 // ── Card minimize/maximize memory ──────────────────────────────────────────
 function calculatorIconButton(id, label='Recalcular en Calculadora') {
   return `<button title="${label}" aria-label="${label}"
-    style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;"
-    onclick="window.loadTradeIntoCalculator('${id}')">Calc</button>`;
+    style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;"
+    onclick="window.loadTradeIntoCalculator('${id}')">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="display:block;">
+      <rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8"/><path d="M8 10h2"/><path d="M12 10h2"/><path d="M16 10h.01"/><path d="M8 14h2"/><path d="M12 14h2"/><path d="M16 14h.01"/><path d="M8 18h2"/><path d="M12 18h2"/><path d="M16 18h.01"/>
+    </svg>
+  </button>`;
 }
 
 function setCalculatorEditMode(id='') {
