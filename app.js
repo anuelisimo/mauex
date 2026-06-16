@@ -4166,6 +4166,155 @@ window.toggleCardMin = (id) => {
   renderPositions(); renderOrders(); renderWatchlist();
 };
 
+window._watchSelected = window._watchSelected || new Set();
+
+function watchlistItems() {
+  return (window.G?.trades?.() || []).filter(t => t.status === 'watchlist');
+}
+
+function selectedWatchlistItems() {
+  const selected = window._watchSelected || new Set();
+  return watchlistItems().filter(t => selected.has(t.id));
+}
+
+function syncWatchlistBulkUi(items = watchlistItems()) {
+  const selected = window._watchSelected || new Set();
+  const validIds = new Set(items.map(t => t.id));
+  [...selected].forEach(id => { if (!validIds.has(id)) selected.delete(id); });
+  const count = selected.size;
+  const total = items.length;
+  const selectBtn = document.getElementById('watchSelectAllBtn');
+  const deleteBtn = document.getElementById('watchBulkDeleteBtn');
+  const chartBtn = document.getElementById('watchBulkChartBtn');
+  const exportBtn = document.getElementById('watchBulkExportBtn');
+  if (selectBtn) selectBtn.textContent = count && count === total ? 'Quitar seleccion' : `Seleccionar todo${count ? ` (${count})` : ''}`;
+  [deleteBtn, chartBtn, exportBtn].forEach(btn => {
+    if (!btn) return;
+    btn.disabled = !count;
+    btn.style.opacity = count ? '1' : '.45';
+    btn.style.pointerEvents = count ? 'auto' : 'none';
+  });
+}
+
+window.toggleWatchlistSelection = (id, checked) => {
+  window._watchSelected = window._watchSelected || new Set();
+  if (checked) window._watchSelected.add(id);
+  else window._watchSelected.delete(id);
+  const card = document.querySelector(`[data-watch-card-id="${id}"]`);
+  if (card) card.classList.toggle('watch-selected', !!checked);
+  syncWatchlistBulkUi();
+};
+
+window.toggleAllWatchlistSelection = () => {
+  const items = watchlistItems();
+  window._watchSelected = window._watchSelected || new Set();
+  const allSelected = items.length && items.every(t => window._watchSelected.has(t.id));
+  if (allSelected) items.forEach(t => window._watchSelected.delete(t.id));
+  else items.forEach(t => window._watchSelected.add(t.id));
+  renderWatchlist();
+};
+
+window.deleteSelectedWatchlist = async () => {
+  const items = selectedWatchlistItems();
+  if (!items.length) { toast('Selecciona al menos una tarjeta.', 'error'); return; }
+  if (!confirm(`Eliminar ${items.length} setup(s) del Watchlist?`)) return;
+  try {
+    const {deleteDoc, doc, db} = window._fb || {};
+    if (!deleteDoc || !doc || !db) throw new Error('Firebase no esta listo');
+    await Promise.all(items.map(t => deleteDoc(doc(db,'trades',t.id))));
+    items.forEach(t => window._watchSelected.delete(t.id));
+    await window._loadTrades?.();
+    renderWatchlist();
+    toast(`${items.length} setup(s) eliminados.`);
+  } catch(e) {
+    toast('No pude eliminar: ' + e.message, 'error');
+  }
+};
+
+function normalizeChartTicker(t) {
+  const rawTicker = String(t?.ticker || '').trim().toUpperCase();
+  const base = rawTicker.replace(/USDT|BUSD|USD$/,'');
+  const crypto = rawTicker.endsWith('USDT') || rawTicker.endsWith('BUSD') || appIsCryptoTicker(rawTicker, t?.exchange);
+  return crypto ? base + 'USDT' : rawTicker;
+}
+
+window.openSelectedWatchlistInCharts = () => {
+  const items = selectedWatchlistItems();
+  if (!items.length) { toast('Selecciona al menos una tarjeta.', 'error'); return; }
+  const firstSymbol = normalizeChartTicker(items[0]);
+  const comparable = items.filter(t => normalizeChartTicker(t) === firstSymbol);
+  if (comparable.length < items.length) {
+    toast(`Abro ${comparable.length} de ${items.length}: para comparar, las tarjetas deben ser del mismo ticker.`, 'error');
+  }
+  _analysisTradeData = comparable;
+  const aiSym = document.getElementById('aiSymbol');
+  if (aiSym) aiSym.value = firstSymbol;
+  const first = comparable[0];
+  window._aiSource = appIsCryptoTicker(first?.ticker, first?.exchange) ? 'binance' : 'yahoo';
+  window._aiType = appIsCryptoTicker(first?.ticker, first?.exchange) ? 'crypto' : 'stock';
+  setMarketType(first?.dir === 'spot' ? 'spot' : 'futures');
+  window.showPage('analysis');
+  if (typeof showChartsTab === 'function') showChartsTab('graficos');
+  setTimeout(() => { if (typeof loadCharts === 'function') loadCharts(); }, 250);
+};
+
+function watchlistExportPayload(items) {
+  return {
+    generatedAt: new Date().toISOString(),
+    purpose: 'Analisis AI de setups seleccionados en Watchlist MAUex',
+    count: items.length,
+    setups: items.map(t => {
+      const sym = String(t.ticker || '').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+      const currentPrice = window.G?.getPrice?.(sym, t.dir) || window.G?.getPrice?.(t.ticker, t.dir) || null;
+      return {
+        ticker: t.ticker || '',
+        direction: t.dir || '',
+        exchange: t.exchange || '',
+        trader: t.traderName || '',
+        leverage: Number(t.leverage || 1),
+        currentPrice,
+        entry: Number(t.entry || 0) || null,
+        stopLoss: Number(t.sl || 0) || null,
+        liquidation: Number(t.liquidation || estimatedLiquidationPrice(t) || 0) || null,
+        takeProfits: [
+          t.tp1 ? { level:'TP1', price:Number(t.tp1), pct:Number(t.tp1pct || 33) } : null,
+          t.tp2 ? { level:'TP2', price:Number(t.tp2), pct:Number(t.tp2pct || 33) } : null,
+          t.tp3 ? { level:'TP3', price:Number(t.tp3), pct:Number(t.tp3pct || 34) } : null,
+        ].filter(Boolean),
+        riskUsd: Number(t.risk || 0) || null,
+        positionUsd: Number(t.posSize || 0) || null,
+        notes: t.notes || '',
+        invalidations: tradeInvalidations(t).map(x => ({ price:x.price, side:x.side, note:x.note || '' })),
+      };
+    }),
+  };
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+window.exportSelectedWatchlistForAI = async () => {
+  const items = selectedWatchlistItems();
+  if (!items.length) { toast('Selecciona al menos una tarjeta.', 'error'); return; }
+  const content = JSON.stringify(watchlistExportPayload(items), null, 2);
+  try {
+    await navigator.clipboard.writeText(content);
+    toast(`${items.length} setup(s) copiados para pegar en AI.`);
+  } catch(e) {
+    downloadTextFile(`mauex_watchlist_${new Date().toISOString().slice(0,10)}.txt`, content);
+    toast('No pude copiar; descargue un archivo .txt.');
+  }
+};
+
 async function saveWatchlistOrder(ids) {
   if (!window._fb?.updateDoc || !window._fb?.doc || !window._fb?.db) return;
   await Promise.all(ids.map((id, index) => window._fb.updateDoc(
@@ -4231,6 +4380,7 @@ function renderWatchlist() {
   const container = document.getElementById('watchCards');
   if (!container) return;
   if (!items.length) {
+    syncWatchlistBulkUi(items);
     container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay setups en watchlist</div><div class="empty-sub">Agregá un setup desde la Calculadora</div></div>`;
     return;
   }
@@ -4264,6 +4414,7 @@ function renderWatchlist() {
     const wLiq = t.liquidation || estimatedLiquidationPrice(t);
     const fakeT = {...t, liquidation: t.liquidation||wLiq};
     const isMin = !!cardStates[t.id];
+    const isSelected = !!window._watchSelected?.has(t.id);
     const invalidAlert = getInvalidationAlert(t, currentPrice);
     const entryTouched = hasAlert(t.id, 'entry');
     const entryBadge = entryTouched ? alertBadge('entry', 'badge-alert-slow') : '';
@@ -4286,6 +4437,8 @@ function renderWatchlist() {
       <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
         <div style="display:flex;flex-direction:column;gap:4px;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <input class="watch-select-box" type="checkbox" ${isSelected?'checked':''}
+              onclick="event.stopPropagation();" onchange="window.toggleWatchlistSelection('${t.id}', this.checked)">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;"></div>
             <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
@@ -4307,13 +4460,13 @@ function renderWatchlist() {
       </div>`;
 
     if (isMin) {
-      return `<div class="${watchCardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${watchBorderColor};margin-bottom:8px;overflow:hidden;cursor:grab;">
+      return `<div class="${watchCardClass} ${isSelected?'watch-selected':''}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${watchBorderColor};margin-bottom:8px;overflow:hidden;cursor:grab;">
         ${header}
         ${fakeT.entry&&(fakeT.sl||fakeT.tp1)?`<div style="padding:0 16px 14px;">${buildPriceBar(fakeT, currentPrice||0)}</div>`:''}
       </div>`;
     }
 
-    return `<div class="${watchCardClass}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${watchBorderColor};margin-bottom:8px;overflow:hidden;cursor:grab;">
+    return `<div class="${watchCardClass} ${isSelected?'watch-selected':''}" data-watch-card-id="${t.id}" draggable="true" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${watchBorderColor};margin-bottom:8px;overflow:hidden;cursor:grab;">
       ${header}
 
       ${fakeT.entry&&(fakeT.sl||fakeT.tp1) ? `<div style="padding:0 16px 16px;">${buildPriceBar(fakeT, currentPrice||0)}</div>` : ''}
@@ -4409,6 +4562,7 @@ function renderWatchlist() {
     </div>`;
   }).join('');
   attachWatchlistDrag();
+  syncWatchlistBulkUi(items);
 }
 
 // ── Positions ──────────────────────────────────────────────────────────────
@@ -7047,16 +7201,24 @@ function drawSmcOverlay(chart, candleSeries, candles) {
 }
 
 function drawMainTradeLevels(chart, series, candles, trade) {
+  if (Array.isArray(trade)) {
+    trade.forEach((t, i) => drawMainTradeLevels(chart, series, candles, {
+      ...t,
+      _levelPrefix: t.ticker || `Setup ${i + 1}`,
+    }));
+    return;
+  }
   if (!chart || !series || !candles?.length || !trade?.entry) return;
   const firstTime = candles[0].time;
   const lastTime = candles[candles.length - 1].time;
+  const prefix = trade._levelPrefix ? `${trade._levelPrefix} ` : '';
   const levels = [
-    { price:trade.entry, color:'rgba(232,237,243,.95)', title:'Entry' },
-    ...(trade.sl ? [{ price:trade.sl, color:'rgba(240,61,61,.95)', title:'SL' }] : []),
-    ...(trade.tp1 ? [{ price:trade.tp1, color:'rgba(0,196,122,.75)', title:'TP1' }] : []),
-    ...(trade.tp2 ? [{ price:trade.tp2, color:'rgba(0,196,122,.88)', title:'TP2' }] : []),
-    ...(trade.tp3 ? [{ price:trade.tp3, color:'rgba(0,196,122,1)', title:'TP3' }] : []),
-    ...tradeInvalidations(trade).map((x,i) => ({ price:x.price, color:'rgba(56,189,248,.95)', title:x.label || `Inv ${i+1}` })),
+    { price:trade.entry, color:'rgba(232,237,243,.95)', title:`${prefix}Entry` },
+    ...(trade.sl ? [{ price:trade.sl, color:'rgba(240,61,61,.95)', title:`${prefix}SL` }] : []),
+    ...(trade.tp1 ? [{ price:trade.tp1, color:'rgba(0,196,122,.75)', title:`${prefix}TP1` }] : []),
+    ...(trade.tp2 ? [{ price:trade.tp2, color:'rgba(0,196,122,.88)', title:`${prefix}TP2` }] : []),
+    ...(trade.tp3 ? [{ price:trade.tp3, color:'rgba(0,196,122,1)', title:`${prefix}TP3` }] : []),
+    ...tradeInvalidations(trade).map((x,i) => ({ price:x.price, color:'rgba(56,189,248,.95)', title:`${prefix}${x.label || `Inv ${i+1}`}` })),
   ];
   levels.forEach(lvl => {
     addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:2 });
@@ -7466,16 +7628,19 @@ window.loadCharts = async () => {
     // Draw price lines on all candlestick charts
     ['1M','1W','1D','4H','1H'].forEach(tf=>{
       const csChart = lwCharts['cs'+tf];
-      if(!csChart||!_analysisTradeData.entry) return;
+      const trades = (Array.isArray(_analysisTradeData) ? _analysisTradeData : [_analysisTradeData]).filter(t => t?.entry);
+      if(!csChart||!trades.length) return;
       try {
-        const trade = _analysisTradeData;
-        const levels = [
-          {price:trade.entry, color:'rgba(232,237,243,0.9)', title:'Entry', width:1},
-          ...(trade.sl?  [{price:trade.sl,  color:'rgba(240,61,61,0.9)',  title:'SL',  width:1}]:[]),
-          ...(trade.tp1? [{price:trade.tp1, color:'rgba(0,196,122,0.7)', title:'TP1', width:1}]:[]),
-          ...(trade.tp2? [{price:trade.tp2, color:'rgba(0,196,122,0.85)',title:'TP2', width:1}]:[]),
-          ...(trade.tp3? [{price:trade.tp3, color:'rgba(0,196,122,1.0)', title:'TP3', width:1}]:[]),
-        ];
+        const levels = trades.flatMap((trade, idx) => {
+          const prefix = trades.length > 1 ? `${trade.ticker || 'Setup '+(idx+1)} ` : '';
+          return [
+            {price:trade.entry, color:'rgba(232,237,243,0.9)', title:prefix+'Entry', width:1},
+            ...(trade.sl?  [{price:trade.sl,  color:'rgba(240,61,61,0.9)',  title:prefix+'SL',  width:1}]:[]),
+            ...(trade.tp1? [{price:trade.tp1, color:'rgba(0,196,122,0.7)', title:prefix+'TP1', width:1}]:[]),
+            ...(trade.tp2? [{price:trade.tp2, color:'rgba(0,196,122,0.85)',title:prefix+'TP2', width:1}]:[]),
+            ...(trade.tp3? [{price:trade.tp3, color:'rgba(0,196,122,1.0)', title:prefix+'TP3', width:1}]:[]),
+          ];
+        });
         // Get candlestick series to add price lines
         // Use addLineSeries as horizontal reference lines
         // We draw them by creating a series with 2 extreme time points
@@ -9256,6 +9421,33 @@ function drawTradeLevels(csChart, trade) {
 function renderTradeInfoPanel(trade) {
   const panel = document.getElementById('aiTradePanel');
   if(!panel||!trade) { if(panel) panel.style.display='none'; return; }
+
+  if (Array.isArray(trade)) {
+    const trades = trade.filter(t => t?.entry);
+    if (!trades.length) { panel.style.display='none'; return; }
+    panel.style.display='block';
+    panel.innerHTML = `
+    <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:12px 16px;margin-bottom:12px;">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--t2);margin-bottom:10px;">Comparando ${trades.length} setup(s) del Watchlist</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;">
+        ${trades.map(t => {
+          const rr = t.tp1&&t.entry&&t.sl ? Math.abs((t.tp1-t.entry)/(t.entry-t.sl)).toFixed(2) : '-';
+          return `<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:10px;font-family:var(--mono);font-size:10px;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">
+              <strong style="font-size:12px;color:var(--t1);">${t.ticker}</strong>
+              <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span>
+            </div>
+            <div style="color:var(--t2);">Entry: <span style="color:var(--t1);">$${fmtPx(t.entry)}</span></div>
+            ${t.sl?`<div style="color:var(--t2);">SL: <span style="color:var(--red);">$${fmtPx(t.sl)}</span></div>`:''}
+            ${t.tp1?`<div style="color:var(--t2);">TP1: <span style="color:var(--accent);">$${fmtPx(t.tp1)}</span></div>`:''}
+            <div style="color:var(--t2);">R:R: <span style="color:${Number(rr)>=2?'var(--accent)':'var(--red)'};">${rr}:1</span></div>
+            ${t.traderName?`<div style="color:var(--t3);margin-top:5px;">${t.traderName}</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+    return;
+  }
 
   const rr = trade.tp1&&trade.entry&&trade.sl ?
     Math.abs((trade.tp1-trade.entry)/(trade.entry-trade.sl)).toFixed(2) : '—';

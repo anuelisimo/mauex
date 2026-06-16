@@ -316,7 +316,13 @@
     <div id="watchPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Watchlist</div>
-        <button class="btn acc sm" onclick="window.showPage('calc')">+ Agregar setup</button>
+        <div class="watch-bulk-actions">
+          <button class="btn sm" id="watchSelectAllBtn" onclick="window.toggleAllWatchlistSelection()">Seleccionar todo</button>
+          <button class="btn sm dan" id="watchBulkDeleteBtn" onclick="window.deleteSelectedWatchlist()" title="Eliminar seleccionadas">🗑</button>
+          <button class="btn sm" id="watchBulkChartBtn" onclick="window.openSelectedWatchlistInCharts()" title="Comparar seleccionadas en Charts">📈</button>
+          <button class="btn sm" id="watchBulkExportBtn" onclick="window.exportSelectedWatchlistForAI()" title="Exportar seleccionadas para AI">⇧</button>
+          <button class="btn acc sm" onclick="window.showPage('calc')">+ Agregar setup</button>
+        </div>
       </div>
       <div id="watchCards"></div>
     </div>
