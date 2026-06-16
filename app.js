@@ -6468,6 +6468,58 @@ async function fetchOHLCV(symbol, interval, limit=300) {
       data = null;
     }
   }
+  if (!data) {
+    const baseAsset = String(symbol || '').replace(/USDT$|BUSD$|USD$/,'').toUpperCase();
+    const okxBarMap = {'1M':'1M','1w':'1W','1d':'1D','4h':'4H','1h':'1H','30m':'30m','15m':'15m'};
+    const okxBar = okxBarMap[interval] || '1H';
+    const okxInstIds = aiMarketType === 'futures'
+      ? [`${baseAsset}-USDT-SWAP`, `${baseAsset}-USDT`]
+      : [`${baseAsset}-USDT`, `${baseAsset}-USDT-SWAP`];
+    for (const instId of okxInstIds) {
+      try {
+        const url = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(instId)}&bar=${okxBar}&limit=${Math.min(limit, 300)}`;
+        const r = await fetchFn(url);
+        if(!r.ok) throw new Error(`OKX HTTP ${r.status}`);
+        const d = await r.json();
+        const rows = Array.isArray(d?.data) ? d.data : [];
+        if (!rows.length) throw new Error('OKX sin velas');
+        return rows.slice().reverse().map(k=>({
+          time:   Math.floor(Number(k[0]) / 1000),
+          open:   parseFloat(k[1]),
+          high:   parseFloat(k[2]),
+          low:    parseFloat(k[3]),
+          close:  parseFloat(k[4]),
+          volume: parseFloat(k[5] || 0),
+        })).filter(c=>c.open>0&&c.close>0);
+      } catch(e) {
+        lastErr = e;
+      }
+    }
+
+    try {
+      const yhIvMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','30m':'30m','15m':'15m'};
+      const yhRangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo','30m':'1mo','15m':'5d'};
+      const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(baseAsset + '-USD')}?interval=${yhIvMap[interval]||'1d'}&range=${yhRangeMap[interval]||'1y'}`;
+      const r = await fetchFn(yhUrl);
+      if(!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      const d = await r.json();
+      const res = d.chart?.result?.[0];
+      const ts = res?.timestamp || [];
+      const q = res?.indicators?.quote?.[0] || {};
+      const yahooCandles = ts.map((t,i)=>({
+        time:t,
+        open:Number(q.open?.[i] || 0),
+        high:Number(q.high?.[i] || 0),
+        low:Number(q.low?.[i] || 0),
+        close:Number(q.close?.[i] || 0),
+        volume:Number(q.volume?.[i] || 0),
+      })).filter(c=>c.open>0&&c.close>0);
+      if (yahooCandles.length) return yahooCandles;
+      throw new Error('Yahoo sin velas');
+    } catch(e) {
+      lastErr = e;
+    }
+  }
   if (!data) throw new Error(lastErr?.message || 'No pude cargar velas');
   return data.map(k=>({
     time:   Math.floor(k[0]/1000),
