@@ -254,6 +254,7 @@ window.showPage = page => {
   });
   const pageEl = document.getElementById(PAGES[page]);
   if (pageEl) pageEl.style.display = 'block';
+  if (page === 'calc') window.clearCalculatorEditMode?.();
 
   // Render the page
   const renders = {
@@ -1634,6 +1635,7 @@ function applySignalToCalculator(sig) {
   if (!p.ticker || !p.entry) { toast('La señal necesita ticker y entry.', 'error'); return false; }
   const dir = p.dir || 'long';
   window.showPage('calc');
+  window.clearCalculatorEditMode?.();
   setDir(dir);
   if (dir !== 'spot') {
     const ex = String(p.exchange || 'BINANCE').toLowerCase();
@@ -1762,9 +1764,11 @@ async function renderSignalInlineChart(sig, opts={}) {
   el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando gráfico ${mainChartLabel(tf)}...</div>`;
   const prevSource = window._aiSource;
   const prevType = window._aiType;
+  const prevMarketType = aiMarketType;
   try {
     window._aiSource = info.source;
     window._aiType = info.type;
+    if (info.type === 'crypto') aiMarketType = p.dir === 'spot' ? 'spot' : 'futures';
     const candles = await fetchOHLCV(info.symbol, tf, mainChartLimit(tf));
     if (!candles.length) throw new Error('Sin datos');
     el.innerHTML = '';
@@ -1806,6 +1810,7 @@ async function renderSignalInlineChart(sig, opts={}) {
   } finally {
     window._aiSource = prevSource;
     window._aiType = prevType;
+    aiMarketType = prevMarketType;
   }
 }
 
@@ -2017,12 +2022,23 @@ function editLiquidationState(existingTrade={}, nextInput={}) {
     Number(existingTrade.entry || 0) !== Number(nextInput.entry || 0) ||
     Number(existingTrade.leverage || 1) !== Number(nextInput.leverage || 1);
   const explicitManual = existingTrade.liquidationManual === true;
-  const manual = !!raw && (typed || explicitManual || !coreChanged);
+  const manual = !!raw && (typed || (explicitManual && !coreChanged) || !coreChanged);
   const estimate = estimatedLiquidationPrice(nextInput);
   if (manual && Number.isFinite(parsed) && parsed > 0) {
     return { liquidation: parsed, liquidationManual: typed || explicitManual };
   }
   return { liquidation: estimate || null, liquidationManual: false };
+}
+
+function refreshEditLiquidationEstimate() {
+  const el = document.getElementById('eLiquidation');
+  if (!el || el.disabled || el.dataset.userEdited === '1') return;
+  const entry = parseFloat(document.getElementById('eEntry')?.value) || 0;
+  const lev = parseInt(document.getElementById('eLev')?.value) || 1;
+  const exchange = (document.getElementById('eExchange')?.value || '').trim();
+  const estimate = estimatedLiquidationPrice({ dir: editDir, entry, leverage: lev, exchange });
+  el.value = estimate || '';
+  el.dataset.manualLiquidation = '0';
 }
 
 function calcChartLevelsFromInputs() {
@@ -2098,9 +2114,11 @@ async function renderCalcSignalChart() {
   el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando velas...</div>`;
   const prevSource = window._aiSource;
   const prevType = window._aiType;
+  const prevMarketType = aiMarketType;
   try {
     window._aiSource = info.source;
     window._aiType = info.type;
+    if (info.type === 'crypto') aiMarketType = calcState.dir === 'spot' ? 'spot' : 'futures';
     const candles = await fetchOHLCV(info.symbol, calcChartState.tf, mainChartLimit(calcChartState.tf));
     if (!candles.length) throw new Error('Sin datos');
     el.innerHTML = '';
@@ -2155,6 +2173,7 @@ async function renderCalcSignalChart() {
   } finally {
     window._aiSource = prevSource;
     window._aiType = prevType;
+    aiMarketType = prevMarketType;
   }
 }
 
@@ -2408,6 +2427,7 @@ window.syncEditFields = (changed) => {
       document.getElementById('eRisk').value = Math.round(size * slDist * 100)/100;
     }
   }
+  refreshEditLiquidationEstimate();
 };
 
 window.compute = () => {
@@ -4071,6 +4091,64 @@ function chartsIconButton(id, label='Abrir en Charts') {
 }
 
 // ── Card minimize/maximize memory ──────────────────────────────────────────
+function calculatorIconButton(id, label='Recalcular en Calculadora') {
+  return `<button title="${label}" aria-label="${label}"
+    style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;"
+    onclick="window.loadTradeIntoCalculator('${id}')">Calc</button>`;
+}
+
+function setCalculatorEditMode(id='') {
+  window._calcEditingTradeId = id || null;
+  const actions = document.querySelector('.calc-actions-final');
+  if (!actions) return;
+  actions.classList.toggle('editing-existing-trade', !!id);
+  actions.title = id ? 'Estas recalculando una tarjeta existente. Al guardar se actualiza esa misma tarjeta.' : '';
+}
+
+window.clearCalculatorEditMode = () => setCalculatorEditMode('');
+
+window.loadTradeIntoCalculator = id => {
+  const t = (window.G?.trades?.() || []).find(x => x.id === id);
+  if (!t) { toast('No encontre esa tarjeta.', 'error'); return; }
+  const set = (fieldId, value) => {
+    const el = document.getElementById(fieldId);
+    if (el) el.value = value ?? '';
+  };
+  const dir = t.dir || 'long';
+  window.showPage('calc');
+  setCalculatorEditMode(id);
+  window._signalTradeExtras = null;
+  window.clearCalcSignalTargets?.();
+  setDir(dir);
+  if (dir !== 'spot') {
+    const ex = String(t.exchange || userPrefs?.exchange || 'binance').toLowerCase();
+    if (['binance','bybit','okx','mexc','kucoin'].includes(ex)) setEx(ex);
+  }
+  if (Number(t.leverage || 0) > 0) pickLev(Number(t.leverage));
+  set('cTicker', t.ticker || '');
+  set('cEntry', Number(t.entry || 0) || '');
+  set('cSL', Number(t.sl || 0) || '');
+  set('cRisk', Number(t.risk || 0) || '');
+  set('cSize', Number(t.posSize || 0) || '');
+  set('cTP1', Number(t.tp1 || 0) || '');
+  set('cTP1pct', Number(t.tp1pct || 0) || '');
+  set('cTP2', Number(t.tp2 || 0) || '');
+  set('cTP2pct', Number(t.tp2pct || 0) || '');
+  set('cTP3', Number(t.tp3 || 0) || '');
+  set('cTP3pct', Number(t.tp3pct || 0) || '');
+  set('cTrader', t.traderId || '');
+  set('cNotes', t.notes || '');
+  const invs = tradeInvalidations(t);
+  set('cInv1', invs[0]?.price || '');
+  set('cInv1Side', invs[0]?.side || 'up');
+  set('cInv2', invs[1]?.price || '');
+  set('cInv2Side', invs[1]?.side || 'up');
+  set('cInvNote', invs.find(x => x.note)?.note || '');
+  renderCalcSignalTargets();
+  compute();
+  toast('Tarjeta cargada en Calculadora para recalcular.');
+};
+
 function getCardState() {
   try { return JSON.parse(localStorage.getItem('mauex_card_state')||'{}'); } catch(e){ return {}; }
 }
@@ -4312,7 +4390,7 @@ function renderWatchlist() {
       ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
       ${invalidationNotesHtml(t)}
 
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+      <div style="display:grid;grid-template-columns:2fr repeat(4,1fr);gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist" selected>👁 Watchlist</option>
@@ -4320,6 +4398,7 @@ function renderWatchlist() {
           <option value="active">🟢 Posición</option>
         </select>
         ${chartsIconButton(t.id)}
+        ${calculatorIconButton(t.id)}
         <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
         <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
       </div>
@@ -5958,6 +6037,7 @@ window.setEditDir = d => {
     b.className='dir-btn';
     if(b.dataset.ed===d) b.classList.add(d==='long'?'al':d==='short'?'as':'asp');
   });
+  refreshEditLiquidationEstimate();
 };
 
 window.openEditTrade = id => {
@@ -6048,6 +6128,10 @@ window.openEditTrade = id => {
     document.getElementById('eTicker').value   = t?.ticker||'';
     document.getElementById('eExchange').value = t?.exchange||'';
     document.getElementById('eLev').value      = t?.leverage||1;
+    const eExchangeEl = document.getElementById('eExchange');
+    const eLevEl = document.getElementById('eLev');
+    if (eExchangeEl) eExchangeEl.oninput = () => refreshEditLiquidationEstimate();
+    if (eLevEl) eLevEl.oninput = () => refreshEditLiquidationEstimate();
     document.getElementById('eEntry').value    = t?.entry||'';
     document.getElementById('eSL').value       = t?.sl||'';
     const liqEl = document.getElementById('eLiquidation');
@@ -6353,15 +6437,34 @@ async function fetchOHLCV(symbol, interval, limit=300) {
     }
   }
 
-  // Crypto: Binance (use proxy to avoid CORS from Vercel)
-  const base = aiMarketType==='futures'
-    ? 'https://fapi.binance.com/fapi/v1/klines'
-    : 'https://api.binance.com/api/v3/klines';
-  const url = `${base}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  // Crypto: Binance. Try the preferred market first, then public-data fallbacks.
+  const bases = aiMarketType === 'futures'
+    ? [
+        'https://fapi.binance.com/fapi/v1/klines',
+        'https://data-api.binance.vision/api/v3/klines',
+        'https://api.binance.com/api/v3/klines',
+      ]
+    : [
+        'https://data-api.binance.vision/api/v3/klines',
+        'https://api.binance.com/api/v3/klines',
+      ];
   const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
-  const r = await fetchFn(url);
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-  const data = await r.json();
+  let data = null;
+  let lastErr = null;
+  for (const base of bases) {
+    try {
+      const url = `${base}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const r = await fetchFn(url);
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      data = await r.json();
+      if (Array.isArray(data) && data.length) break;
+      throw new Error('Sin velas');
+    } catch(e) {
+      lastErr = e;
+      data = null;
+    }
+  }
+  if (!data) throw new Error(lastErr?.message || 'No pude cargar velas');
   return data.map(k=>({
     time:   Math.floor(k[0]/1000),
     open:   parseFloat(k[1]),
@@ -9605,7 +9708,7 @@ function renderOrders() {
       ${invalidationNotesHtml(o)}
 
       ${o._manual ? `
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
+      <div style="display:grid;grid-template-columns:2fr repeat(4,1fr);gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${o.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
           <option value="watchlist">👁 Watchlist</option>
@@ -9613,6 +9716,7 @@ function renderOrders() {
           <option value="active">🟢 Posición</option>
         </select>
         ${chartsIconButton(o.id)}
+        ${calculatorIconButton(o.id)}
         <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${o.id}')">✎</button>
         <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="window.deletePendingOrder('${o.id}')">✕</button>
       </div>` : ''}

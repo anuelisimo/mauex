@@ -320,10 +320,30 @@ window.saveTrade = async status => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await addDoc(collection(db,'trades'), {
+    const editId = window._calcEditingTradeId || '';
+    const existingTrade = editId ? trades.find(t => t.id === editId) : null;
+    const coreChanged = existingTrade && (
+      String(existingTrade.dir || '').toLowerCase() !== String(baseTrade.dir || '').toLowerCase() ||
+      String(existingTrade.exchange || '').toLowerCase() !== String(baseTrade.exchange || '').toLowerCase() ||
+      Number(existingTrade.entry || 0) !== Number(baseTrade.entry || 0) ||
+      Number(existingTrade.leverage || 1) !== Number(baseTrade.leverage || 1)
+    );
+    const preserveManualLiq = existingTrade?.liquidationManual === true && !coreChanged;
+    const liquidation = preserveManualLiq
+      ? (Number(existingTrade.liquidation || 0) || null)
+      : (typeof estimatedLiquidationPrice === 'function' ? estimatedLiquidationPrice(baseTrade) : null);
+    const tradePayload = {
       ...baseTrade,
-      originalPlan: window.buildOriginalTraderPlan(baseTrade),
-    });
+      createdAt: existingTrade?.createdAt || baseTrade.createdAt,
+      liquidation: liquidation || null,
+      liquidationManual: !!preserveManualLiq,
+      originalPlan: existingTrade?.originalPlan || window.buildOriginalTraderPlan(baseTrade),
+    };
+    if (existingTrade) {
+      await updateDoc(doc(db,'trades',editId), tradePayload);
+    } else {
+      await addDoc(collection(db,'trades'), tradePayload);
+    }
     await loadTrades();
     const dest = status==='watchlist' ? 'watchlist' : status==='pending' ? 'orders' : 'positions';
     const label = status==='watchlist' ? 'Watchlist' : status==='pending' ? 'Órdenes abiertas' : 'Posiciones';
@@ -334,6 +354,7 @@ window.saveTrade = async status => {
       window._signalTradeExtras = null;
       window.clearCalcSignalTargets?.();
     }
+    if (existingTrade) window.clearCalculatorEditMode?.();
     showPage(dest);
     if(dest==='orders') setTimeout(()=>window.syncAllOrders?.(), 300);
   } catch(e) {
