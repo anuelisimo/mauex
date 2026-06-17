@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $ip = "146.235.243.105"
 $hostName = "mauex-binance.146.235.243.105.nip.io"
@@ -21,7 +21,9 @@ if (!(Test-Path $backendFile) -or !(Test-Path $installerFile)) {
   throw "No encuentro los archivos del backend en $backendDir"
 }
 
-$keyPath = Read-Host "Arrastra aca la private key de Oracle y presiona Enter"
+$defaultKey = "C:\Users\mauap\.ssh\mauex_oracle"
+$keyPath = Read-Host "Private key de Oracle [Enter = $defaultKey]"
+if ([string]::IsNullOrWhiteSpace($keyPath)) { $keyPath = $defaultKey }
 $keyPath = $keyPath.Trim().Trim('"')
 if (!(Test-Path $keyPath)) {
   throw "No encuentro la private key en: $keyPath"
@@ -98,3 +100,5 @@ Write-Host ""
 if ($env:MAUEX_AUTO -ne "1") {
   Read-Host "Presiona Enter para cerrar"
 }
+
+

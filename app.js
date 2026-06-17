@@ -1752,6 +1752,9 @@ function applySignalToCalculator(sig) {
   set('cTP2pct', visibleTpPct[1] || '');
   set('cTP3pct', visibleTpPct[2] || '');
   set('cSize', '');
+  const signalUnix = signalTimeUnix(sig);
+  calcChartState.signalTime = signalUnix || 0;
+  calcChartState.key = '';
   const signalTraderId = sig.traderId || signalTraderIdFromSource(sig.sourceName || sig.traderName || '');
   if (signalTraderId) set('cTrader', signalTraderId);
   calcSignalTargetsState = allTargets.length ? {
@@ -1762,6 +1765,7 @@ function applySignalToCalculator(sig) {
     sl: p.sl || 0,
     dir: p.dir || dir,
     leverage: p.leverage || 1,
+    signalTime: signalUnix || 0,
   } : null;
   const operationalTargetsNote = calcTargets.length
     ? `TP operativos elegidos: ${calcTargets.map((x,i)=>`TP${i+1} ${fmtPx(x)}`).join(' / ')}`
@@ -1780,6 +1784,8 @@ function applySignalToCalculator(sig) {
     targetPercents: Array.isArray(p.targetPercents) ? p.targetPercents : [],
     selectedTargets: calcTargets,
     selectedTargetIndexes: selectedIndexes,
+    signalTime: signalOriginalTime(sig),
+    originalMessageDate: sig.originalMessageDate || sig.signalTime || '',
     raw: sig.raw || '',
   };
   renderCalcSignalTargets();
@@ -1848,13 +1854,12 @@ function destroySignalChart(id) {
   delete signalChartState[id];
 }
 
-function addSignalTimeGuide(el, chart, sig) {
-  const unix = signalTimeUnix(sig);
+function addChartTimeGuide(el, chart, unix, label='Señal') {
   if (!el || !chart || !unix) return null;
   el.style.position = 'relative';
   const guide = document.createElement('div');
   guide.className = 'signal-time-guide';
-  guide.innerHTML = '<span>Se&ntilde;al</span>';
+  guide.innerHTML = `<span>${signalEsc(label)}</span>`;
   el.appendChild(guide);
   const update = () => {
     const x = chart.timeScale().timeToCoordinate(unix);
@@ -1871,6 +1876,10 @@ function addSignalTimeGuide(el, chart, sig) {
     try { chart.timeScale().unsubscribeVisibleTimeRangeChange(update); } catch(e) {}
     guide.remove();
   };
+}
+
+function addSignalTimeGuide(el, chart, sig) {
+  return addChartTimeGuide(el, chart, signalTimeUnix(sig), 'Señal');
 }
 
 async function renderSignalInlineChart(sig, opts={}) {
@@ -1911,16 +1920,6 @@ async function renderSignalInlineChart(sig, opts={}) {
       wickUpColor:'#00a85a', wickDownColor:'#c03030',
     });
     series.setData(candles);
-    const signalUnix = signalTimeUnix(sig);
-    if (signalUnix) {
-      series.setMarkers([{
-        time: signalUnix,
-        position: 'aboveBar',
-        color: '#e040fb',
-        shape: 'arrowDown',
-        text: 'Señal',
-      }]);
-    }
     const firstTime = candles[0]?.time;
     const lastTime = candles[candles.length - 1]?.time;
     signalChartLevels(sig).forEach(lvl => {
@@ -2111,7 +2110,7 @@ window.openThemePicker = () => {
 
 // ── Calc state ─────────────────────────────────────────────────────────────
 const calcState = { dir:'short', ex:'binance', lev:null };
-let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'' };
+let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'', signalTime:0, guideRemove:null };
 let calcSignalTargetsState = null;
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
 const MMR_LBL = {binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%',kucoin:'KuCoin · MMR 0.5%'};
@@ -2208,6 +2207,7 @@ function calcChartSymbolInfo() {
 }
 
 function clearCalcSignalChart() {
+  if (calcChartState.guideRemove) { try { calcChartState.guideRemove(); } catch(e) {} calcChartState.guideRemove = null; }
   if (calcChartState.resize) { try { calcChartState.resize.disconnect(); } catch(e) {} calcChartState.resize = null; }
   if (calcChartState.chart) { try { calcChartState.chart.remove(); } catch(e) {} calcChartState.chart = null; }
   const el = document.getElementById('calcSignalChart');
@@ -2239,6 +2239,7 @@ async function renderCalcSignalChart() {
   }
   const key = [
     info.symbol, info.source, calcState.dir, calcState.ex, calcState.lev || 1, calcChartState.tf,
+    calcChartState.signalTime || 0,
     ['cEntry','cSL','cTP1','cTP2','cTP3','cInv1','cInv2'].map(id => document.getElementById(id)?.value || '').join('|')
   ].join('::');
   if (key === calcChartState.key && calcChartState.chart) return;
@@ -2293,6 +2294,7 @@ async function renderCalcSignalChart() {
       } catch(e) {}
     });
     chart.timeScale().fitContent();
+    calcChartState.guideRemove = addChartTimeGuide(el, chart, calcChartState.signalTime || 0, 'Señal');
     el.ondblclick = () => chart.timeScale().fitContent();
     calcChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 320 }));
     calcChartState.resize.observe(el);
@@ -2328,6 +2330,7 @@ window.openCalcSetupInCharts = () => {
     tp1: parseFloat(document.getElementById('cTP1')?.value) || 0,
     tp2: parseFloat(document.getElementById('cTP2')?.value) || 0,
     tp3: parseFloat(document.getElementById('cTP3')?.value) || 0,
+    signalTime: window._signalTradeExtras?.signalTime || (calcChartState.signalTime ? new Date(calcChartState.signalTime * 1000).toISOString() : ''),
   };
   showPage('analysis');
   showChartsTab('graficos');
@@ -4243,7 +4246,11 @@ function setCalculatorEditMode(id='') {
   actions.title = id ? 'Estas recalculando una tarjeta existente. Al guardar se actualiza esa misma tarjeta.' : '';
 }
 
-window.clearCalculatorEditMode = () => setCalculatorEditMode('');
+window.clearCalculatorEditMode = () => {
+  setCalculatorEditMode('');
+  calcChartState.signalTime = 0;
+  calcChartState.key = '';
+};
 
 window.loadTradeIntoCalculator = id => {
   const t = (window.G?.trades?.() || []).find(x => x.id === id);
@@ -4255,6 +4262,8 @@ window.loadTradeIntoCalculator = id => {
   const dir = t.dir || 'long';
   window.showPage('calc');
   setCalculatorEditMode(id);
+  calcChartState.signalTime = 0;
+  calcChartState.key = '';
   window._signalTradeExtras = null;
   window.clearCalcSignalTargets?.();
   setDir(dir);
@@ -10389,6 +10398,7 @@ buildLevGrid();
 installGlobalTooltips();
 loadUserPrefs();
 document.getElementById('dashDate').textContent = new Date().toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
 
 
 

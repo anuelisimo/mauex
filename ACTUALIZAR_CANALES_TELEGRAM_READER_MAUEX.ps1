@@ -1,10 +1,12 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $defaultIp = "146.235.243.105"
 $ip = Read-Host "IP publica de Oracle [Enter = $defaultIp]"
 if ([string]::IsNullOrWhiteSpace($ip)) { $ip = $defaultIp }
 
-$keyPath = Read-Host "Arrastra aca la private key de Oracle y presiona Enter"
+$defaultKey = "C:\Users\mauap\.ssh\mauex_oracle"
+$keyPath = Read-Host "Private key de Oracle [Enter = $defaultKey]"
+if ([string]::IsNullOrWhiteSpace($keyPath)) { $keyPath = $defaultKey }
 $keyPath = $keyPath.Trim().Trim('"')
 if (!(Test-Path $keyPath)) { throw "No encuentro la private key en: $keyPath" }
 
@@ -43,3 +45,5 @@ ssh -i $keyPath -o StrictHostKeyChecking=accept-new "ubuntu@$ip" $remote
 Write-Host ""
 Write-Host "Listo. El lector quedo limitado a BinanceKillersVipOfficial y BitcoinBullets_VipOfficial."
 Write-Host "Tambien quedo corregido para enviar updates de Signal ID / TP / profit / breakeven, no solo senales completas."
+
+

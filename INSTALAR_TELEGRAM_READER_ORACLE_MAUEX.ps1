@@ -1,10 +1,12 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $defaultIp = "146.235.243.105"
 $ip = Read-Host "IP publica de Oracle [Enter = $defaultIp]"
 if ([string]::IsNullOrWhiteSpace($ip)) { $ip = $defaultIp }
 
-$keyPath = Read-Host "Arrastra aca la private key de Oracle y presiona Enter"
+$defaultKey = "C:\Users\mauap\.ssh\mauex_oracle"
+$keyPath = Read-Host "Private key de Oracle [Enter = $defaultKey]"
+if ([string]::IsNullOrWhiteSpace($keyPath)) { $keyPath = $defaultKey }
 $keyPath = $keyPath.Trim().Trim('"')
 if (!(Test-Path $keyPath)) { throw "No encuentro la private key en: $keyPath" }
 
@@ -91,3 +93,5 @@ ssh -i $keyPath -o StrictHostKeyChecking=accept-new "$user@$ip" "sudo systemctl 
 Write-Host ""
 Write-Host "Listo. Oracle ya puede leer Binance Killers y Bitcoin Bullets automaticamente."
 Write-Host "Para ver estado luego: PROBAR_TELEGRAM_READER_ORACLE_MAUEX.bat"
+
+
