@@ -1854,6 +1854,41 @@ function destroySignalChart(id) {
   delete signalChartState[id];
 }
 
+function mauexChartPriceDecimals(price) {
+  const n = Math.abs(Number(price));
+  if (!Number.isFinite(n)) return 4;
+  if (n > 0 && n < 0.0001) return 8;
+  if (n > 0 && n < 0.01) return 6;
+  return 4;
+}
+
+function mauexChartPriceFormatter(price) {
+  const n = Number(price);
+  if (!Number.isFinite(n)) return '';
+  const decimals = mauexChartPriceDecimals(n);
+  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function mauexPriceSeriesFormat() {
+  return { type:'custom', minMove:0.00000001, formatter: mauexChartPriceFormatter };
+}
+
+function syncCalcChartSignalTime() {
+  if (calcChartState.signalTime) return calcChartState.signalTime;
+  const fromTargets = Number(calcSignalTargetsState?.signalTime || 0);
+  if (fromTargets) {
+    calcChartState.signalTime = fromTargets;
+    return fromTargets;
+  }
+  const fromExtrasRaw = window._signalTradeExtras?.signalTime || window._signalTradeExtras?.originalMessageDate || '';
+  const fromExtrasMs = fromExtrasRaw ? Date.parse(fromExtrasRaw) : NaN;
+  if (Number.isFinite(fromExtrasMs)) {
+    calcChartState.signalTime = Math.floor(fromExtrasMs / 1000);
+    return calcChartState.signalTime;
+  }
+  return 0;
+}
+
 function addChartTimeGuide(el, chart, unix, label='Señal') {
   if (!el || !chart || !unix) return null;
   el.style.position = 'relative';
@@ -1871,9 +1906,11 @@ function addChartTimeGuide(el, chart, unix, label='Señal') {
     guide.style.left = `${Math.round(Number(x))}px`;
   };
   chart.timeScale().subscribeVisibleTimeRangeChange(update);
-  setTimeout(update, 0);
+  try { chart.timeScale().subscribeVisibleLogicalRangeChange(update); } catch(e) {}
+  [0, 50, 250, 800].forEach(ms => setTimeout(update, ms));
   return () => {
     try { chart.timeScale().unsubscribeVisibleTimeRangeChange(update); } catch(e) {}
+    try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(update); } catch(e) {}
     guide.remove();
   };
 }
@@ -1938,6 +1975,7 @@ async function renderSignalInlineChart(sig, opts={}) {
       width: el.clientWidth || 720,
       height: el.clientHeight || 280,
       layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      localization:{ priceFormatter: mauexChartPriceFormatter },
       grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
       crosshair:{ mode:1 },
       rightPriceScale:{ borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.08,bottom:0.18} },
@@ -1949,6 +1987,7 @@ async function renderSignalInlineChart(sig, opts={}) {
       upColor:'#00c47a', downColor:'#f03d3d',
       borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
       wickUpColor:'#00a85a', wickDownColor:'#c03030',
+      priceFormat: mauexPriceSeriesFormat(),
     });
     series.setData(candles);
     const firstTime = candles[0]?.time;
@@ -2263,6 +2302,7 @@ async function renderCalcSignalChart() {
   if (!el) return;
   const info = calcChartSymbolInfo();
   const entry = parseFloat(document.getElementById('cEntry')?.value) || 0;
+  const retainedSignalTime = syncCalcChartSignalTime();
   if (!info || !entry) {
     clearCalcSignalChart();
     if (status) status.textContent = 'Carga ticker y entry para ver la señal.';
@@ -2270,7 +2310,7 @@ async function renderCalcSignalChart() {
   }
   const key = [
     info.symbol, info.source, calcState.dir, calcState.ex, calcState.lev || 1, calcChartState.tf,
-    calcChartState.signalTime || 0,
+    retainedSignalTime || 0,
     ['cEntry','cSL','cTP1','cTP2','cTP3','cInv1','cInv2'].map(id => document.getElementById(id)?.value || '').join('|')
   ].join('::');
   if (key === calcChartState.key && calcChartState.chart) return;
@@ -2292,6 +2332,7 @@ async function renderCalcSignalChart() {
       width: el.clientWidth || 720,
       height: el.clientHeight || 320,
       layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      localization:{ priceFormatter: mauexChartPriceFormatter },
       grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
       crosshair:{ mode:1 },
       rightPriceScale:{ borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.06,bottom:0.20} },
@@ -2304,6 +2345,7 @@ async function renderCalcSignalChart() {
       upColor:'#00c47a', downColor:'#f03d3d',
       borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
       wickUpColor:'#00a85a', wickDownColor:'#c03030',
+      priceFormat: mauexPriceSeriesFormat(),
     });
     series.setData(candles);
     const vol = chart.addHistogramSeries({ priceFormat:{type:'volume'}, priceScaleId:'volume', priceLineVisible:false, lastValueVisible:false });
@@ -2325,7 +2367,7 @@ async function renderCalcSignalChart() {
       } catch(e) {}
     });
     chart.timeScale().fitContent();
-    const calcGuideTime = nearestCandleTimeForGuide(candles, calcChartState.signalTime || 0);
+    const calcGuideTime = nearestCandleTimeForGuide(candles, retainedSignalTime || 0);
     calcChartState.guideRemove = addChartTimeGuide(el, chart, calcGuideTime, 'Señal');
     el.ondblclick = () => chart.timeScale().fitContent();
     calcChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 320 }));
@@ -6895,6 +6937,7 @@ function addSlopeColoredEma(chart, candles, period, lineWidth=2) {
       priceLineVisible:false,
       lastValueVisible:false,
       crosshairMarkerVisible:false,
+      priceFormat: mauexPriceSeriesFormat(),
     });
     s.setData(run);
   };
@@ -7048,6 +7091,7 @@ function addHorizontalLevel(chart, level, from, to, opts={}) {
     priceLineVisible: false,
     lastValueVisible: false,
     crosshairMarkerVisible: false,
+    priceFormat: mauexPriceSeriesFormat(),
   });
   s.setData([{ time: from, value: level }, { time: to, value: level }]);
   return s;
@@ -7429,6 +7473,7 @@ async function loadMainChart(symbol = mainChartState.symbol) {
       width: el.clientWidth || 900,
       height: el.clientHeight || 520,
       layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      localization:{ priceFormatter: mauexChartPriceFormatter },
       grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
       crosshair:{ mode:1 },
       rightPriceScale:{ mode: mainChartState.log ? 1 : 0, borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.05,bottom:0.20} },
@@ -7441,6 +7486,7 @@ async function loadMainChart(symbol = mainChartState.symbol) {
       upColor:'#00c47a', downColor:'#f03d3d',
       borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
       wickUpColor:'#00a85a', wickDownColor:'#c03030',
+      priceFormat: mauexPriceSeriesFormat(),
     });
     candlesSeries.setData(candles);
     [
@@ -7449,7 +7495,7 @@ async function loadMainChart(symbol = mainChartState.symbol) {
       ...(candles.length >= 220 ? [{p:200, color:'rgba(240,80,80,0.85)'}] : []),
     ].forEach(({p,color}) => {
       if (candles.length < p) return;
-      const s = chart.addLineSeries({ color, lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+      const s = chart.addLineSeries({ color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, priceFormat: mauexPriceSeriesFormat() });
       s.setData(calcEMA(candles, p));
     });
     const vol = chart.addHistogramSeries({
