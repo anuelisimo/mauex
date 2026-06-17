@@ -1878,8 +1878,39 @@ function addChartTimeGuide(el, chart, unix, label='Señal') {
   };
 }
 
-function addSignalTimeGuide(el, chart, sig) {
-  return addChartTimeGuide(el, chart, signalTimeUnix(sig), 'Señal');
+function chartCandleUnix(time) {
+  if (typeof time === 'number') return time;
+  if (typeof time === 'string') {
+    const ms = Date.parse(time);
+    return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
+  }
+  if (time && typeof time === 'object' && time.year && time.month && time.day) {
+    return Math.floor(Date.UTC(time.year, time.month - 1, time.day) / 1000);
+  }
+  return 0;
+}
+
+function nearestCandleTimeForGuide(candles=[], unix=0) {
+  if (!unix || !candles.length) return 0;
+  const times = candles.map(c => chartCandleUnix(c.time)).filter(Boolean).sort((a,b) => a - b);
+  if (!times.length) return 0;
+  const defaultStep = times.length > 1 ? Math.max(60, Math.abs(times[1] - times[0])) : 86400;
+  if (unix < times[0] - defaultStep || unix > times[times.length - 1] + defaultStep) return 0;
+  let best = times[0];
+  let bestDist = Math.abs(unix - best);
+  for (const t of times) {
+    const dist = Math.abs(unix - t);
+    if (dist < bestDist) {
+      best = t;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+function addSignalTimeGuide(el, chart, sig, candles=[]) {
+  const guideTime = nearestCandleTimeForGuide(candles, signalTimeUnix(sig));
+  return addChartTimeGuide(el, chart, guideTime, 'Señal');
 }
 
 async function renderSignalInlineChart(sig, opts={}) {
@@ -1935,7 +1966,7 @@ async function renderSignalInlineChart(sig, opts={}) {
     }
     const resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 280 }));
     resize.observe(el);
-    const guideRemove = addSignalTimeGuide(el, chart, sig);
+    const guideRemove = addSignalTimeGuide(el, chart, sig, candles);
     signalChartState[id] = { chart, resize, guideRemove };
   } catch(e) {
     el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${signalEsc(e.message)}</div>`;
@@ -2294,7 +2325,8 @@ async function renderCalcSignalChart() {
       } catch(e) {}
     });
     chart.timeScale().fitContent();
-    calcChartState.guideRemove = addChartTimeGuide(el, chart, calcChartState.signalTime || 0, 'Señal');
+    const calcGuideTime = nearestCandleTimeForGuide(candles, calcChartState.signalTime || 0);
+    calcChartState.guideRemove = addChartTimeGuide(el, chart, calcGuideTime, 'Señal');
     el.ondblclick = () => chart.timeScale().fitContent();
     calcChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 320 }));
     calcChartState.resize.observe(el);
