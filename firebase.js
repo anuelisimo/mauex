@@ -316,6 +316,8 @@ window.saveTrade = async status => {
         signalTargetPercents: Array.isArray(signalExtras.targetPercents) ? signalExtras.targetPercents.filter(v => Number.isFinite(Number(v))).map(Number) : [],
         signalSelectedTargets: Array.isArray(signalExtras.selectedTargets) ? signalExtras.selectedTargets.filter(v => Number.isFinite(Number(v))).map(Number) : [],
         signalSelectedTargetIndexes: Array.isArray(signalExtras.selectedTargetIndexes) ? signalExtras.selectedTargetIndexes.filter(v => Number.isFinite(Number(v))).map(Number) : [],
+        signalTime: String(signalExtras.signalTime || signalExtras.originalMessageDate || ''),
+        originalMessageDate: String(signalExtras.originalMessageDate || signalExtras.signalTime || ''),
       } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -335,6 +337,7 @@ window.saveTrade = async status => {
     const tradePayload = {
       ...baseTrade,
       createdAt: existingTrade?.createdAt || baseTrade.createdAt,
+      executedAt: existingTrade?.executedAt || (status === 'active' ? new Date().toISOString() : null),
       liquidation: liquidation || null,
       liquidationManual: !!preserveManualLiq,
       originalPlan: existingTrade?.originalPlan || window.buildOriginalTraderPlan(baseTrade),
@@ -367,7 +370,8 @@ window.saveTrade = async status => {
 
 window.moveToActive = async id => {
   try {
-    await updateDoc(doc(db,'trades',id), { status:'active', updatedAt: new Date().toISOString() });
+    const now = new Date().toISOString();
+    await updateDoc(doc(db,'trades',id), { status:'active', executedAt: now, updatedAt: now });
     await loadTrades();
     renderWatchlist();
     toast('Trade movido a Posiciones.');

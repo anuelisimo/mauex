@@ -414,6 +414,13 @@ function signalTimeUnix(sig={}) {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
 }
 
+function dateLikeToUnix(raw) {
+  if (!raw) return 0;
+  if (typeof raw === 'number') return raw > 1000000000000 ? Math.floor(raw / 1000) : Math.floor(raw);
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
+}
+
 function loadSignalInbox() {
   try { return normalizeSignalInbox(JSON.parse(localStorage.getItem(SIGNAL_INBOX_KEY) || '[]')); }
   catch(e) { return []; }
@@ -1881,24 +1888,25 @@ function syncCalcChartSignalTime() {
     return fromTargets;
   }
   const fromExtrasRaw = window._signalTradeExtras?.signalTime || window._signalTradeExtras?.originalMessageDate || '';
-  const fromExtrasMs = fromExtrasRaw ? Date.parse(fromExtrasRaw) : NaN;
-  if (Number.isFinite(fromExtrasMs)) {
-    calcChartState.signalTime = Math.floor(fromExtrasMs / 1000);
+  const fromExtrasUnix = dateLikeToUnix(fromExtrasRaw);
+  if (fromExtrasUnix) {
+    calcChartState.signalTime = fromExtrasUnix;
     return calcChartState.signalTime;
   }
   return 0;
 }
 
-function addChartTimeGuide(el, chart, unix, label='Señal') {
+function addChartTimeGuide(el, chart, unix, label='Señal', tone='signal') {
   if (!el || !chart || !unix) return null;
   el.style.position = 'relative';
   const guide = document.createElement('div');
-  guide.className = 'signal-time-guide';
+  guide.className = `signal-time-guide ${tone === 'execution' ? 'execution-time-guide' : ''}`.trim();
   guide.innerHTML = `<span>${signalEsc(label)}</span>`;
   el.appendChild(guide);
   const update = () => {
     const x = chart.timeScale().timeToCoordinate(unix);
-    if (x === null || x === undefined || Number.isNaN(Number(x))) {
+    const width = el.clientWidth || 0;
+    if (x === null || x === undefined || Number.isNaN(Number(x)) || Number(x) < 0 || (width && Number(x) > width)) {
       guide.style.display = 'none';
       return;
     }
@@ -4336,7 +4344,7 @@ window.loadTradeIntoCalculator = id => {
   const dir = t.dir || 'long';
   window.showPage('calc');
   setCalculatorEditMode(id);
-  calcChartState.signalTime = 0;
+  calcChartState.signalTime = dateLikeToUnix(t.signalTime || t.originalMessageDate || '');
   calcChartState.key = '';
   window._signalTradeExtras = null;
   window.clearCalcSignalTargets?.();
@@ -6735,7 +6743,8 @@ window.removeEntryRow = id => {
 let lwCharts = {}; // lightweight chart instances
 
 let aiMarketType = 'spot'; // 'spot' | 'futures'
-let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, smc:false, emaRibbon:false, chart:null, obvChart:null, resize:null, obvResize:null, smcOverlayResize:null };
+let mainChartState = { symbol:'BTCUSDT', tf:'1d', log:false, smc:false, emaRibbon:false, chart:null, obvChart:null, resize:null, obvResize:null, smcOverlayResize:null, guideRemovers:[] };
+let chartsLoading = false;
 
 window.setMarketType = type => {
   aiMarketType = type;
@@ -6751,6 +6760,8 @@ window.setMarketType = type => {
   }
   if (document.getElementById('chartsTabGraficosContent')?.style.display !== 'none') {
     loadMainChart(mainChartState.symbol);
+  } else if (!chartsLoading && document.getElementById('chartsTabAIContent')?.style.display !== 'none') {
+    loadCharts();
   }
 };
 
@@ -7013,6 +7024,8 @@ function mainChartLabel(tf) {
 }
 
 function clearMainChart() {
+  (mainChartState.guideRemovers || []).forEach(fn => { try { fn(); } catch(e) {} });
+  mainChartState.guideRemovers = [];
   if (mainChartState.resize) { try { mainChartState.resize.disconnect(); } catch(e) {} mainChartState.resize = null; }
   if (mainChartState.obvResize) { try { mainChartState.obvResize.disconnect(); } catch(e) {} mainChartState.obvResize = null; }
   if (mainChartState.smcOverlayResize) { try { mainChartState.smcOverlayResize.disconnect(); } catch(e) {} mainChartState.smcOverlayResize = null; }
@@ -7035,6 +7048,7 @@ window.showChartsTab = (tab) => {
   bGraph?.classList.toggle('active', isGraph);
   bAI?.classList.toggle('active', !isGraph);
   if (isGraph) setTimeout(() => loadMainChart(mainChartState.symbol), 50);
+  else setTimeout(() => loadCharts(), 50);
 };
 
 window.setMainChartTimeframe = (tf) => {
@@ -7454,6 +7468,35 @@ function drawMainTradeLevels(chart, series, candles, trade) {
   });
 }
 
+function tradeSignalUnix(trade={}) {
+  return dateLikeToUnix(trade.signalTime || trade.originalMessageDate || trade.signalOriginalTime || '');
+}
+
+function tradeExecutionUnix(trade={}) {
+  if (String(trade.status || '').toLowerCase() !== 'active') return 0;
+  return dateLikeToUnix(trade.executedAt || trade.executionTime || trade.openedAt || trade.createdAt || '');
+}
+
+function drawMainTradeTimeGuides(el, chart, candles, trade) {
+  if (!el || !chart || !candles?.length || !trade) return;
+  const trades = (Array.isArray(trade) ? trade : [trade]).filter(Boolean);
+  const removers = [];
+  trades.forEach((t, i) => {
+    const prefix = trades.length > 1 && t.ticker ? `${t.ticker} ` : '';
+    const sigTime = nearestCandleTimeForGuide(candles, tradeSignalUnix(t));
+    if (sigTime) {
+      const remove = addChartTimeGuide(el, chart, sigTime, `${prefix}Señal`, 'signal');
+      if (remove) removers.push(remove);
+    }
+    const execTime = nearestCandleTimeForGuide(candles, tradeExecutionUnix(t));
+    if (execTime) {
+      const remove = addChartTimeGuide(el, chart, execTime, `${prefix}Ejec.`, 'execution');
+      if (remove) removers.push(remove);
+    }
+  });
+  mainChartState.guideRemovers = (mainChartState.guideRemovers || []).concat(removers);
+}
+
 async function loadMainChart(symbol = mainChartState.symbol) {
   const el = document.getElementById('mainChart');
   const obvEl = document.getElementById('mainObvChart');
@@ -7511,7 +7554,10 @@ async function loadMainChart(symbol = mainChartState.symbol) {
     })));
     chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
     if (mainChartState.emaRibbon) drawEmaRibbon(chart, candles);
-    if (_analysisTradeData) drawMainTradeLevels(chart, candlesSeries, candles, _analysisTradeData);
+    if (_analysisTradeData) {
+      drawMainTradeLevels(chart, candlesSeries, candles, _analysisTradeData);
+      drawMainTradeTimeGuides(el, chart, candles, _analysisTradeData);
+    }
     if (mainChartState.smc) drawSmcOverlay(chart, candlesSeries, candles);
     else candlesSeries.setMarkers([]);
     chart.timeScale().fitContent();
@@ -7788,6 +7834,8 @@ function renderMarketStrip(symbol, md, emaValues={}, mktType='spot') {
 }
 
 window.loadCharts = async () => {
+  if (chartsLoading) return;
+  chartsLoading = true;
   const rawInput = (document.getElementById('aiSymbol')?.value||'BTCUSDT').trim().toUpperCase();
   const btn = document.getElementById('chartsBtn');
   btn.textContent='↺ Cargando...'; btn.disabled=true;
@@ -7824,24 +7872,29 @@ window.loadCharts = async () => {
     : rawInput.replace(/[^A-Z0-9_]/g,'');
 
   try {
-    // Load all timeframes + market data in parallel
-    const [mainChart, res1M, res1W, res1D, md] = await Promise.all([
-      loadMainChart(symbol),
-      renderTFCharts('1M', symbol, '1M'),
-      renderTFCharts('1W', symbol, '1w'),
-      renderTFCharts('1D', symbol, '1d'),
+    const graphVisible = document.getElementById('chartsTabGraficosContent')?.style.display !== 'none';
+    const aiVisible = document.getElementById('chartsTabAIContent')?.style.display !== 'none';
+    const [mainChart, md] = await Promise.all([
+      graphVisible ? loadMainChart(symbol) : Promise.resolve(null),
       fetchMarketData(symbol),
     ]);
-    const [res4H, res1H] = await Promise.all([
-      renderTFCharts('4H', symbol, '4h'),
-      renderTFCharts('1H', symbol, '1h'),
-    ]);
-
-    // Collect EMA values from 1D for the strip
-    const ema1D = res1D?.emaValues || {};
+    let ema1D = {};
+    if (aiVisible) {
+      const [res1M, res1W, res1D] = await Promise.all([
+        renderTFCharts('1M', symbol, '1M'),
+        renderTFCharts('1W', symbol, '1w'),
+        renderTFCharts('1D', symbol, '1d'),
+      ]);
+      await Promise.all([
+        renderTFCharts('4H', symbol, '4h'),
+        renderTFCharts('1H', symbol, '1h'),
+      ]);
+      ema1D = res1D?.emaValues || {};
+    }
     renderMarketStrip(symbol, md, ema1D, aiMarketType);
   } catch(e){ console.error(e); toast('Error cargando charts: '+e.message,'error'); }
   btn.textContent='↺ Cargar'; btn.disabled=false;
+  chartsLoading = false;
 
   // Draw trade levels if opened from watchlist
   if(_analysisTradeData) {
@@ -7878,6 +7931,7 @@ window.loadCharts = async () => {
               lastValueVisible: false,  // hide label on price axis to avoid covering candles
               title: '',
               crosshairMarkerVisible: false,
+              priceFormat: mauexPriceSeriesFormat(),
             });
             // Extend line across visible range + extra
             const visible = csChart.timeScale().getVisibleRange();
@@ -10212,7 +10266,13 @@ window.toggleZombie = async (id, makeZombie) => {
 window.moveCardToStatus = async (id, newStatus) => {
   const {updateDoc, doc, db} = window._fb;
   try {
-    await updateDoc(doc(db,'trades',id), { status: newStatus, updatedAt: new Date().toISOString() });
+    const now = new Date().toISOString();
+    const current = (window.G?.trades?.() || []).find(t => t.id === id);
+    await updateDoc(doc(db,'trades',id), {
+      status: newStatus,
+      updatedAt: now,
+      ...(newStatus === 'active' && !current?.executedAt ? { executedAt: now } : {}),
+    });
     await window._loadTrades();
     renderWatchlist(); renderOrders(); renderPositions(); renderMap();
     const labels = {watchlist:'Watchlist', pending:'Órdenes', active:'Posiciones'};

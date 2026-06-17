@@ -413,6 +413,8 @@ textarea{resize:vertical;min-height:70px;}
 .signal-chart{height:300px;min-height:240px;}
 .signal-time-guide{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed rgba(224,64,251,.82);pointer-events:none;z-index:5;}
 .signal-time-guide span{position:absolute;top:0;left:5px;transform:translateY(-2px);font-family:var(--mono);font-size:9px;color:#e040fb;background:rgba(10,12,15,.88);border:0.5px solid rgba(224,64,251,.35);border-radius:5px;padding:2px 5px;white-space:nowrap;}
+.signal-time-guide.execution-time-guide{border-left-color:rgba(0,196,122,.9);}
+.signal-time-guide.execution-time-guide span{color:#00c47a;border-color:rgba(0,196,122,.35);}
 .signal-chart-btn{font-size:14px;line-height:1;}
 .signal-targets-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px;margin:-2px 0 10px;}
 .signal-target-pill{border:0.5px solid rgba(0,196,122,.22);background:rgba(0,196,122,.055);border-radius:7px;padding:6px 7px;min-height:58px;text-align:left;color:inherit;}
