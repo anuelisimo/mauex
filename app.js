@@ -361,6 +361,59 @@ function signalEsc(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function signalOriginalTime(sig={}) {
+  return String(sig.signalTime || sig.originalMessageDate || sig.date || '').trim();
+}
+
+function signalHasOriginalTime(sig={}) {
+  return !!signalOriginalTime(sig) && !sig.originalDateMissing;
+}
+
+function signalDateTimeText(raw='') {
+  if (!raw) return 'Hora original pendiente';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return String(raw);
+  return d.toLocaleString('es-AR', {
+    day:'2-digit',
+    month:'2-digit',
+    year:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit'
+  });
+}
+
+function signalDateTimeInputValue(raw='') {
+  const d = raw ? new Date(raw) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseSignalManualDateTime(raw='') {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?$/);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0), 0);
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:[ T](\d{1,2}):(\d{2}))?$/);
+  if (m) {
+    const year = Number(m[3].length === 2 ? '20' + m[3] : m[3]);
+    const d = new Date(year, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0), 0);
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
+function signalTimeUnix(sig={}) {
+  const raw = signalOriginalTime(sig);
+  if (!raw || sig.originalDateMissing) return 0;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
+}
+
 function loadSignalInbox() {
   try { return normalizeSignalInbox(JSON.parse(localStorage.getItem(SIGNAL_INBOX_KEY) || '[]')); }
   catch(e) { return []; }
@@ -425,7 +478,7 @@ function applySignalRemoteStates(items=[]) {
   items.forEach(sig => {
     const remote = _signalRemoteStates[signalRemoteId(sig)];
     if (!remote) return;
-    ['status','convertedAt','convertedTo','discardedAt','clearedAt','reviewedAt','targetSelectionManual'].forEach(k => {
+    ['status','convertedAt','convertedTo','discardedAt','clearedAt','reviewedAt','targetSelectionManual','signalTime','originalMessageDate','originalDateMissing','signalTimeManual'].forEach(k => {
       if (remote[k] !== undefined) sig[k] = remote[k];
     });
     if (Array.isArray(remote.selectedTargetIndexes)) sig.selectedTargetIndexes = remote.selectedTargetIndexes;
@@ -1205,6 +1258,14 @@ function signalCardHtml(sig) {
   const aiHtml = sig.aiInterpreted
     ? `<div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--t2);line-height:1.5;"><strong style="color:var(--blue);">AI</strong>${sig.aiConfidence ? ' · confianza '+Math.round(sig.aiConfidence) : ''}${sig.aiUsedImage ? ' · usó imagen' : ''}${sig.aiNotes ? '<br>'+signalEsc(sig.aiNotes) : ''}</div>`
     : '';
+  const originalTime = signalOriginalTime(sig);
+  const originalTimeOk = signalHasOriginalTime(sig);
+  const signalTimeHtml = `
+    <div class="signal-time-row ${originalTimeOk ? '' : 'missing'}">
+      <span>Hora se&ntilde;al:</span>
+      <strong>${signalEsc(signalDateTimeText(originalTime))}</strong>
+      <button type="button" onclick="editSignalOriginalTime('${sig.id}')" title="Editar hora original">Editar</button>
+    </div>`;
   return `
     <div class="signal-card ${stateCls}">
       <div class="signal-head">
@@ -1216,6 +1277,7 @@ function signalCardHtml(sig) {
             <span style="font-size:11px;color:var(--t3);">· ${signalEsc(sig.traderName || 'Sin trader')}</span>
           </div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:5px;">${statusText} · ${fmtD(sig.createdAt)}</div>
+          ${signalTimeHtml}
         </div>
         <div style="text-align:right;">
           <div class="signal-confidence" style="color:${confColor};">${sig.confidence}</div>
@@ -1325,6 +1387,33 @@ function renderSignals() {
     ? visible.map(signalCardHtml).join('')
     : `<div class="empty"><div class="empty-icon">◇</div><div class="empty-text">No hay señales en inbox</div><div class="empty-sub">Pegá un mensaje de Telegram para empezar.</div></div>`;
 }
+
+window.editSignalOriginalTime = async id => {
+  const items = loadSignalInbox();
+  const sig = items.find(x => x.id === id);
+  if (!sig) return;
+  const current = signalDateTimeInputValue(signalOriginalTime(sig));
+  const raw = prompt('Hora original de la señal (ej: 2026-06-14 22:58). Dejá vacío para quitarla.', current);
+  if (raw === null) return;
+  const iso = parseSignalManualDateTime(raw);
+  if (raw.trim() && !iso) {
+    toast('No pude leer esa fecha. Usá formato 2026-06-14 22:58 o 14/06/2026 22:58.', 'error');
+    return;
+  }
+  sig.signalTime = iso;
+  sig.originalMessageDate = iso;
+  sig.originalDateMissing = !iso;
+  sig.signalTimeManual = !!iso;
+  await saveSignalStateRemoteAsync(sig, {
+    signalTime: sig.signalTime,
+    originalMessageDate: sig.originalMessageDate,
+    originalDateMissing: sig.originalDateMissing,
+    signalTimeManual: sig.signalTimeManual,
+  }).catch(()=>{});
+  saveSignalInbox(items);
+  renderSignals();
+  toast(iso ? 'Hora original actualizada.' : 'Hora original quitada.');
+};
 
 async function fetchTelegramSignals(secret='') {
   const qs = new URLSearchParams({ t: Date.now().toString() });
@@ -1560,7 +1649,13 @@ window.syncTelegramSignals = async (silent=false) => {
         exchange: 'BINANCE',
       });
       sig.id = msg.id || sig.id;
-      sig.createdAt = msg.date || msg.receivedAt || sig.createdAt;
+      sig.signalTime = msg.signalTime || msg.originalMessageDate || msg.date || '';
+      sig.originalMessageDate = sig.signalTime;
+      sig.originalDateMissing = !!msg.originalDateMissing || !sig.signalTime;
+      sig.receivedAt = msg.receivedAt || '';
+      sig.importedAt = new Date().toISOString();
+      sig.messageDate = msg.messageDate || '';
+      if (sig.signalTime) sig.createdAt = sig.signalTime;
       sig.hasImage = !!msg.hasImage;
       sig.imageFileId = msg.imageFileId || '';
       sig.imageWidth = Number(msg.imageWidth || 0);
@@ -1747,9 +1842,35 @@ function signalChartLevels(sig) {
 
 function destroySignalChart(id) {
   const st = signalChartState[id];
+  if (st?.guideRemove) { try { st.guideRemove(); } catch(e) {} }
   if (st?.resize) { try { st.resize.disconnect(); } catch(e) {} }
   if (st?.chart) { try { st.chart.remove(); } catch(e) {} }
   delete signalChartState[id];
+}
+
+function addSignalTimeGuide(el, chart, sig) {
+  const unix = signalTimeUnix(sig);
+  if (!el || !chart || !unix) return null;
+  el.style.position = 'relative';
+  const guide = document.createElement('div');
+  guide.className = 'signal-time-guide';
+  guide.innerHTML = '<span>Se&ntilde;al</span>';
+  el.appendChild(guide);
+  const update = () => {
+    const x = chart.timeScale().timeToCoordinate(unix);
+    if (x === null || x === undefined || Number.isNaN(Number(x))) {
+      guide.style.display = 'none';
+      return;
+    }
+    guide.style.display = 'block';
+    guide.style.left = `${Math.round(Number(x))}px`;
+  };
+  chart.timeScale().subscribeVisibleTimeRangeChange(update);
+  setTimeout(update, 0);
+  return () => {
+    try { chart.timeScale().unsubscribeVisibleTimeRangeChange(update); } catch(e) {}
+    guide.remove();
+  };
 }
 
 async function renderSignalInlineChart(sig, opts={}) {
@@ -1759,6 +1880,7 @@ async function renderSignalInlineChart(sig, opts={}) {
   destroySignalChart(id);
   const info = signalChartInfo(sig);
   if (!info) return;
+  const p = sig?.parsed || {};
   const tf = signalChartTfState[id] || '1h';
   document.querySelectorAll(`[data-sig-chart="${id}"]`).forEach(b => b.classList.toggle('active', b.dataset.sigTf === tf));
   el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando gráfico ${mainChartLabel(tf)}...</div>`;
@@ -1789,6 +1911,16 @@ async function renderSignalInlineChart(sig, opts={}) {
       wickUpColor:'#00a85a', wickDownColor:'#c03030',
     });
     series.setData(candles);
+    const signalUnix = signalTimeUnix(sig);
+    if (signalUnix) {
+      series.setMarkers([{
+        time: signalUnix,
+        position: 'aboveBar',
+        color: '#e040fb',
+        shape: 'arrowDown',
+        text: 'Señal',
+      }]);
+    }
     const firstTime = candles[0]?.time;
     const lastTime = candles[candles.length - 1]?.time;
     signalChartLevels(sig).forEach(lvl => {
@@ -1804,7 +1936,8 @@ async function renderSignalInlineChart(sig, opts={}) {
     }
     const resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 280 }));
     resize.observe(el);
-    signalChartState[id] = { chart, resize };
+    const guideRemove = addSignalTimeGuide(el, chart, sig);
+    signalChartState[id] = { chart, resize, guideRemove };
   } catch(e) {
     el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${signalEsc(e.message)}</div>`;
   } finally {
@@ -1863,6 +1996,7 @@ window.signalOpenChart = async id => {
     tp1: selectedTargets[0] || 0,
     tp2: selectedTargets[1] || 0,
     tp3: selectedTargets[2] || 0,
+    signalTime: signalOriginalTime(sig),
     notes: sig.raw || '',
   };
   window.showPage('analysis');
@@ -4680,7 +4814,7 @@ function sectionOfTrade(t) {
 }
 
 function signalNavTimeOf(sig) {
-  const raw = sig?.lastTelegramUpdateAt || sig?.createdAt || sig?.receivedAt || sig?.date || sig?.updatedAt;
+  const raw = sig?.lastTelegramUpdateAt || sig?.receivedAt || sig?.importedAt || sig?.updatedAt || sig?.createdAt || signalOriginalTime(sig);
   if (!raw) return 0;
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : 0;
