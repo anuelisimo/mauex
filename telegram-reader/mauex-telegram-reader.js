@@ -137,6 +137,7 @@ async function postToMauex(client, entity, msg) {
       caption: raw,
       entities: [],
       mauex_source: 'telegram-user-reader',
+      mauex_original_date: msg.date || Math.floor(Date.now() / 1000),
       mauex_provider_signal_id: providerSignalId(raw),
       mauex_message_kind: kind
     }
