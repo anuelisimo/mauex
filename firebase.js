@@ -313,6 +313,7 @@ window.saveTrade = async status => {
       tp1pct, tp2pct, tp3pct, risk, posSize,
       marketSource: calcTickerMarket.source || 'auto',
       marketType: calcTickerMarket.type || '',
+      marketKind: calcTickerMarket.kind || '',
       dir: calcState.dir,
       exchange: calcState.dir === 'spot' ? 'spot' : calcState.ex,
       leverage: lev,

@@ -1748,7 +1748,7 @@ function applySignalToCalculator(sig) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   set('cTicker', p.ticker || '');
   const signalIsCrypto = appIsCryptoTicker(p.ticker || '', p.exchange || 'BINANCE');
-  setCalcTickerSource(signalIsCrypto ? 'binance' : 'yahoo', signalIsCrypto ? 'crypto' : 'stock');
+  setCalcTickerSource(signalIsCrypto ? String(p.exchange || 'binance').toLowerCase() : 'yahoo', signalIsCrypto ? 'crypto' : 'stock', signalIsCrypto ? (dir === 'spot' ? 'spot' : 'futures') : 'spot');
   set('cEntry', p.entry || '');
   set('cSL', p.sl || '');
   const allTargets = signalAllTargets(p);
@@ -2190,7 +2190,7 @@ window.openThemePicker = () => {
 };
 
 // ── Calc state ─────────────────────────────────────────────────────────────
-const calcState = { dir:'short', ex:'binance', lev:null, marketSource:'auto', marketType:'' };
+const calcState = { dir:'short', ex:'binance', lev:null, marketSource:'auto', marketType:'', marketKind:'' };
 let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'', signalTime:0, guideRemove:null };
 let calcSignalTargetsState = null;
 let calcTpPercentsManual = false;
@@ -2277,23 +2277,47 @@ function calcChartLevelsFromInputs() {
   ];
 }
 
+function chartSymbolForExchange(raw, source, marketKind='futures') {
+  const clean = String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_.\-=]/g,'');
+  if (!clean) return '';
+  const base = clean
+    .replace(/[-_]?USDTM$/,'')
+    .replace(/[-_]?USDT[-_]?SWAP$/,'')
+    .replace(/[-_]?USDT$/,'')
+    .replace(/USDT$/,'');
+  if (source === 'okx') return clean.includes('-') ? clean : `${base}-USDT${marketKind === 'futures' ? '-SWAP' : ''}`;
+  if (source === 'kucoin') return clean.includes('-') || clean.endsWith('USDTM') ? clean : (marketKind === 'futures' ? `${base}USDTM` : `${base}-USDT`);
+  if (source === 'mexc') return clean.includes('_') || clean.endsWith('USDT') ? clean : `${base}${marketKind === 'futures' ? '_USDT' : 'USDT'}`;
+  if (source === 'bybit' || source === 'binance') return clean.endsWith('USDT') ? clean : `${base}USDT`;
+  return clean;
+}
+
 function calcChartSymbolInfo() {
-  const raw = (document.getElementById('cTicker')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  const raw = (document.getElementById('cTicker')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_.\-=]/g,'');
   if (!raw) return null;
   const exchange = calcState.dir === 'spot' ? 'MANUAL' : calcState.ex;
-  const selectedSource = calcState.marketSource || 'auto';
+  const selectedSource = calcState.marketSource === 'auto' && calcState.dir !== 'spot'
+    ? (calcState.ex || 'binance')
+    : (calcState.marketSource || 'auto');
   const selectedType = calcState.marketType || '';
+  const selectedKind = calcState.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures');
   if (selectedSource === 'yahoo') {
-    return { raw, symbol: raw, source:'yahoo', type: selectedType || 'stock' };
+    return { raw, symbol: raw, source:'yahoo', type: selectedType || 'stock', marketKind:'spot' };
   }
-  if (selectedSource === 'mexc') {
-    return { raw, symbol: raw, source:'mexc', type: selectedType || 'commodity' };
+  if (cryptoExchangeSource(selectedSource)) {
+    return {
+      raw,
+      symbol: chartSymbolForExchange(raw, selectedSource, selectedKind),
+      source: selectedSource,
+      type: selectedType || 'crypto',
+      marketKind: selectedKind,
+    };
   }
   const crypto = selectedSource === 'binance' ? true : appIsCryptoTicker(raw, exchange);
   const symbol = crypto
     ? (raw.endsWith('USDT') || raw.endsWith('USDC') || raw.includes('_') ? raw.replace(/USDC$/,'USDT') : raw + 'USDT')
     : raw;
-  return { raw, symbol, source: crypto ? 'binance' : 'yahoo', type: selectedType || (crypto ? 'crypto' : 'stock') };
+  return { raw, symbol, source: crypto ? 'binance' : 'yahoo', type: selectedType || (crypto ? 'crypto' : 'stock'), marketKind: crypto ? selectedKind : 'spot' };
 }
 
 function clearCalcSignalChart() {
@@ -2329,7 +2353,7 @@ async function renderCalcSignalChart() {
     return;
   }
   const key = [
-    info.symbol, info.source, calcState.dir, calcState.ex, calcState.lev || 1, calcChartState.tf,
+    info.symbol, info.source, info.marketKind || '', calcState.dir, calcState.ex, calcState.lev || 1, calcChartState.tf,
     retainedSignalTime || 0,
     ['cEntry','cSL','cTP1','cTP2','cTP3','cInv1','cInv2'].map(id => document.getElementById(id)?.value || '').join('|')
   ].join('::');
@@ -2344,7 +2368,7 @@ async function renderCalcSignalChart() {
   try {
     window._aiSource = info.source;
     window._aiType = info.type;
-    if (info.type === 'crypto') aiMarketType = calcState.dir === 'spot' ? 'spot' : 'futures';
+    if (info.type === 'crypto') aiMarketType = info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures');
     const candles = await fetchOHLCV(info.symbol, calcChartState.tf, mainChartLimit(calcChartState.tf));
     if (!candles.length) throw new Error('Sin datos');
     el.innerHTML = '';
@@ -2414,10 +2438,14 @@ window.openCalcSetupInCharts = () => {
   if (el) el.value = info.symbol;
   window._aiSource = info.source;
   window._aiType = info.type;
+  if (info.type === 'crypto') setMarketType(info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures'));
   _analysisTradeData = {
     ticker: info.raw,
     dir: calcState.dir,
     exchange: calcState.dir === 'spot' ? 'MANUAL' : calcState.ex.toUpperCase(),
+    marketSource: info.source,
+    marketType: info.type,
+    marketKind: info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures'),
     leverage: calcState.lev || 1,
     entry: parseFloat(document.getElementById('cEntry')?.value) || 0,
     sl: parseFloat(document.getElementById('cSL')?.value) || 0,
@@ -2442,6 +2470,7 @@ window.setDir = d => {
   document.getElementById('exchSec').style.display = sp?'none':'block';
   document.getElementById('levSec').style.display  = sp?'none':'block';
   document.getElementById('spotNote').style.display = sp?'block':'none';
+  calcSyncTickerSourceToExchange();
   compute();
 };
 
@@ -2449,6 +2478,7 @@ window.setEx = ex => {
   calcState.ex = ex;
   document.querySelectorAll('[data-ex]').forEach(b => b.classList.toggle('active', b.dataset.ex===ex));
   document.getElementById('mmrLabel').textContent = MMR_LBL[ex];
+  calcSyncTickerSourceToExchange();
   compute();
 };
 
@@ -2493,6 +2523,61 @@ window.selectCalcTicker = (ticker, source, type) => {
 window.currentCalcTickerMarket = () => ({
   source: calcState.marketSource || 'auto',
   type: calcState.marketType || '',
+});
+
+function cryptoExchangeSource(source='') {
+  return ['binance','bybit','okx','mexc','kucoin'].includes(String(source || '').toLowerCase());
+}
+
+function calcTickerSourceLabel() {
+  const source = calcState.marketSource || 'auto';
+  const type = calcState.marketType || '';
+  const kind = calcState.marketKind || '';
+  const suffix = [type ? type.toUpperCase() : '', kind ? kind.toUpperCase() : ''].filter(Boolean).join(' - ');
+  const names = { binance:'Binance', bybit:'Bybit', okx:'OKX', mexc:'MEXC', kucoin:'KuCoin', yahoo:'Yahoo' };
+  return source === 'auto' ? 'Fuente: Auto' : `Fuente: ${names[source] || source.toUpperCase()}${suffix ? ' - ' + suffix : ''}`;
+}
+
+function setCalcTickerSource(source='auto', type='', marketKind='') {
+  calcState.marketSource = source || 'auto';
+  calcState.marketType = source === 'auto' ? '' : (type || '');
+  calcState.marketKind = source === 'auto' ? '' : (marketKind || '');
+  calcChartState.key = '';
+  updateCalcTickerSourceBadge();
+}
+
+function calcSyncTickerSourceToExchange() {
+  const source = calcState.marketSource || 'auto';
+  if (calcState.dir === 'spot') {
+    if (cryptoExchangeSource(source)) setCalcTickerSource(source, 'crypto', 'spot');
+    return;
+  }
+  if (source === 'auto' || cryptoExchangeSource(source)) {
+    setCalcTickerSource(calcState.ex || 'binance', 'crypto', 'futures');
+  }
+}
+
+window.selectCalcTicker = (ticker, source, type, marketKind='') => {
+  const el = document.getElementById('cTicker');
+  if (el) el.value = String(ticker || '').toUpperCase();
+  const dd = document.getElementById('calcTickerDD');
+  if (dd) dd.style.display = 'none';
+  const kind = marketKind || (source === 'yahoo' ? 'spot' : (calcState.dir === 'spot' ? 'spot' : 'futures'));
+  if (source === 'yahoo') {
+    if (calcState.dir !== 'spot') setDir('spot');
+  } else if (cryptoExchangeSource(source)) {
+    if (kind === 'spot' && calcState.dir !== 'spot') setDir('spot');
+    if (kind === 'futures' && calcState.dir === 'spot') setDir('long');
+    if (source !== calcState.ex) setEx(source);
+  }
+  setCalcTickerSource(source || 'auto', type || '', kind);
+  compute();
+};
+
+window.currentCalcTickerMarket = () => ({
+  source: calcState.marketSource || 'auto',
+  type: calcState.marketType || '',
+  kind: calcState.marketKind || '',
 });
 
 function calcTpPercentIds() {
@@ -4448,7 +4533,7 @@ window.loadTradeIntoCalculator = id => {
   }
   if (Number(t.leverage || 0) > 0) pickLev(Number(t.leverage));
   set('cTicker', t.ticker || '');
-  setCalcTickerSource(t.marketSource || 'auto', t.marketType || '');
+  setCalcTickerSource(t.marketSource || 'auto', t.marketType || '', t.marketKind || '');
   set('cEntry', Number(t.entry || 0) || '');
   set('cSL', Number(t.sl || 0) || '');
   set('cRisk', Number(t.risk || 0) || '');
@@ -4555,8 +4640,17 @@ function tradeChartMarketInfo(t={}) {
   const rawTicker = String(t?.ticker || '').trim().toUpperCase();
   const explicitSource = String(t?.marketSource || '').toLowerCase();
   const explicitType = String(t?.marketType || '').toLowerCase();
-  if (explicitSource === 'yahoo') return { raw:rawTicker, symbol:rawTicker, source:'yahoo', type:explicitType || 'stock' };
-  if (explicitSource === 'mexc') return { raw:rawTicker, symbol:rawTicker, source:'mexc', type:explicitType || 'commodity' };
+  const explicitKind = String(t?.marketKind || '').toLowerCase() || (t?.dir === 'spot' ? 'spot' : 'futures');
+  if (explicitSource === 'yahoo') return { raw:rawTicker, symbol:rawTicker, source:'yahoo', type:explicitType || 'stock', marketKind:'spot' };
+  if (cryptoExchangeSource(explicitSource)) {
+    return {
+      raw: rawTicker,
+      symbol: chartSymbolForExchange(rawTicker, explicitSource, explicitKind),
+      source: explicitSource,
+      type: explicitType || 'crypto',
+      marketKind: explicitKind,
+    };
+  }
   const crypto = explicitSource === 'binance' || rawTicker.endsWith('USDT') || rawTicker.endsWith('BUSD') || appIsCryptoTicker(rawTicker, t?.exchange);
   const base = rawTicker.replace(/USDT|BUSD|USD$/,'');
   return {
@@ -4564,6 +4658,7 @@ function tradeChartMarketInfo(t={}) {
     symbol: crypto ? base + 'USDT' : rawTicker,
     source: crypto ? 'binance' : 'yahoo',
     type: explicitType || (crypto ? 'crypto' : 'stock'),
+    marketKind: crypto ? explicitKind : 'spot',
   };
 }
 
@@ -4586,7 +4681,7 @@ window.openSelectedWatchlistInCharts = () => {
   const info = tradeChartMarketInfo(first);
   window._aiSource = info.source;
   window._aiType = info.type;
-  setMarketType(info.source === 'yahoo' ? 'spot' : (first?.dir === 'spot' ? 'spot' : 'futures'));
+  setMarketType(info.source === 'yahoo' ? 'spot' : (info.marketKind || (first?.dir === 'spot' ? 'spot' : 'futures')));
   window.showPage('analysis');
   if (typeof showChartsTab === 'function') showChartsTab('graficos');
   setTimeout(() => { if (typeof loadCharts === 'function') loadCharts(); }, 250);
@@ -6874,7 +6969,107 @@ window.setMarketType = type => {
   }
 };
 
+async function fetchExchangeOHLCV(source, symbol, interval, limit=300, marketKind='futures') {
+  const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
+  if(source === 'bybit') {
+    const bybitIv = {'1M':'M','1w':'W','1d':'D','4h':'240','1h':'60','30m':'30','15m':'15'}[interval] || '60';
+    const category = marketKind === 'spot' ? 'spot' : 'linear';
+    const bybitSymbol = chartSymbolForExchange(symbol, 'bybit', marketKind);
+    const url = `https://api.bybit.com/v5/market/kline?category=${category}&symbol=${encodeURIComponent(bybitSymbol)}&interval=${bybitIv}&limit=${Math.min(limit, 1000)}`;
+    const r = await fetchFn(url);
+    if(!r.ok) throw new Error(`Bybit HTTP ${r.status}`);
+    const d = await r.json();
+    const rows = Array.isArray(d?.result?.list) ? d.result.list : [];
+    if (!rows.length) throw new Error('Bybit sin velas');
+    return rows.slice().reverse().map(k=>({
+      time: Math.floor(Number(k[0]) / 1000),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5] || 0),
+    })).filter(c=>c.open>0&&c.close>0);
+  }
+  if(source === 'okx') {
+    const okxBar = {'1M':'1M','1w':'1W','1d':'1D','4h':'4H','1h':'1H','30m':'30m','15m':'15m'}[interval] || '1H';
+    const instId = chartSymbolForExchange(symbol, 'okx', marketKind);
+    const url = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(instId)}&bar=${okxBar}&limit=${Math.min(limit, 300)}`;
+    const r = await fetchFn(url);
+    if(!r.ok) throw new Error(`OKX HTTP ${r.status}`);
+    const d = await r.json();
+    const rows = Array.isArray(d?.data) ? d.data : [];
+    if (!rows.length) throw new Error('OKX sin velas');
+    return rows.slice().reverse().map(k=>({
+      time: Math.floor(Number(k[0]) / 1000),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5] || 0),
+    })).filter(c=>c.open>0&&c.close>0);
+  }
+  if(source === 'mexc') {
+    const mexcSpotIv = {'1M':'1M','1w':'1W','1d':'1d','4h':'4h','1h':'60m','30m':'30m','15m':'15m'}[interval] || '60m';
+    const mexcSpotSym = chartSymbolForExchange(symbol, 'mexc', 'spot');
+    const url = `https://api.mexc.com/api/v3/klines?symbol=${encodeURIComponent(mexcSpotSym)}&interval=${mexcSpotIv}&limit=${Math.min(limit, 1000)}`;
+    const r = await fetchFn(url);
+    if(!r.ok) throw new Error(`MEXC Spot HTTP ${r.status}`);
+    const data = await r.json();
+    if (!Array.isArray(data) || !data.length) throw new Error('MEXC Spot sin velas');
+    return data.map(k=>({
+      time: Math.floor(Number(k[0]) / 1000),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5] || 0),
+    })).filter(c=>c.open>0&&c.close>0);
+  }
+  if(source === 'kucoin') {
+    if (marketKind === 'spot') {
+      const kucoinType = {'1M':'1month','1w':'1week','1d':'1day','4h':'4hour','1h':'1hour','30m':'30min','15m':'15min'}[interval] || '1hour';
+      const kucoinSymbol = chartSymbolForExchange(symbol, 'kucoin', 'spot');
+      const url = `https://api.kucoin.com/api/v1/market/candles?type=${kucoinType}&symbol=${encodeURIComponent(kucoinSymbol)}`;
+      const r = await fetchFn(url);
+      if(!r.ok) throw new Error(`KuCoin HTTP ${r.status}`);
+      const d = await r.json();
+      const rows = Array.isArray(d?.data) ? d.data : [];
+      if (!rows.length) throw new Error('KuCoin sin velas');
+      return rows.slice(0, limit).reverse().map(k=>({
+        time: Number(k[0]),
+        open: parseFloat(k[1]),
+        close: parseFloat(k[2]),
+        high: parseFloat(k[3]),
+        low: parseFloat(k[4]),
+        volume: parseFloat(k[5] || 0),
+      })).filter(c=>c.open>0&&c.close>0);
+    }
+    const granularity = {'1M':43200,'1w':10080,'1d':1440,'4h':240,'1h':60,'30m':30,'15m':15}[interval] || 60;
+    const kucoinSymbol = chartSymbolForExchange(symbol, 'kucoin', 'futures');
+    const url = `https://api-futures.kucoin.com/api/v1/kline/query?symbol=${encodeURIComponent(kucoinSymbol)}&granularity=${granularity}`;
+    const r = await fetchFn(url);
+    if(!r.ok) throw new Error(`KuCoin Futures HTTP ${r.status}`);
+    const d = await r.json();
+    const rows = Array.isArray(d?.data) ? d.data : [];
+    if (!rows.length) throw new Error('KuCoin Futures sin velas');
+    return rows.slice(-limit).map(k=>({
+      time: Math.floor(Number(k[0]) / 1000),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5] || 0),
+    })).filter(c=>c.open>0&&c.close>0);
+  }
+  throw new Error('Exchange no soportado para velas');
+}
+
 async function fetchOHLCV(symbol, interval, limit=300) {
+  const exchangeFetchSource = String(window._aiSource || '').toLowerCase();
+  const exchangeFetchKind = aiMarketType === 'spot' ? 'spot' : 'futures';
+  if (['bybit','okx','kucoin'].includes(exchangeFetchSource) || (exchangeFetchSource === 'mexc' && exchangeFetchKind === 'spot')) {
+    return fetchExchangeOHLCV(exchangeFetchSource, symbol, interval, limit, exchangeFetchKind);
+  }
   // MEXC commodities — use MEXC futures klines
   if(window._aiSource === 'mexc') {
     // symbol is already in MEXC format (e.g. GOLD_USDT) set by selectTicker
@@ -7880,25 +8075,76 @@ async function fetchMarketData(symbol) {
   const data = {};
   try {
     // 24h ticker
-    const r = await (PROXY_URL?window.proxyFetch:fetch)(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
-    const d = await r.json();
-    data.price     = parseFloat(d.lastPrice);
-    data.change24h = parseFloat(d.priceChangePercent);
-    data.vol24h    = parseFloat(d.quoteVolume); // in USDT
-    data.high24h   = parseFloat(d.highPrice);
-    data.low24h    = parseFloat(d.lowPrice);
+    const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
+    const src = String(window._aiSource || 'binance').toLowerCase();
+    const kind = aiMarketType === 'spot' ? 'spot' : 'futures';
+    if (src === 'bybit') {
+      const bybitSymbol = chartSymbolForExchange(symbol, 'bybit', kind);
+      const r = await fetchFn(`https://api.bybit.com/v5/market/tickers?category=${kind === 'spot' ? 'spot' : 'linear'}&symbol=${encodeURIComponent(bybitSymbol)}`);
+      const d = await r.json();
+      const row = d.result?.list?.[0] || {};
+      data.price = parseFloat(row.lastPrice);
+      data.change24h = parseFloat(row.price24hPcnt) * 100;
+      data.vol24h = parseFloat(row.turnover24h || 0);
+      data.high24h = parseFloat(row.highPrice24h);
+      data.low24h = parseFloat(row.lowPrice24h);
+    } else if (src === 'okx') {
+      const instId = chartSymbolForExchange(symbol, 'okx', kind);
+      const r = await fetchFn(`https://www.okx.com/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`);
+      const d = await r.json();
+      const row = d.data?.[0] || {};
+      data.price = parseFloat(row.last);
+      const open = parseFloat(row.open24h);
+      data.change24h = open ? (data.price - open) / open * 100 : null;
+      data.vol24h = parseFloat(row.volCcy24h || row.vol24h || 0);
+      data.high24h = parseFloat(row.high24h);
+      data.low24h = parseFloat(row.low24h);
+    } else if (src === 'mexc' && kind === 'futures') {
+      const mexcSym = chartSymbolForExchange(symbol, 'mexc', 'futures');
+      const r = await fetchFn(`https://contract.mexc.com/api/v1/contract/ticker?symbol=${encodeURIComponent(mexcSym)}`);
+      const d = await r.json();
+      const row = Array.isArray(d.data) ? d.data[0] : d.data || {};
+      data.price = parseFloat(row.lastPrice || row.lastPriceFair || row.fairPrice);
+      data.change24h = parseFloat(row.riseFallRate) * 100;
+      data.vol24h = parseFloat(row.amount24 || row.volume24 || 0);
+      data.high24h = parseFloat(row.high24Price || row.high24);
+      data.low24h = parseFloat(row.low24Price || row.low24);
+    } else if (src === 'kucoin' && kind === 'spot') {
+      const kucoinSymbol = chartSymbolForExchange(symbol, 'kucoin', 'spot');
+      const r = await fetchFn(`https://api.kucoin.com/api/v1/market/stats?symbol=${encodeURIComponent(kucoinSymbol)}`);
+      const d = await r.json();
+      const row = d.data || {};
+      data.price = parseFloat(row.last);
+      data.change24h = parseFloat(row.changeRate) * 100;
+      data.vol24h = parseFloat(row.volValue || 0);
+      data.high24h = parseFloat(row.high);
+      data.low24h = parseFloat(row.low);
+    } else {
+      const binanceSymbol = chartSymbolForExchange(symbol, 'binance', kind);
+      const r = await fetchFn(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(binanceSymbol)}`);
+      const d = await r.json();
+      data.price     = parseFloat(d.lastPrice);
+      data.change24h = parseFloat(d.priceChangePercent);
+      data.vol24h    = parseFloat(d.quoteVolume);
+      data.high24h   = parseFloat(d.highPrice);
+      data.low24h    = parseFloat(d.lowPrice);
+    }
   } catch(e){}
 
   try {
     // Funding rate (futures)
-    const r = await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
+    if (String(window._aiSource || 'binance').toLowerCase() !== 'binance') throw new Error('skip non-binance funding');
+    const binanceSymbol = chartSymbolForExchange(symbol, 'binance', 'futures');
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${encodeURIComponent(binanceSymbol)}&limit=1`);
     const d = await r.json();
     if(d[0]) data.fundingRate = parseFloat(d[0].fundingRate)*100;
   } catch(e){}
 
   try {
     // Open Interest
-    const r = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`);
+    if (String(window._aiSource || 'binance').toLowerCase() !== 'binance') throw new Error('skip non-binance oi');
+    const binanceSymbol = chartSymbolForExchange(symbol, 'binance', 'futures');
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${encodeURIComponent(binanceSymbol)}`);
     const d = await r.json();
     if(d.openInterest) data.openInterest = parseFloat(d.openInterest)*data.price;
   } catch(e){}
@@ -8980,6 +9226,146 @@ async function loadBinanceSymbols() {
   } catch(e){ console.warn('Could not load Binance symbols'); }
 }
 
+let _allExchangeSymbols = [];
+let _allExchangeSymbolsLoading = null;
+
+function compactSymbolRows(rows=[]) {
+  const seen = new Set();
+  return rows.filter(r => {
+    const key = [r.source, r.marketKind, r.ticker].join(':');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchJsonSafe(url) {
+  const r = await (PROXY_URL ? window.proxyFetch(url) : fetch(url));
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function loadBybitInstruments(category) {
+  let cursor = '';
+  const out = [];
+  for (let page = 0; page < 8; page++) {
+    const url = `https://api.bybit.com/v5/market/instruments-info?category=${category}&limit=1000${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`;
+    const d = await fetchJsonSafe(url);
+    out.push(...(d.result?.list || []));
+    const next = d.result?.nextPageCursor || '';
+    if (!next || next === cursor) break;
+    cursor = next;
+  }
+  return out;
+}
+
+async function loadAllExchangeSymbols() {
+  if (_allExchangeSymbols.length) return _allExchangeSymbols;
+  if (_allExchangeSymbolsLoading) return _allExchangeSymbolsLoading;
+  _allExchangeSymbolsLoading = (async () => {
+    const tasks = [];
+    tasks.push(fetchJsonSafe('https://api.binance.com/api/v3/exchangeInfo').then(d =>
+      (d.symbols || [])
+        .filter(s => s.quoteAsset === 'USDT' && s.status === 'TRADING')
+        .map(s => ({ ticker:s.symbol, base:s.baseAsset, source:'binance', marketKind:'spot', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://fapi.binance.com/fapi/v1/exchangeInfo').then(d =>
+      (d.symbols || [])
+        .filter(s => s.quoteAsset === 'USDT' && s.status === 'TRADING' && (!s.contractType || s.contractType === 'PERPETUAL'))
+        .map(s => ({ ticker:s.symbol, base:s.baseAsset, source:'binance', marketKind:'futures', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(loadBybitInstruments('spot').then(list =>
+      list
+        .filter(s => String(s.quoteCoin || '').toUpperCase() === 'USDT' && String(s.status || 'Trading').toLowerCase() !== 'offline')
+        .map(s => ({ ticker:s.symbol, base:s.baseCoin || String(s.symbol).replace(/USDT$/,''), source:'bybit', marketKind:'spot', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(loadBybitInstruments('linear').then(list =>
+      list
+        .filter(s => String(s.quoteCoin || '').toUpperCase() === 'USDT' && String(s.status || 'Trading').toLowerCase() === 'trading')
+        .map(s => ({ ticker:s.symbol, base:s.baseCoin || String(s.symbol).replace(/USDT$/,''), source:'bybit', marketKind:'futures', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://www.okx.com/api/v5/public/instruments?instType=SPOT').then(d =>
+      (d.data || [])
+        .filter(s => String(s.quoteCcy || '').toUpperCase() === 'USDT' && String(s.state || 'live') === 'live')
+        .map(s => ({ ticker:s.instId, base:s.baseCcy || String(s.instId).split('-')[0], source:'okx', marketKind:'spot', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://www.okx.com/api/v5/public/instruments?instType=SWAP').then(d =>
+      (d.data || [])
+        .filter(s => String(s.settleCcy || '').toUpperCase() === 'USDT' && String(s.state || 'live') === 'live')
+        .map(s => ({ ticker:s.instId, base:s.ctValCcy || String(s.instId).split('-')[0], source:'okx', marketKind:'futures', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://api.mexc.com/api/v3/exchangeInfo').then(d =>
+      (d.symbols || [])
+        .filter(s => String(s.quoteAsset || '').toUpperCase() === 'USDT' && String(s.status || 'ENABLED') !== 'DISABLED')
+        .map(s => ({ ticker:s.symbol, base:s.baseAsset || String(s.symbol).replace(/USDT$/,''), source:'mexc', marketKind:'spot', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://contract.mexc.com/api/v1/contract/detail').then(d =>
+      (d.data || [])
+        .filter(s => String(s.quoteCoin || '').toUpperCase() === 'USDT' && (s.state == null || Number(s.state) === 0))
+        .map(s => ({ ticker:s.symbol, base:s.baseCoin || String(s.symbol).replace(/_USDT$/,''), source:'mexc', marketKind:'futures', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://api.kucoin.com/api/v2/symbols').then(d =>
+      (d.data || [])
+        .filter(s => String(s.quoteCurrency || '').toUpperCase() === 'USDT' && s.enableTrading !== false)
+        .map(s => ({ ticker:s.symbol, base:s.baseCurrency || String(s.symbol).split('-')[0], source:'kucoin', marketKind:'spot', type:'crypto' }))
+    ).catch(()=>[]));
+    tasks.push(fetchJsonSafe('https://api-futures.kucoin.com/api/v1/contracts/active').then(d =>
+      (d.data || [])
+        .filter(s => String(s.quoteCurrency || '').toUpperCase() === 'USDT')
+        .map(s => ({ ticker:s.symbol, base:s.baseCurrency || String(s.symbol).replace(/USDTM$/,''), source:'kucoin', marketKind:'futures', type:'crypto' }))
+    ).catch(()=>[]));
+    const rows = (await Promise.all(tasks)).flat();
+    _allExchangeSymbols = compactSymbolRows(rows);
+    _bnbSymbols = _allExchangeSymbols
+      .filter(s => s.source === 'binance')
+      .map(s => ({ s:s.ticker, n:s.base, t:'crypto' }));
+    return _allExchangeSymbols;
+  })();
+  return _allExchangeSymbolsLoading;
+}
+
+function exchangeTickerSuggestions(q) {
+  const needle = String(q || '').toUpperCase();
+  if (needle.length < 2) return [];
+  return _allExchangeSymbols
+    .filter(s => s.ticker.startsWith(needle) || String(s.base || '').startsWith(needle))
+    .sort((a,b) => {
+      const ae = a.base === needle || a.ticker === needle ? 0 : 1;
+      const be = b.base === needle || b.ticker === needle ? 0 : 1;
+      if (ae !== be) return ae - be;
+      const af = a.marketKind === 'futures' ? 0 : 1;
+      const bf = b.marketKind === 'futures' ? 0 : 1;
+      if (af !== bf) return af - bf;
+      return a.source.localeCompare(b.source);
+    })
+    .slice(0, 18)
+    .map(s => ({
+      label: `${s.ticker} - ${s.base}`,
+      ticker: s.ticker,
+      source: s.source,
+      type: s.type,
+      marketKind: s.marketKind,
+    }));
+}
+
+function renderUnifiedTickerSuggestions(dd, all, selectFnName) {
+  if (!dd) return;
+  if (!all.length) { dd.style.display = 'none'; return; }
+  const sourceLabel = {binance:'Binance',bybit:'Bybit',okx:'OKX',mexc:'MEXC',kucoin:'KuCoin',yahoo:'Yahoo'};
+  dd.innerHTML = all.map(r => `
+    <div onclick="${selectFnName}('${r.ticker}','${r.source}','${r.type}','${r.marketKind || ''}')"
+      style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
+      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <span style="font-size:10px;color:var(--accent);font-family:var(--mono);min-width:34px;">${(r.marketKind || r.type || '').toUpperCase()}</span>
+      <div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
+        <div style="font-size:10px;color:var(--t3);">${r.label.split(' - ')[1] || ''}</div>
+      </div>
+      <span style="margin-left:auto;font-size:9px;color:var(--t3);">${sourceLabel[r.source] || r.source}</span>
+    </div>`).join('');
+  dd.style.display = 'block';
+}
+
 window.showTickerSuggestions = async (val) => {
   const dd = document.getElementById('aiTickerDD');
   if(!dd) return;
@@ -9097,13 +9483,51 @@ window.showCalcTickerSuggestions = async (val) => {
   dd.style.display='block';
 };
 
-window.selectTicker = (ticker, source, type) => {
+window.showTickerSuggestions = async (val) => {
+  const dd = document.getElementById('aiTickerDD');
+  if(!dd) return;
+  const q = String(val || '').toUpperCase().trim();
+  if(q.length < 2){ dd.style.display='none'; return; }
+  await loadAllExchangeSymbols();
+  const exchangeMatches = exchangeTickerSuggestions(q);
+  const stockMatches = STOCK_LIST
+    .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
+    .slice(0,4)
+    .map(s=>({label:`${s.s} - ${s.n}`, ticker:s.s, source:'yahoo', type:s.t, marketKind:'spot'}));
+  const exactKnown = [...exchangeMatches, ...stockMatches].some(x => x.ticker === q);
+  const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
+    ? [{label:`${q} - Buscar en Yahoo Finance`, ticker:q, source:'yahoo', type:'etf', marketKind:'spot'}]
+    : [];
+  renderUnifiedTickerSuggestions(dd, [...exchangeMatches, ...stockMatches, ...genericYahoo], 'selectTicker');
+};
+
+window.showCalcTickerSuggestions = async (val) => {
+  const dd = document.getElementById('calcTickerDD');
+  if(!dd) return;
+  const q = String(val || '').toUpperCase().trim();
+  if(q.length < 2){ dd.style.display='none'; return; }
+  await loadAllExchangeSymbols();
+  const exchangeMatches = exchangeTickerSuggestions(q);
+  const stockMatches = STOCK_LIST
+    .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
+    .slice(0,4)
+    .map(s=>({label:`${s.s} - ${s.n}`, ticker:s.s, source:'yahoo', type:s.t, marketKind:'spot'}));
+  const exactKnown = [...exchangeMatches, ...stockMatches].some(x => x.ticker === q);
+  const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
+    ? [{label:`${q} - Buscar en Yahoo Finance`, ticker:q, source:'yahoo', type:'etf', marketKind:'spot'}]
+    : [];
+  renderUnifiedTickerSuggestions(dd, [...exchangeMatches, ...stockMatches, ...genericYahoo], 'selectCalcTicker');
+};
+
+window.selectTicker = (ticker, source, type, marketKind='') => {
   document.getElementById('aiSymbol').value = ticker;
   document.getElementById('aiTickerDD').style.display='none';
-  if(type==='crypto') {
+  if(marketKind) {
+    setMarketType(marketKind === 'spot' ? 'spot' : 'futures');
+  } else if(type==='crypto') {
     setMarketType('futures');
   } else if(source==='mexc') {
-    setMarketType('futures'); // MEXC commodities are perpetual futures
+    setMarketType('futures');
   } else {
     setMarketType('spot');
   }
@@ -9796,7 +10220,7 @@ window.openTradeInAnalysis = (id) => {
   if(chartSymEl) chartSymEl.value = marketInfo.symbol;
   window._aiSource = marketInfo.source;
   window._aiType   = marketInfo.type;
-  setMarketType(marketInfo.source === 'yahoo' ? 'spot' : (t.dir==='spot'?'spot':'futures'));
+  setMarketType(marketInfo.source === 'yahoo' ? 'spot' : (marketInfo.marketKind || (t.dir==='spot'?'spot':'futures')));
 
   window.showPage('analysis');
   if (typeof showChartsTab === 'function') showChartsTab('graficos');
