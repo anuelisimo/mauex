@@ -4819,7 +4819,11 @@ function renderWatchlist() {
 
   container.innerHTML = items.map(t => {
     const G = window.G;
-    const sym = (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    const sym = String(t.ticker || '').trim().toUpperCase()
+      .replace(/[-_]?USDTM$/,'')
+      .replace(/[-_]?USDT[-_]?SWAP$/,'')
+      .replace(/[-_]?USDT$/,'')
+      .replace(/USDT|BUSD|USD$/,'') || t.ticker;
     const currentPrice = G?.getTradePrice?.(t) || G?.getPrice(sym, t.dir) || G?.getPrice(t.ticker, t.dir);
     const lev = t.leverage||1;
     const isSpot = t.dir === 'spot';
@@ -4881,7 +4885,7 @@ function renderWatchlist() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <div style="text-align:right;">
-            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--t1);" data-watchpx="${sym}" data-watchdir="${t.dir}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--t1);" data-watchpx="${sym}" data-watchdir="${t.dir}" data-watchsource="${t.marketSource || ''}" data-watchkind="${t.marketKind || ''}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
             <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">precio actual</div>
           </div>
           ${collapseBtn}
@@ -5764,12 +5768,21 @@ function renderPositions() {
 
 // ── Exposure Map ───────────────────────────────────────────────────────────
 function mapTickerOf(t) {
-  return String(t?.ticker || t?.symbol || '').replace(/USDT|BUSD|USD$/,'').toUpperCase();
+  return String(t?.ticker || t?.symbol || '').trim().toUpperCase()
+    .replace(/[-_]?USDTM$/,'')
+    .replace(/[-_]?USDT[-_]?SWAP$/,'')
+    .replace(/[-_]?USDT$/,'')
+    .replace(/USDT|BUSD|USD$/,'');
 }
 
-function mapCurrentPrice(sym) {
+function mapCurrentPrice(sym, items=[]) {
   const G = window.G;
   if (!G || !sym) return null;
+  for (const item of items) {
+    const t = item?.trade || item;
+    const p = G.getTradePrice?.(t);
+    if (p) return p;
+  }
   return G.getPrice(sym, 'futures') || G.getPrice(sym+'USDT', 'futures') || G.getPrice(sym, 'spot') || G.getPrice(sym+'USDT', 'spot') || null;
 }
 
@@ -5858,7 +5871,8 @@ function mapBuildTickerBar(items, currentPrice) {
 
 function mapRow(item, currentPrice) {
   const t = item.trade;
-  const pnl = item.kind === 'position' ? mapLivePnl(t, currentPrice) : null;
+  const rowPrice = item.kind === 'position' ? (mapCurrentPrice(mapTickerOf(t), [t]) || currentPrice) : currentPrice;
+  const pnl = item.kind === 'position' ? mapLivePnl(t, rowPrice) : null;
   const entry = Number(t.entry || t.price) || 0;
   const invCount = tradeInvalidations(t).length;
   const meta = [
@@ -5920,11 +5934,11 @@ function renderMap() {
   }
 
   container.innerHTML = sorted.map(([sym, items]) => {
-    const currentPrice = mapCurrentPrice(sym);
+    const currentPrice = mapCurrentPrice(sym, items);
     const positions = items.filter(x=>x.kind==='position').map(x=>x.trade);
     const orders = items.filter(x=>x.kind==='order').length;
     const watches = items.filter(x=>x.kind==='watch').length;
-    const pnl = positions.reduce((s,t)=>s+(mapLivePnl(t, currentPrice)||0),0);
+    const pnl = positions.reduce((s,t)=>s+(mapLivePnl(t, mapCurrentPrice(sym, [t]))||0),0);
     const risk = positions.reduce((s,t)=>s+openRiskOf(t),0);
     const net = positions.reduce((s,t)=>s+mapExposureOf(t),0);
     const hasLong = positions.some(t=>t.dir==='long' || t.dir==='spot');
@@ -10662,10 +10676,10 @@ function renderOrders() {
   // Sort by distance to entry (closest = executes soonest = first)
   const sortedOrders = [...allOrders].sort((a, b) => {
     const G = window.G;
-    const symA = a.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || a.ticker;
-    const symB = b.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || b.ticker;
-    const pA = G?.getPrice(symA, a.dir) || G?.getPrice(symA+'USDT', a.dir) || 0;
-    const pB = G?.getPrice(symB, b.dir) || G?.getPrice(symB+'USDT', b.dir) || 0;
+    const symA = a.ticker?.replace(/[-_]?USDTM$/,'').replace(/[-_]?USDT[-_]?SWAP$/,'').replace(/[-_]?USDT$/,'').replace(/USDT|BUSD$/,'').toUpperCase() || a.ticker;
+    const symB = b.ticker?.replace(/[-_]?USDTM$/,'').replace(/[-_]?USDT[-_]?SWAP$/,'').replace(/[-_]?USDT$/,'').replace(/USDT|BUSD$/,'').toUpperCase() || b.ticker;
+    const pA = G?.getTradePrice?.(a) || G?.getPrice(symA, a.dir) || G?.getPrice(symA+'USDT', a.dir) || 0;
+    const pB = G?.getTradePrice?.(b) || G?.getPrice(symB, b.dir) || G?.getPrice(symB+'USDT', b.dir) || 0;
     const eA = a.entry || a.price || 0;
     const eB = b.entry || b.price || 0;
     const dA = pA&&eA ? Math.abs(pA-eA)/pA : Infinity;
@@ -10677,8 +10691,8 @@ function renderOrders() {
 
   container.innerHTML = sortedOrders.map(o=>{
     const G = window.G;
-    const sym = o.ticker?.replace(/USDT|BUSD$/,'').toUpperCase() || o.ticker;
-    const currentPrice = G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
+    const sym = o.ticker?.replace(/[-_]?USDTM$/,'').replace(/[-_]?USDT[-_]?SWAP$/,'').replace(/[-_]?USDT$/,'').replace(/USDT|BUSD$/,'').toUpperCase() || o.ticker;
+    const currentPrice = G?.getTradePrice?.(o) || G?.getPrice(sym, o.dir) || G?.getPrice(sym+'USDT', o.dir) || G?.getPrice(o.symbol?.replace(/USDT$/,''), o.dir) || 0;
     const entryPrice = o.entry || o.price || 0;
     const totalSize  = o.totalSize || o.size || 0;
     const unitsLabel = positionUnitsLabel(o, totalSize, entryPrice);

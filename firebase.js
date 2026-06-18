@@ -1440,7 +1440,7 @@ function updatePriceEl(sym) {
   // Update watchlist live price labels
   document.querySelectorAll(`[data-watchpx="${sym}"]`).forEach(el => {
     const dir = el.dataset.watchdir || 'futures';
-    const p = getPrice(sym, dir);
+    const p = getPrice(sym, dir, el.dataset.watchsource || '', el.dataset.watchkind || '');
     if (p != null) el.textContent = 'Actual: $' + fmtPx(p);
   });
 
@@ -1448,11 +1448,11 @@ function updatePriceEl(sym) {
   document.querySelectorAll(`[data-pricebar-sym="${sym}"]`).forEach(el => {
     const id  = el.dataset.pricebarId;
     const dir = el.dataset.pricebarDir || 'futures';
-    const p   = getPrice(sym, dir);
-    if (!p || !id) return;
+    if (!id) return;
     const G = window.G;
     const t = G?.trades?.()?.find(x => x.id === id);
-    if (!t?.entry) return;
+    const p = (t && G?.getTradePrice?.(t)) || getPrice(sym, dir);
+    if (!p || !t?.entry) return;
     const lev = t.leverage||1;
     const sg  = dir==='long'?1:-1;
     const liqApprox = t.entry * (1 - sg/lev*0.9);
