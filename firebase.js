@@ -265,13 +265,22 @@ window.saveTrade = async status => {
   const tp1    = parseFloat(document.getElementById('cTP1').value) || 0;
   const tp2    = parseFloat(document.getElementById('cTP2').value) || 0;
   const tp3    = parseFloat(document.getElementById('cTP3').value) || 0;
-  const tp1pct = parseFloat(document.getElementById('cTP1pct').value) || 33;
-  const tp2pct = parseFloat(document.getElementById('cTP2pct').value) || 33;
-  const tp3pct = parseFloat(document.getElementById('cTP3pct').value) || 34;
+  const readCalcTpPct = (id, fallback) => {
+    const el = document.getElementById(id);
+    const raw = (el?.value || '').trim();
+    const manual = el?.dataset?.manualPct === '1';
+    if (raw === '') return manual ? 0 : fallback;
+    const value = parseFloat(raw);
+    return Number.isFinite(value) ? value : (manual ? 0 : fallback);
+  };
+  const tp1pct = readCalcTpPct('cTP1pct', 33);
+  const tp2pct = readCalcTpPct('cTP2pct', 33);
+  const tp3pct = readCalcTpPct('cTP3pct', 34);
   const traderId   = document.getElementById('cTrader').value;
   const traderName = traders.find(t=>t.id===traderId)?.name || '';
   const notes  = document.getElementById('cNotes').value;
   const invalidations = readInvalidationFields('c');
+  const calcTickerMarket = window.currentCalcTickerMarket?.() || {};
 
   if (!ticker || !entry) {
     toast('Completá ticker y entry como mínimo.','error'); _savingTrade = false; return;
@@ -302,6 +311,8 @@ window.saveTrade = async status => {
     const baseTrade = {
       userId: CU.uid, ticker, entry, sl, tp1, tp2, tp3,
       tp1pct, tp2pct, tp3pct, risk, posSize,
+      marketSource: calcTickerMarket.source || 'auto',
+      marketType: calcTickerMarket.type || '',
       dir: calcState.dir,
       exchange: calcState.dir === 'spot' ? 'spot' : calcState.ex,
       leverage: lev,

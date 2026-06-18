@@ -1738,6 +1738,7 @@ function applySignalToCalculator(sig) {
   const dir = p.dir || 'long';
   window.showPage('calc');
   window.clearCalculatorEditMode?.();
+  setCalcTpPercentsManual(false);
   setDir(dir);
   if (dir !== 'spot') {
     const ex = String(p.exchange || 'BINANCE').toLowerCase();
@@ -1746,6 +1747,8 @@ function applySignalToCalculator(sig) {
   if (p.leverage) pickLev(p.leverage);
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   set('cTicker', p.ticker || '');
+  const signalIsCrypto = appIsCryptoTicker(p.ticker || '', p.exchange || 'BINANCE');
+  setCalcTickerSource(signalIsCrypto ? 'binance' : 'yahoo', signalIsCrypto ? 'crypto' : 'stock');
   set('cEntry', p.entry || '');
   set('cSL', p.sl || '');
   const allTargets = signalAllTargets(p);
@@ -2187,9 +2190,10 @@ window.openThemePicker = () => {
 };
 
 // ── Calc state ─────────────────────────────────────────────────────────────
-const calcState = { dir:'short', ex:'binance', lev:null };
+const calcState = { dir:'short', ex:'binance', lev:null, marketSource:'auto', marketType:'' };
 let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'', signalTime:0, guideRemove:null };
 let calcSignalTargetsState = null;
+let calcTpPercentsManual = false;
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
 const MMR_LBL = {binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%',kucoin:'KuCoin · MMR 0.5%'};
 
@@ -2277,11 +2281,19 @@ function calcChartSymbolInfo() {
   const raw = (document.getElementById('cTicker')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
   if (!raw) return null;
   const exchange = calcState.dir === 'spot' ? 'MANUAL' : calcState.ex;
-  const crypto = appIsCryptoTicker(raw, exchange);
+  const selectedSource = calcState.marketSource || 'auto';
+  const selectedType = calcState.marketType || '';
+  if (selectedSource === 'yahoo') {
+    return { raw, symbol: raw, source:'yahoo', type: selectedType || 'stock' };
+  }
+  if (selectedSource === 'mexc') {
+    return { raw, symbol: raw, source:'mexc', type: selectedType || 'commodity' };
+  }
+  const crypto = selectedSource === 'binance' ? true : appIsCryptoTicker(raw, exchange);
   const symbol = crypto
     ? (raw.endsWith('USDT') || raw.endsWith('USDC') || raw.includes('_') ? raw.replace(/USDC$/,'USDT') : raw + 'USDT')
     : raw;
-  return { raw, symbol, source: crypto ? 'binance' : 'yahoo', type: crypto ? 'crypto' : 'stock' };
+  return { raw, symbol, source: crypto ? 'binance' : 'yahoo', type: selectedType || (crypto ? 'crypto' : 'stock') };
 }
 
 function clearCalcSignalChart() {
@@ -2440,9 +2452,88 @@ window.setEx = ex => {
   compute();
 };
 
-function syncCalcTpPercents() {
+function calcTickerSourceLabel() {
+  const source = calcState.marketSource || 'auto';
+  const type = calcState.marketType || '';
+  if (source === 'binance') return `Fuente: Binance ${type ? '· ' + type.toUpperCase() : ''}`;
+  if (source === 'yahoo') return `Fuente: Yahoo ${type ? '· ' + type.toUpperCase() : ''}`;
+  if (source === 'mexc') return `Fuente: MEXC ${type ? '· ' + type.toUpperCase() : ''}`;
+  return 'Fuente: Auto';
+}
+
+function updateCalcTickerSourceBadge() {
+  const el = document.getElementById('calcTickerSourceBadge');
+  if (el) el.textContent = calcTickerSourceLabel();
+}
+
+function setCalcTickerSource(source='auto', type='') {
+  calcState.marketSource = source || 'auto';
+  calcState.marketType = source === 'auto' ? '' : (type || '');
+  calcChartState.key = '';
+  updateCalcTickerSourceBadge();
+}
+
+window.handleCalcTickerInput = val => {
+  const el = document.getElementById('cTicker');
+  if (el) el.value = String(val || '').toUpperCase();
+  setCalcTickerSource('auto', '');
+  window.showCalcTickerSuggestions?.(el?.value || val || '');
+  compute();
+};
+
+window.selectCalcTicker = (ticker, source, type) => {
+  const el = document.getElementById('cTicker');
+  if (el) el.value = String(ticker || '').toUpperCase();
+  const dd = document.getElementById('calcTickerDD');
+  if (dd) dd.style.display = 'none';
+  setCalcTickerSource(source || 'auto', type || '');
+  compute();
+};
+
+window.currentCalcTickerMarket = () => ({
+  source: calcState.marketSource || 'auto',
+  type: calcState.marketType || '',
+});
+
+function calcTpPercentIds() {
+  return ['cTP1pct','cTP2pct','cTP3pct'];
+}
+
+function setCalcTpPercentsManual(manual) {
+  calcTpPercentsManual = !!manual;
+  calcTpPercentIds().forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.dataset.manualPct = calcTpPercentsManual ? '1' : '0';
+  });
+}
+
+function calcHasManualTpPercentValues() {
+  return calcTpPercentIds().some(id => (document.getElementById(id)?.value || '').trim() !== '');
+}
+
+window.handleCalcTpPriceInput = () => {
+  if (!calcTpPercentsManual) syncCalcTpPercents({ force:true });
+  compute();
+};
+
+window.handleCalcTpPercentInput = () => {
+  setCalcTpPercentsManual(calcHasManualTpPercentValues());
+  if (!calcTpPercentsManual) syncCalcTpPercents({ force:true });
+  compute();
+};
+
+function calcTpPercentValue(id, fallback) {
+  const el = document.getElementById(id);
+  const raw = (el?.value || '').trim();
+  if (raw === '') return calcTpPercentsManual ? 0 : fallback;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : (calcTpPercentsManual ? 0 : fallback);
+}
+
+function syncCalcTpPercents(opts={}) {
+  if (calcTpPercentsManual && !opts.force) return;
   const tpIds = ['cTP1','cTP2','cTP3'];
-  const pctIds = ['cTP1pct','cTP2pct','cTP3pct'];
+  const pctIds = calcTpPercentIds();
   const active = tpIds.map(id => {
     const el = document.getElementById(id);
     return !!(parseFloat(el?.value) > 0);
@@ -2474,10 +2565,12 @@ function setCalcTpFieldsFromSelection() {
   set('cTP1', values[0] || '');
   set('cTP2', values[1] || '');
   set('cTP3', values[2] || '');
-  const pcts = signalOperationalPercents(values.length);
-  set('cTP1pct', pcts[0] || '');
-  set('cTP2pct', pcts[1] || '');
-  set('cTP3pct', pcts[2] || '');
+  if (!calcTpPercentsManual) {
+    const pcts = signalOperationalPercents(values.length);
+    set('cTP1pct', pcts[0] || '');
+    set('cTP2pct', pcts[1] || '');
+    set('cTP3pct', pcts[2] || '');
+  }
   if (window._signalTradeExtras) {
     window._signalTradeExtras.selectedTargets = values;
     window._signalTradeExtras.selectedTargetIndexes = selected;
@@ -2659,9 +2752,9 @@ window.compute = () => {
   const tp2   = parseFloat(document.getElementById('cTP2').value)||0;
   const tp3   = parseFloat(document.getElementById('cTP3').value)||0;
   const calcInvs = readInvalidationFields('c');
-  const tp1pct= (parseFloat(document.getElementById('cTP1pct').value)||33)/100;
-  const tp2pct= (parseFloat(document.getElementById('cTP2pct').value)||33)/100;
-  const tp3pct= (parseFloat(document.getElementById('cTP3pct').value)||34)/100;
+  const tp1pct= calcTpPercentValue('cTP1pct', 33)/100;
+  const tp2pct= calcTpPercentValue('cTP2pct', 33)/100;
+  const tp3pct= calcTpPercentValue('cTP3pct', 34)/100;
 
   if (!entry) {
     updateCalcExchangeCapitalButtons(calcRequiredMarginEstimate());
@@ -4355,6 +4448,7 @@ window.loadTradeIntoCalculator = id => {
   }
   if (Number(t.leverage || 0) > 0) pickLev(Number(t.leverage));
   set('cTicker', t.ticker || '');
+  setCalcTickerSource(t.marketSource || 'auto', t.marketType || '');
   set('cEntry', Number(t.entry || 0) || '');
   set('cSL', Number(t.sl || 0) || '');
   set('cRisk', Number(t.risk || 0) || '');
@@ -4365,6 +4459,7 @@ window.loadTradeIntoCalculator = id => {
   set('cTP2pct', Number(t.tp2pct || 0) || '');
   set('cTP3', Number(t.tp3 || 0) || '');
   set('cTP3pct', Number(t.tp3pct || 0) || '');
+  setCalcTpPercentsManual([t.tp1pct, t.tp2pct, t.tp3pct].some(v => Number(v || 0) > 0));
   set('cTrader', t.traderId || '');
   set('cNotes', t.notes || '');
   const invs = tradeInvalidations(t);
@@ -4456,11 +4551,24 @@ window.deleteSelectedWatchlist = async () => {
   }
 };
 
-function normalizeChartTicker(t) {
+function tradeChartMarketInfo(t={}) {
   const rawTicker = String(t?.ticker || '').trim().toUpperCase();
+  const explicitSource = String(t?.marketSource || '').toLowerCase();
+  const explicitType = String(t?.marketType || '').toLowerCase();
+  if (explicitSource === 'yahoo') return { raw:rawTicker, symbol:rawTicker, source:'yahoo', type:explicitType || 'stock' };
+  if (explicitSource === 'mexc') return { raw:rawTicker, symbol:rawTicker, source:'mexc', type:explicitType || 'commodity' };
+  const crypto = explicitSource === 'binance' || rawTicker.endsWith('USDT') || rawTicker.endsWith('BUSD') || appIsCryptoTicker(rawTicker, t?.exchange);
   const base = rawTicker.replace(/USDT|BUSD|USD$/,'');
-  const crypto = rawTicker.endsWith('USDT') || rawTicker.endsWith('BUSD') || appIsCryptoTicker(rawTicker, t?.exchange);
-  return crypto ? base + 'USDT' : rawTicker;
+  return {
+    raw: rawTicker,
+    symbol: crypto ? base + 'USDT' : rawTicker,
+    source: crypto ? 'binance' : 'yahoo',
+    type: explicitType || (crypto ? 'crypto' : 'stock'),
+  };
+}
+
+function normalizeChartTicker(t) {
+  return tradeChartMarketInfo(t).symbol;
 }
 
 window.openSelectedWatchlistInCharts = () => {
@@ -4475,9 +4583,10 @@ window.openSelectedWatchlistInCharts = () => {
   const aiSym = document.getElementById('aiSymbol');
   if (aiSym) aiSym.value = firstSymbol;
   const first = comparable[0];
-  window._aiSource = appIsCryptoTicker(first?.ticker, first?.exchange) ? 'binance' : 'yahoo';
-  window._aiType = appIsCryptoTicker(first?.ticker, first?.exchange) ? 'crypto' : 'stock';
-  setMarketType(first?.dir === 'spot' ? 'spot' : 'futures');
+  const info = tradeChartMarketInfo(first);
+  window._aiSource = info.source;
+  window._aiType = info.type;
+  setMarketType(info.source === 'yahoo' ? 'spot' : (first?.dir === 'spot' ? 'spot' : 'futures'));
   window.showPage('analysis');
   if (typeof showChartsTab === 'function') showChartsTab('graficos');
   setTimeout(() => { if (typeof loadCharts === 'function') loadCharts(); }, 250);
@@ -8931,6 +9040,63 @@ window.showTickerSuggestions = async (val) => {
   dd.style.display='block';
 };
 
+window.showCalcTickerSuggestions = async (val) => {
+  const dd = document.getElementById('calcTickerDD');
+  if(!dd) return;
+  const q = val.toUpperCase().trim();
+  if(q.length < 2){ dd.style.display='none'; return; }
+
+  await loadBinanceSymbols();
+
+  const cryptoMatches = _bnbSymbols
+    .filter(s=>s.s.startsWith(q)||s.n.startsWith(q))
+    .slice(0,6)
+    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
+
+  const stockMatches = STOCK_LIST
+    .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
+    .slice(0,4)
+    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
+
+  const MEXC_KEYWORDS = {
+    OIL:'USOIL_USDT',WTI:'USOIL_USDT',PETROLEO:'USOIL_USDT',PETROLEO_WTI:'USOIL_USDT',
+    BRENT:'UKOIL_USDT',UKOIL:'UKOIL_USDT',
+    GOLD:'XAUT_USDT',ORO:'XAUT_USDT',XAUT:'XAUT_USDT',
+    SILVER:'XAG_USDT',PLATA:'XAG_USDT',XAG:'XAG_USDT',
+  };
+  const kwMatch = MEXC_KEYWORDS[q];
+  const mexcMatches = MEXC_COMMODITIES
+    .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||
+               s.sym.toUpperCase().includes(q)||(kwMatch&&s.sym===kwMatch))
+    .slice(0,5)
+    .map(s=>({label:`${s.sym} â€” ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
+
+  const exactKnown = [...cryptoMatches, ...stockMatches, ...mexcMatches].some(x => x.ticker === q);
+  const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
+    ? [{label:`${q} - Buscar en Yahoo Finance`, ticker:q, source:'yahoo', type:'etf'}]
+    : [];
+  if (genericYahoo[0]) genericYahoo[0].label = `${q} - Buscar en Yahoo Finance`;
+  const all = [...cryptoMatches, ...stockMatches, ...genericYahoo, ...mexcMatches];
+  if(!all.length){ dd.style.display='none'; return; }
+
+  const typeIcon = {crypto:'â‚¿',stock:'ðŸ“ˆ',etf:'ðŸ“Š',commodity:'ðŸª™',index:'ðŸ“‰'};
+  const typeColor = {crypto:'var(--accent)',stock:'var(--blue)',etf:'var(--amber)',commodity:'var(--amber)',index:'var(--t2)'};
+  const srcLabel = {binance:'SPOT/FUT',yahoo:'Yahoo',mexc:'MEXC PERP'};
+
+  dd.innerHTML = all.map(r=>`
+    <div onclick="selectCalcTicker('${r.ticker}','${r.source}','${r.type}')"
+      style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
+      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <span style="font-size:12px;">${typeIcon[r.type]||'â€¢'}</span>
+      <div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
+        <div style="font-size:10px;color:var(--t3);">${r.label.split('â€”')[1]?.trim()||''} Â· <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
+      </div>
+      ${srcLabel[r.source]?`<span style="margin-left:auto;font-size:9px;color:var(--t3);">${srcLabel[r.source]}</span>`:''}
+    </div>`).join('');
+  dd.style.display='block';
+};
+
 window.selectTicker = (ticker, source, type) => {
   document.getElementById('aiSymbol').value = ticker;
   document.getElementById('aiTickerDD').style.display='none';
@@ -9624,6 +9790,20 @@ window.openTradeInAnalysis = (id) => {
   if(!t){ toast('Trade no encontrado','error'); return; }
 
   _analysisTradeData = t;
+
+  const marketInfo = tradeChartMarketInfo(t);
+  const chartSymEl = document.getElementById('aiSymbol');
+  if(chartSymEl) chartSymEl.value = marketInfo.symbol;
+  window._aiSource = marketInfo.source;
+  window._aiType   = marketInfo.type;
+  setMarketType(marketInfo.source === 'yahoo' ? 'spot' : (t.dir==='spot'?'spot':'futures'));
+
+  window.showPage('analysis');
+  if (typeof showChartsTab === 'function') showChartsTab('graficos');
+  setTimeout(() => {
+    if(typeof loadCharts === 'function') loadCharts();
+  }, 300);
+  return;
 
   // Detect if crypto or stock/etf
   const rawTicker = t.ticker||'';

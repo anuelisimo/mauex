@@ -237,7 +237,14 @@
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
             <div class="sec-label">Ticker</div>
-            <input type="text" id="cTicker" placeholder="BTC, ETH, AAPL..." oninput="this.value=this.value.toUpperCase();compute()">
+            <div style="position:relative;">
+              <input type="text" id="cTicker" placeholder="BTC, ETH, AAPL..."
+                style="text-transform:uppercase;"
+                oninput="handleCalcTickerInput(this.value)"
+                onblur="setTimeout(()=>{const d=document.getElementById('calcTickerDD');if(d)d.style.display='none';},200)">
+              <div id="calcTickerDD" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);z-index:60;max-height:280px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:2px;"></div>
+            </div>
+            <div id="calcTickerSourceBadge" style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:6px;">Fuente: Auto</div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
             <div class="sec-label">Niveles</div>
@@ -249,12 +256,12 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
               <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
-              <input type="number" id="cTP1" placeholder="TP1 precio" oninput="compute()">
-              <input type="number" id="cTP1pct" placeholder="%" oninput="compute()" style="text-align:center;">
-              <input type="number" id="cTP2" placeholder="TP2 precio" oninput="compute()">
-              <input type="number" id="cTP2pct" placeholder="%" oninput="compute()" style="text-align:center;">
-              <input type="number" id="cTP3" placeholder="TP3 precio" oninput="compute()">
-              <input type="number" id="cTP3pct" placeholder="%" oninput="compute()" style="text-align:center;">
+              <input type="number" id="cTP1" placeholder="TP1 precio" oninput="handleCalcTpPriceInput()">
+              <input type="number" id="cTP1pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
+              <input type="number" id="cTP2" placeholder="TP2 precio" oninput="handleCalcTpPriceInput()">
+              <input type="number" id="cTP2pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
+              <input type="number" id="cTP3" placeholder="TP3 precio" oninput="handleCalcTpPriceInput()">
+              <input type="number" id="cTP3pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
             </div>
             <div id="calcSignalTargetsPanel" class="calc-signal-targets-panel" style="display:none;"></div>
             <div style="display:grid;grid-template-columns:1fr 116px;gap:6px;margin-top:10px;align-items:end;">
