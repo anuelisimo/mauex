@@ -3775,7 +3775,7 @@ function renderDashboard() {
 
   // Active positions mini-list with live PnL total
   let liveTot=0, hasPx=false;
-  active.forEach(t=>{ const p=G.getPrice(t.ticker,t.dir); if(p==null) return; hasPx=true; liveTot+=Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100; });
+  active.forEach(t=>{ const p=G.getTradePrice?.(t) ?? G.getPrice(t.ticker,t.dir); if(p==null) return; hasPx=true; liveTot+=Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100; });
   const liveRisk = active.reduce((s,t)=>s+openRiskOf(t),0);
   const posHtml = active.length ? `
     ${hasPx?`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:4px;">
@@ -3785,7 +3785,7 @@ function renderDashboard() {
       <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red);">$${fmt(liveRisk)}</span>
     </div>`:''}
     ${active.slice(0,5).map(t=>{
-    const p = G.getPrice(t.ticker, t.dir);
+    const p = G.getTradePrice?.(t) ?? G.getPrice(t.ticker, t.dir);
     const pnl = p!=null ? Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100 : null;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);">
       <div class="fx" style="gap:6px;"><span style="font-family:var(--mono);font-weight:600;font-size:12px;">${t.ticker}</span> <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${t.dir.toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span></div>
@@ -4694,7 +4694,7 @@ function watchlistExportPayload(items) {
     count: items.length,
     setups: items.map(t => {
       const sym = String(t.ticker || '').replace(/USDT|BUSD|USD$/,'').toUpperCase();
-      const currentPrice = window.G?.getPrice?.(sym, t.dir) || window.G?.getPrice?.(t.ticker, t.dir) || null;
+    const currentPrice = window.G?.getTradePrice?.(t) || window.G?.getPrice?.(sym, t.dir) || window.G?.getPrice?.(t.ticker, t.dir) || null;
       return {
         ticker: t.ticker || '',
         direction: t.dir || '',
@@ -4820,7 +4820,7 @@ function renderWatchlist() {
   container.innerHTML = items.map(t => {
     const G = window.G;
     const sym = (t.ticker||'').replace(/USDT|BUSD|USD$/,'').toUpperCase();
-    const currentPrice = G?.getPrice(sym, t.dir) || G?.getPrice(t.ticker, t.dir);
+    const currentPrice = G?.getTradePrice?.(t) || G?.getPrice(sym, t.dir) || G?.getPrice(t.ticker, t.dir);
     const lev = t.leverage||1;
     const isSpot = t.dir === 'spot';
     const displaySize = effectiveTradeSize(t);
@@ -5487,7 +5487,7 @@ function renderPositions() {
   const summaryRisk = activeOnly.reduce((s,t)=>s+openRiskOf(t),0);
   let summaryPnl = 0, missingPrices = 0;
   activeOnly.forEach(t => {
-    const price = G.getPrice(t.ticker, t.dir);
+    const price = G.getTradePrice?.(t) ?? G.getPrice(t.ticker, t.dir);
     if (!price) { missingPrices++; return; }
     const sign = (t.dir==='short') ? -1 : 1;
     summaryPnl += Math.round((t.posSize/t.entry)*(price-t.entry)*sign*100)/100;
@@ -5509,8 +5509,8 @@ function renderPositions() {
 
   // Sort by distance to SL (closest = most at risk = first)
   const sorted = [...manualActive].sort((a, b) => {
-    const pA = G.getPrice(a.ticker, a.dir);
-    const pB = G.getPrice(b.ticker, b.dir);
+    const pA = G.getTradePrice?.(a) ?? G.getPrice(a.ticker, a.dir);
+    const pB = G.getTradePrice?.(b) ?? G.getPrice(b.ticker, b.dir);
     const dA = pA && a.sl ? Math.abs(pA - a.sl) / pA : Infinity;
     const dB = pB && b.sl ? Math.abs(pB - b.sl) / pB : Infinity;
     return dA - dB;
@@ -5518,7 +5518,7 @@ function renderPositions() {
 
   let totalPnl = 0;
   sorted.filter(t=>t.status==='active').forEach(t => {
-    const price = G.getPrice(t.ticker, t.dir);
+    const price = G.getTradePrice?.(t) ?? G.getPrice(t.ticker, t.dir);
     if (!price) return;
     const sign = (t.dir==='short') ? -1 : 1;
     totalPnl += Math.round((t.posSize/t.entry)*(price-t.entry)*sign*100)/100;
@@ -5543,8 +5543,12 @@ function renderPositions() {
 
   const manualHtml = sorted.map(t => {
     try {
-    const sym    = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase() || t.ticker;
-    const price  = G.getPrice(t.ticker, t.dir);
+    const sym    = String(t.ticker || '').trim().toUpperCase()
+      .replace(/[-_]?USDTM$/,'')
+      .replace(/[-_]?USDT[-_]?SWAP$/,'')
+      .replace(/[-_]?USDT$/,'')
+      .replace(/USDT|BUSD|USD$/,'') || t.ticker;
+    const price  = G.getTradePrice?.(t) ?? G.getPrice(t.ticker, t.dir);
     const sign   = (t.dir==='short') ? -1 : 1;
     const displaySize = effectiveTradeSize(t);
     const contr  = (displaySize||0) / (t.entry||1);
@@ -5604,7 +5608,7 @@ function renderPositions() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <div style="font-size:20px;font-weight:700;font-family:var(--mono);" class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
-            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${displaySize}" data-dir="${t.dir}" data-manual="true">
+            data-pnl="${sym}" data-entry="${t.entry}" data-pos="${displaySize}" data-dir="${t.dir}" data-source="${t.marketSource || ''}" data-kind="${t.marketKind || ''}" data-manual="true">
             ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
           </div>
           ${collapseBtn}
@@ -9907,7 +9911,7 @@ window.exportDashboardPdf = async () => {
     const pending = all.filter(t => t.status === 'pending');
     const watch = all.filter(t => t.status === 'watchlist');
     const activePnl = active.reduce((s,t) => {
-      const p = G.getPrice(t.ticker, t.dir);
+      const p = G.getTradePrice?.(t) ?? G.getPrice(t.ticker, t.dir);
       if (p == null || !Number(t.entry) || !Number(t.posSize)) return s;
       return s + Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100;
     }, 0);
@@ -10371,7 +10375,7 @@ function updateStatusBar() {
   manPos.forEach(t => {
     const entry = Number(t.entry) || 0;
     const size = Number(t.posSize) || 0;
-    const price = G.getPrice(t.ticker, t.dir);
+    const price = G.getTradePrice?.(t) ?? G.getPrice(t.ticker, t.dir);
     if (!entry || !size || !price) { missingPrices++; return; }
     const sign = t.dir === 'short' ? -1 : 1;
     totalPnl += Math.round((size / entry) * (price - entry) * sign * 100) / 100;

@@ -1175,6 +1175,7 @@ const prices = {};  // prices[sym] = { spot: n, futures: n }
 let wsMap = {};
 let pollTimer = null;
 let kucoinPollTimer = null;
+let mexcSpotPollTimer = null;
 
 const CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
@@ -1189,6 +1190,31 @@ function isCrypto(ticker, exchange) {
   return CRYPTOS.includes(sym) || (ticker||'').endsWith('USDT') || (ticker||'').endsWith('BUSD');
 }
 window.isCryptoTicker = isCrypto;
+
+function tradeMarketSource(t={}) {
+  return String(t?.marketSource || t?.exchange || '').trim().toUpperCase();
+}
+
+function isCryptoTrade(t={}) {
+  return isCrypto(t?.ticker, t?.exchange) || CRYPTO_EXCHANGES.includes(tradeMarketSource(t));
+}
+
+function baseCryptoSymbol(ticker='') {
+  return String(ticker || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[-_]?USDTM$/,'')
+    .replace(/[-_]?USDT[-_]?SWAP$/,'')
+    .replace(/[-_]?USDT$/,'')
+    .replace(/USDT|BUSD|USD$/,'');
+}
+
+function mexcSpotSymbol(ticker='') {
+  const raw = String(ticker || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  if (!raw) return '';
+  if (raw.endsWith('USDT') && !raw.includes('_')) return raw;
+  return baseCryptoSymbol(raw) + 'USDT';
+}
 
 async function fetchYahooPrice(ticker) {
   const sym = String(ticker || '').trim().toUpperCase();
@@ -1226,8 +1252,10 @@ function invalidationHit(inv, price) {
   return inv.side === 'down' ? price <= inv.price : price >= inv.price;
 }
 
-function setPrice(sym, type, price) {
+function setPrice(sym, type, price, source='') {
   if (!prices[sym]) prices[sym] = {};
+  const src = String(source || '').toLowerCase();
+  if (src) prices[sym][`${src}_${type}`] = price;
   prices[sym][type] = price;
   updatePriceEl(sym);
   updateTimestamp();
@@ -1277,7 +1305,7 @@ function checkPriceAlerts(sym, price) {
 
   activeTrades.forEach(t => {
     if (!t.ticker) return;
-    const tSym = t.ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    const tSym = baseCryptoSymbol(t.ticker);
     if (tSym !== sym) return;
     const entry = t.entry || 0;
     const sl    = t.sl || 0;
@@ -1379,15 +1407,27 @@ if (typeof Notification !== 'undefined' && Notification.permission === 'default'
   Notification.requestPermission();
 }
 
-function getPrice(ticker, dir) {
+function getPrice(ticker, dir, source='', marketKind='') {
   if (!ticker) return null;
-  const sym = ticker.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+  const sym = baseCryptoSymbol(ticker);
   const p = prices[sym];
   if (!p) return null;
+  const src = String(source || '').toLowerCase();
+  const kind = String(marketKind || '').toLowerCase() || (dir === 'spot' ? 'spot' : 'futures');
+  if (src && p[`${src}_${kind}`]) return p[`${src}_${kind}`];
+  if (src && kind === 'futures' && p[`${src}_spot`]) return p[`${src}_spot`];
+  if (src && kind === 'spot' && p[`${src}_futures`]) return p[`${src}_futures`];
   if (sym === 'XMR') return p.spot || p.futures || null;
   return dir === 'spot' ? (p.spot || p.futures || null) : (p.futures || p.spot || null);
 }
 G.getPrice = getPrice;
+
+function getTradePrice(t={}) {
+  const source = String(t.marketSource || '').toLowerCase();
+  const kind = String(t.marketKind || '').toLowerCase() || (t.dir === 'spot' ? 'spot' : 'futures');
+  return getPrice(t.ticker, t.dir, source, kind);
+}
+G.getTradePrice = getTradePrice;
 
 function updatePriceEl(sym) {
   // Update price display elements
@@ -1425,7 +1465,7 @@ function updatePriceEl(sym) {
     const entry   = parseFloat(el.dataset.entry)||0;
     const posSize = parseFloat(el.dataset.pos)||0;
     const dir     = el.dataset.dir||'long';
-    const p       = getPrice(sym, dir);
+    const p       = getPrice(sym, dir, el.dataset.source || '', el.dataset.kind || '');
     if (!entry||!posSize||p==null) return;
     const pnl = Math.round((posSize/entry)*(entry-p)*(dir==='short'?1:-1)*100)/100;
     el.textContent = (pnl>=0?'+':'-')+'$'+Math.abs(pnl).toLocaleString('en-US',{maximumFractionDigits:0});
@@ -1447,12 +1487,12 @@ function startLivePrices() {
   const posTickers = (window.exchangePositions||[]).map(p => p.ticker?.toUpperCase()).filter(Boolean);
   const cryptoSyms = [...new Set([
     ...relevant
-      .filter(t => isCrypto(t.ticker, t.exchange))
-      .map(t => t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase()),
-    ...posTickers.map(t => t.replace(/USDT|BUSD|USD$/,'').toUpperCase()),
+      .filter(t => isCryptoTrade(t))
+      .map(t => baseCryptoSymbol(t.ticker)),
+    ...posTickers.map(t => baseCryptoSymbol(t)),
   ].filter(Boolean))];
   const stockTickers = [...new Set(relevant
-    .filter(t => !isCrypto(t.ticker, t.exchange))
+    .filter(t => !isCryptoTrade(t))
     .map(t => String(t.ticker || '').trim().toUpperCase())
     .filter(Boolean))];
 
@@ -1461,6 +1501,7 @@ function startLivePrices() {
   wsMap = {};
   if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
   if (kucoinPollTimer) { clearInterval(kucoinPollTimer); kucoinPollTimer=null; }
+  if (mexcSpotPollTimer) { clearInterval(mexcSpotPollTimer); mexcSpotPollTimer=null; }
 
   if (cryptoSyms.length) {
     // Binance SPOT
@@ -1470,7 +1511,7 @@ function startLivePrices() {
       ws.onmessage = e => {
         try {
           const d = (JSON.parse(e.data).data || JSON.parse(e.data));
-          if (d.s&&d.c) setPrice(d.s.replace('USDT',''), 'spot', parseFloat(d.c));
+          if (d.s&&d.c) setPrice(d.s.replace('USDT',''), 'spot', parseFloat(d.c), 'binance');
         } catch(err){}
       };
       ws.onclose = () => setTimeout(startLivePrices, 5000);
@@ -1484,7 +1525,7 @@ function startLivePrices() {
       ws.onmessage = e => {
         try {
           const d = (JSON.parse(e.data).data || JSON.parse(e.data));
-          if (d.s&&d.p) setPrice(d.s.replace('USDT',''), 'futures', parseFloat(d.p));
+          if (d.s&&d.p) setPrice(d.s.replace('USDT',''), 'futures', parseFloat(d.p), 'binance');
         } catch(err){}
       };
       wsMap['bnb-fut'] = ws;
@@ -1497,7 +1538,7 @@ function startLivePrices() {
       ws.onmessage = e => {
         try {
           const d = JSON.parse(e.data);
-          if (d.data?.[0]?.last) setPrice(d.data[0].instId.replace('-USDT',''), 'spot', parseFloat(d.data[0].last));
+          if (d.data?.[0]?.last) setPrice(d.data[0].instId.replace('-USDT',''), 'spot', parseFloat(d.data[0].last), 'okx');
         } catch(err){}
       };
       const ping = setInterval(()=>{ if(ws.readyState===1) ws.send('ping'); }, 25000);
@@ -1512,7 +1553,7 @@ function startLivePrices() {
       ws.onmessage = e => {
         try {
           const d = JSON.parse(e.data);
-          if (d.data?.[0]?.markPx) setPrice(d.data[0].instId.replace('-USDT-SWAP',''), 'futures', parseFloat(d.data[0].markPx));
+          if (d.data?.[0]?.markPx) setPrice(d.data[0].instId.replace('-USDT-SWAP',''), 'futures', parseFloat(d.data[0].markPx), 'okx');
         } catch(err){}
       };
       const ping = setInterval(()=>{ if(ws.readyState===1) ws.send('ping'); }, 25000);
@@ -1527,7 +1568,7 @@ function startLivePrices() {
       ws.onmessage = e => {
         try {
           const d = JSON.parse(e.data);
-          if (d.topic&&d.data?.markPrice) setPrice(d.topic.replace('tickers.','').replace('USDT',''), 'futures', parseFloat(d.data.markPrice));
+          if (d.topic&&d.data?.markPrice) setPrice(d.topic.replace('tickers.','').replace('USDT',''), 'futures', parseFloat(d.data.markPrice), 'bybit');
         } catch(err){}
       };
       wsMap['bybit-fut'] = ws;
@@ -1567,11 +1608,33 @@ function startLivePrices() {
           p = Number(d?.data?.price || 0);
         } catch(e) {}
         if (!p) p = await fallbackUsdPrice(sym);
-        if (p > 0) setPrice(sym, 'spot', p);
+        if (p > 0) setPrice(sym, 'spot', p, 'kucoin');
       }
     };
     pollKucoin();
     kucoinPollTimer = setInterval(pollKucoin, 30000);
+  }
+
+  const mexcSpotTrades = relevant.filter(t => {
+    const src = tradeMarketSource(t);
+    const kind = String(t.marketKind || '').toLowerCase();
+    return src === 'MEXC' && (kind === 'spot' || t.dir === 'spot' || String(t.exchange || '').toLowerCase() === 'spot');
+  });
+  const mexcSpotSyms = [...new Set(mexcSpotTrades.map(t => mexcSpotSymbol(t.ticker)).filter(Boolean))];
+  if (mexcSpotSyms.length) {
+    const pollMexcSpot = async () => {
+      for (const fullSym of mexcSpotSyms) {
+        try {
+          const url = `https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`;
+          const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+          const d = await r.json();
+          const p = Number(d?.price || 0);
+          if (p > 0) setPrice(baseCryptoSymbol(fullSym), 'spot', p, 'mexc');
+        } catch(e) {}
+      }
+    };
+    pollMexcSpot();
+    mexcSpotPollTimer = setInterval(pollMexcSpot, 30000);
   }
 
   // Stocks/ETFs - poll every 30s
@@ -1592,18 +1655,29 @@ function startLivePrices() {
 window.refreshPricesManual = async () => {
   const relevant = trades.filter(t=>['active','pending','watchlist','zombie'].includes(t.status));
   for (const t of relevant) {
-    const sym = t.ticker?.replace(/USDT|BUSD|USD$/,'').toUpperCase();
+    const sym = baseCryptoSymbol(t.ticker);
     if (!sym) continue;
-    if (isCrypto(t.ticker, t.exchange)) {
+    if (isCryptoTrade(t)) {
+      const src = tradeMarketSource(t);
+      const kind = String(t.marketKind || '').toLowerCase();
+      if (src === 'MEXC' && (kind === 'spot' || t.dir === 'spot' || String(t.exchange || '').toLowerCase() === 'spot')) {
+        try {
+          const fullSym = mexcSpotSymbol(t.ticker);
+          const r = await (window.proxyFetch ? window.proxyFetch(`https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`) : fetch(`https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`));
+          const d = await r.json();
+          if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'mexc');
+        } catch(e){}
+        continue;
+      }
       try {
         const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
         const d = await r.json();
-        if (d.price) setPrice(sym, 'spot', parseFloat(d.price));
+        if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'binance');
       } catch(e){}
       try {
         const r = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`);
         const d = await r.json();
-        if (d.markPrice) setPrice(sym, 'futures', parseFloat(d.markPrice));
+        if (d.markPrice) setPrice(sym, 'futures', parseFloat(d.markPrice), 'binance');
       } catch(e){}
     } else {
       try {
