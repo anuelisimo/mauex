@@ -3127,7 +3127,8 @@ async function fetchAndRenderLiquidity() {
       const r = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
-        data = applyManualCapitalOverlay(d);
+        const clientBalances = await fetchClientExchangeBalances();
+        data = applyManualCapitalOverlay(mergeExchangeBalanceData(d, clientBalances));
         if (data?.balances) {
           _liquidityCache = data;
           window._liquidityCache = data;
@@ -3135,6 +3136,11 @@ async function fetchAndRenderLiquidity() {
         }
       }
     } catch(e) {}
+  }
+
+  if (!data || !Object.keys(data.balances || {}).length) {
+    const clientBalances = await fetchClientExchangeBalances();
+    if (Object.keys(clientBalances.balances || {}).length) data = clientBalances;
   }
 
   data = applyManualCapitalOverlay(data);
@@ -8775,11 +8781,6 @@ async function pingExchange(exchange, keys) {
       return d.success===true;
     }
     if(exchange==='kucoin') {
-      if(PROXY_URL) {
-        const r = await fetch(`${PROXY_URL}/balance?live=1`);
-        const d = await r.json();
-        return !!d.balances?.KUCOIN && !d.errors?.KUCOIN;
-      }
       const ts = Date.now().toString();
       const path = '/api/v1/account-overview?currency=USDT';
       const sig = await hmacSHA256Base64(keys.secret, ts + 'GET' + path);
@@ -8815,6 +8816,257 @@ async function pingExchange(exchange, keys) {
 }
 
 // ── Fetch open positions from exchange ────────────────────────────────────
+async function exchangeJson(url, options={}) {
+  const r = await (window.proxyFetch ? window.proxyFetch(url, options) : fetch(url, options));
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch(e) {
+    throw new Error(`Respuesta no JSON (${r.status}): ${text.slice(0, 120)}`);
+  }
+  if (!r.ok) throw new Error(data?.msg || data?.message || data?.retMsg || `HTTP ${r.status}`);
+  return data;
+}
+
+function stableCoinTotalsFromBalances(rows=[], assetKey='asset', freeKey='free', lockedKey='locked') {
+  let total = 0, free = 0, locked = 0, USDT = 0, USDC = 0;
+  (rows || []).forEach(row => {
+    const asset = String(row?.[assetKey] || row?.coin || row?.currency || row?.ccy || '').toUpperCase();
+    if (!['USDT','USDC'].includes(asset)) return;
+    const rowFree = Number(row?.[freeKey] ?? row?.available ?? row?.availBal ?? row?.availableBalance ?? 0) || 0;
+    const rowLocked = Number(row?.[lockedKey] ?? row?.locked ?? row?.hold ?? row?.holds ?? row?.frozenBal ?? 0) || 0;
+    free += rowFree;
+    locked += rowLocked;
+    total += rowFree + rowLocked;
+    if (asset === 'USDT') USDT += rowFree + rowLocked;
+    if (asset === 'USDC') USDC += rowFree + rowLocked;
+  });
+  return { total, free, locked, USDT, USDC };
+}
+
+async function fetchClientBalanceBinance(keys) {
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  try {
+    const q = `timestamp=${Date.now()}`;
+    const sig = await hmacSHA256(keys.secret, q);
+    const d = await exchangeJson(`https://api.binance.com/api/v3/account?${q}&signature=${sig}`, { headers:{'X-MBX-APIKEY': keys.key} });
+    const spot = stableCoinTotalsFromBalances(d.balances || [], 'asset', 'free', 'locked');
+    total += spot.total; free += spot.free; orders += spot.locked; USDT += spot.USDT; USDC += spot.USDC;
+  } catch(e) {}
+  try {
+    const q = `timestamp=${Date.now()}`;
+    const sig = await hmacSHA256(keys.secret, q);
+    const d = await exchangeJson(`https://fapi.binance.com/fapi/v2/account?${q}&signature=${sig}`, { headers:{'X-MBX-APIKEY': keys.key} });
+    const futTotal = Number(d.totalMarginBalance ?? d.totalWalletBalance ?? 0) || 0;
+    total += futTotal;
+    free += Number(d.availableBalance ?? 0) || 0;
+    margin += Number(d.totalInitialMargin ?? 0) || 0;
+    orders += Number(d.totalOpenOrderInitialMargin ?? 0) || 0;
+    pnl += Number(d.totalUnrealizedProfit ?? 0) || 0;
+    USDT += futTotal;
+  } catch(e) {}
+  if (total <= 0 && free <= 0) throw new Error('Sin balance Binance');
+  return normalizeDashboardBalance({ total, free, margin, orders, pnl, USDT, USDC });
+}
+
+async function fetchClientBalanceBybit(keys) {
+  const read = async (accountType) => {
+    const ts = Date.now().toString();
+    const q = `accountType=${accountType}`;
+    const sig = await hmacSHA256(keys.secret, ts + keys.key + '5000' + q);
+    return exchangeJson(`https://api.bybit.com/v5/account/wallet-balance?${q}`, {
+      headers:{'X-BAPI-API-KEY':keys.key,'X-BAPI-TIMESTAMP':ts,'X-BAPI-SIGN':sig,'X-BAPI-RECV-WINDOW':'5000'}
+    });
+  };
+  let d = await read('UNIFIED').catch(() => null);
+  if (!d || d.retCode !== 0) d = await read('CONTRACT');
+  if (d.retCode !== 0) throw new Error(d.retMsg || 'Bybit balance error');
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  (d.result?.list || []).forEach(account => {
+    total += Number(account.totalEquity ?? account.totalWalletBalance ?? 0) || 0;
+    free += Number(account.totalAvailableBalance ?? 0) || 0;
+    margin += Number(account.totalInitialMargin ?? account.totalMaintenanceMargin ?? 0) || 0;
+    orders += Number(account.totalOrderIM ?? 0) || 0;
+    pnl += Number(account.totalPerpUPL ?? 0) || 0;
+    (account.coin || []).forEach(c => {
+      const coin = String(c.coin || '').toUpperCase();
+      const equity = Number(c.equity ?? c.walletBalance ?? c.availableToWithdraw ?? 0) || 0;
+      if (!free && ['USDT','USDC'].includes(coin)) free += Number(c.availableToWithdraw ?? c.walletBalance ?? 0) || 0;
+      if (coin === 'USDT') USDT += equity;
+      if (coin === 'USDC') USDC += equity;
+    });
+  });
+  if (!free && total) free = Math.max(0, total - margin - orders);
+  return normalizeDashboardBalance({ total, free, margin, orders, pnl, USDT, USDC });
+}
+
+async function fetchClientBalanceOKX(keys) {
+  const okxGet = async (path) => {
+    const ts = new Date().toISOString();
+    const sig = await hmacSHA256Base64(keys.secret, ts + 'GET' + path);
+    return exchangeJson(`https://www.okx.com${path}`, {
+      headers:{'OK-ACCESS-KEY':keys.key,'OK-ACCESS-SIGN':sig,'OK-ACCESS-TIMESTAMP':ts,'OK-ACCESS-PASSPHRASE':keys.passphrase}
+    });
+  };
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  const trading = await okxGet('/api/v5/account/balance?ccy=USDT,USDC').catch(() => null);
+  if (trading?.code === '0') {
+    const account = trading.data?.[0] || {};
+    total += Number(account.totalEq ?? 0) || 0;
+    margin += Number(account.imr ?? 0) || 0;
+    (account.details || []).forEach(d => {
+      const ccy = String(d.ccy || '').toUpperCase();
+      const eq = Number(d.eq ?? d.cashBal ?? 0) || 0;
+      const avail = Number(d.availEq ?? d.availBal ?? 0) || 0;
+      const frozen = Number(d.ordFrozen ?? d.frozenBal ?? 0) || 0;
+      free += avail; orders += frozen; pnl += Number(d.upl ?? 0) || 0;
+      if (ccy === 'USDT') USDT += eq;
+      if (ccy === 'USDC') USDC += eq;
+    });
+  }
+  const funding = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC').catch(() => null);
+  if (funding?.code === '0') {
+    (funding.data || []).forEach(d => {
+      const ccy = String(d.ccy || '').toUpperCase();
+      const bal = Number(d.bal ?? 0) || 0;
+      const avail = Number(d.availBal ?? 0) || 0;
+      const frozen = Number(d.frozenBal ?? 0) || 0;
+      total += bal; free += avail; orders += frozen;
+      if (ccy === 'USDT') USDT += bal;
+      if (ccy === 'USDC') USDC += bal;
+    });
+  }
+  if (!total) total = USDT + USDC;
+  if (total <= 0 && free <= 0) throw new Error('Sin balance OKX');
+  return normalizeDashboardBalance({ total, free, margin, orders, pnl, USDT, USDC });
+}
+
+async function fetchClientBalanceMEXC(keys) {
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  try {
+    const ts = Date.now().toString();
+    const sig = await hmacSHA256(keys.secret, keys.key + ts);
+    const d = await exchangeJson('https://contract.mexc.com/api/v1/private/account/assets', {
+      headers:{'ApiKey':keys.key,'Request-Time':ts,'Signature':sig,'Content-Type':'application/json'}
+    });
+    if (d.success) (d.data || []).forEach(a => {
+      const ccy = String(a.currency || '').toUpperCase();
+      if (!['USDT','USDC'].includes(ccy)) return;
+      const equity = Number(a.equity ?? a.marginBalance ?? a.walletBalance ?? a.availableBalance ?? 0) || 0;
+      const avail = Number(a.availableBalance ?? 0) || 0;
+      const frozen = Number(a.frozenBalance ?? 0) || 0;
+      total += equity; free += avail; orders += frozen;
+      margin += Number(a.positionMargin ?? 0) || 0;
+      pnl += Number(a.unrealized ?? a.unrealisedPnl ?? 0) || 0;
+      if (ccy === 'USDT') USDT += equity;
+      if (ccy === 'USDC') USDC += equity;
+    });
+  } catch(e) {}
+  try {
+    const q = `timestamp=${Date.now()}`;
+    const sig = await hmacSHA256(keys.secret, q);
+    const d = await exchangeJson(`https://api.mexc.com/api/v3/account?${q}&signature=${sig}`, { headers:{'X-MEXC-APIKEY': keys.key} });
+    const spot = stableCoinTotalsFromBalances(d.balances || [], 'asset', 'free', 'locked');
+    total += spot.total; free += spot.free; orders += spot.locked; USDT += spot.USDT; USDC += spot.USDC;
+  } catch(e) {}
+  if (total <= 0 && free <= 0) throw new Error('Sin balance MEXC');
+  return normalizeDashboardBalance({ total, free, margin, orders, pnl, USDT, USDC });
+}
+
+async function fetchClientBalanceKuCoin(keys) {
+  const hdr = async (method, path, body='') => {
+    const ts = Date.now().toString();
+    return {
+      'KC-API-KEY': keys.key,
+      'KC-API-SIGN': await hmacSHA256Base64(keys.secret, ts + method + path + body),
+      'KC-API-TIMESTAMP': ts,
+      'KC-API-PASSPHRASE': await hmacSHA256Base64(keys.secret, keys.passphrase),
+      'KC-API-KEY-VERSION': '2',
+      'Content-Type':'application/json',
+    };
+  };
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  try {
+    const path = '/api/v1/account-overview?currency=USDT';
+    const d = await exchangeJson(`https://api-futures.kucoin.com${path}`, { headers: await hdr('GET', path) });
+    if (d.code === '200000') {
+      const row = d.data || {};
+      const equity = Number(row.accountEquity ?? row.marginBalance ?? 0) || 0;
+      const avail = Number(row.availableBalance ?? 0) || 0;
+      total += equity; free += avail;
+      margin += Number(row.positionMargin ?? row.marginUsed ?? 0) || 0;
+      orders += Number(row.orderMargin ?? row.frozenFunds ?? 0) || 0;
+      pnl += Number(row.unrealisedPNL ?? row.unrealisedPnl ?? 0) || 0;
+      USDT += equity;
+    }
+  } catch(e) {}
+  for (const ccy of ['USDT','USDC']) {
+    try {
+      const path = `/api/v1/accounts?currency=${ccy}`;
+      const d = await exchangeJson(`https://api.kucoin.com${path}`, { headers: await hdr('GET', path) });
+      if (d.code === '200000') {
+        (d.data || []).forEach(acc => {
+          const bal = Number(acc.balance ?? 0) || 0;
+          const avail = Number(acc.available ?? 0) || 0;
+          const hold = Number(acc.holds ?? 0) || 0;
+          total += bal; free += avail; orders += hold;
+          if (ccy === 'USDT') USDT += bal;
+          if (ccy === 'USDC') USDC += bal;
+        });
+      }
+    } catch(e) {}
+  }
+  if (total <= 0 && free <= 0) throw new Error('Sin balance KuCoin');
+  return normalizeDashboardBalance({ total, free, margin, orders, pnl, USDT, USDC });
+}
+
+async function fetchClientExchangeBalances() {
+  const out = { balances:{}, errors:{}, clientBalances:true };
+  if (!_masterPass || !window.G?._hasExchangeKeys?.()) return out;
+  const readers = { binance:fetchClientBalanceBinance, bybit:fetchClientBalanceBybit, okx:fetchClientBalanceOKX, mexc:fetchClientBalanceMEXC, kucoin:fetchClientBalanceKuCoin };
+  await Promise.all(Object.entries(readers).map(async ([ex, reader]) => {
+    const keys = await getDecryptedKeys(ex);
+    if (!keys) return;
+    try {
+      out.balances[ex.toUpperCase()] = await reader(keys);
+      updateExchangeStatus(ex, 'ok');
+    } catch(e) {
+      out.errors[ex.toUpperCase()] = e.message || 'No pude leer balance';
+      updateExchangeStatus(ex, 'err');
+    }
+  }));
+  return out;
+}
+window.fetchClientExchangeBalances = fetchClientExchangeBalances;
+
+function mergeExchangeBalanceData(primary={}, secondary={}) {
+  const balances = { ...(primary?.balances || {}) };
+  const errors = { ...(primary?.errors || primary?.balanceErrors || {}) };
+  Object.entries(secondary?.balances || {}).forEach(([ex, balance]) => {
+    balances[ex] = balance;
+    delete errors[ex];
+  });
+  Object.entries(secondary?.errors || {}).forEach(([ex, err]) => {
+    if (!balances[ex]) errors[ex] = err;
+  });
+  let total = 0, USDT = 0, USDC = 0;
+  Object.values(balances).forEach(b => {
+    const n = normalizeDashboardBalance(b);
+    total += n.total || 0;
+    USDT += n.USDT || 0;
+    USDC += n.USDC || 0;
+  });
+  return {
+    ...primary,
+    balances,
+    errors,
+    balanceErrors: errors,
+    liquidity: { ...(primary?.liquidity || primary?.totals || {}), total, USDT, USDC },
+    totals: { ...(primary?.totals || primary?.liquidity || {}), total, USDT, USDC },
+    clientBalances: !!secondary?.clientBalances || !!primary?.clientBalances,
+  };
+}
+window.mergeExchangeBalanceData = mergeExchangeBalanceData;
+
 async function fetchExchangePositions(exchange, keys) {
   const positions = [];
   try {
@@ -9142,7 +9394,9 @@ window.syncAllExchanges = async () => {
   if(PROXY_URL) {
     try {
       const r    = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache:'no-store' });
-      const data = await r.json();
+      let data = await r.json();
+      const clientBalances = await fetchClientExchangeBalances();
+      data = mergeExchangeBalanceData(data, clientBalances);
 
       exchangePositions        = Array.isArray(data.positions) ? data.positions : [];
       window.exchangePositions = exchangePositions;
@@ -9180,6 +9434,19 @@ window.syncAllExchanges = async () => {
       return;
     } catch(e) {
       console.error('Worker sync failed:', e.message);
+      const clientBalances = await fetchClientExchangeBalances();
+      if (Object.keys(clientBalances.balances || {}).length) {
+        const localData = applyManualCapitalOverlay(clientBalances);
+        _liquidityCache = localData;
+        window._liquidityCache = localData;
+        window._updateLiquidityCache?.(localData);
+        try { updateCalcExchangeCapitalButtons?.(calcRequiredMarginEstimate?.() || 0); } catch(err) {}
+        try { renderDashboard(); } catch(err) {}
+        const totalCapital = Number(localData.liquidity?.total ?? localData.totals?.total ?? 0) || 0;
+        const syncBtnEl = document.getElementById('syncBtn');
+        if(syncBtnEl){ syncBtnEl.textContent = `✅ Capital $${fmt(totalCapital)} · local`; syncBtnEl.disabled=false; }
+        return;
+      }
       toast('Error al sincronizar: ' + e.message, 'error');
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent='↻ Sync capital'; syncBtnEl.disabled=false; }
@@ -9212,6 +9479,8 @@ window.syncAllExchanges = async () => {
   exchangePositions = all;
   window.exchangePositions = all; // expose for renderPositions
   lastSyncTime = new Date();
+  const clientBalances = await fetchClientExchangeBalances();
+  if (Object.keys(clientBalances.balances || {}).length) window._updateLiquidityCache?.(clientBalances);
 
   // Show sync card in settings if open
   const sc = document.getElementById('syncCard');
