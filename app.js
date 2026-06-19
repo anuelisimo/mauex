@@ -3124,26 +3124,18 @@ async function fetchAndRenderLiquidity() {
     try {
       el.style.display = 'block';
       el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
-      const r = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
-        const clientBalances = await fetchClientExchangeBalances();
-        data = applyManualCapitalOverlay(mergeExchangeBalanceData(d, clientBalances));
-        if (data?.balances) {
-          _liquidityCache = data;
-          window._liquidityCache = data;
+        data = d;
+        if (d.balances) {
+          _liquidityCache = d;
+          window._liquidityCache = d;
           if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
         }
       }
     } catch(e) {}
   }
-
-  if (!data || !Object.keys(data.balances || {}).length) {
-    const clientBalances = await fetchClientExchangeBalances();
-    if (Object.keys(clientBalances.balances || {}).length) data = clientBalances;
-  }
-
-  data = applyManualCapitalOverlay(data);
 
   if (!data?.balances || Object.keys(data.balances).length === 0) {
     const balanceErrors = data?.errors || data?.balanceErrors || {};
@@ -3158,12 +3150,10 @@ async function fetchAndRenderLiquidity() {
     return;
   }
 
-  _liquidityCache = data;
-  window._liquidityCache = data;
   window.syncApiModalStatus?.();
 
   const balances = Object.fromEntries(
-    Object.entries(data.balances).map(([ex, b]) => [ex, { ...normalizeDashboardBalance(b), error: b?.error, manualOnly: !!b?.manualOnly }])
+    Object.entries(data.balances).map(([ex, b]) => [ex, normalizeDashboardBalance(b)])
   );
 
   // Totals — pure exchange data, no Firestore crossing
@@ -3182,22 +3172,14 @@ async function fetchAndRenderLiquidity() {
     const margin = b.margin || 0;
     const orders = b.orders || 0;
     const pnl    = b.pnl    || 0;
-    const err    = b.error || data.errors?.[ex] || data.balanceErrors?.[ex];
-    if (total === 0 && margin === 0 && orders === 0 && !err) return '';
+    if (total === 0) return '';
 
     const pnlStr = pnl !== 0
       ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
       : '<span style="color:var(--t3);">—</span>';
 
-    const exNote = err
-      ? `<div style="font-size:8px;color:var(--red);font-family:var(--mono);margin-top:2px;">API error</div>`
-      : b.manualOnly
-        ? `<div style="font-size:8px;color:var(--amber);font-family:var(--mono);margin-top:2px;">MAUex manual</div>`
-        : '';
-    const totalStr = total > 0 ? '$' + fmt(total) : '-';
-
     return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
-      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);" title="${dashSafe(err || '')}">${ex}${exNote}</span>
+      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}</span>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
         <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${free>0?'$'+fmt(free):'—'}</div>
@@ -3216,7 +3198,7 @@ async function fetchAndRenderLiquidity() {
       </div>
       <div style="text-align:right;">
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">TOTAL</div>
-        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">${totalStr}</div>
+        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">$${fmt(total)}</div>
       </div>
     </div>`;
   }).join('');
@@ -3276,10 +3258,9 @@ async function fetchAndRenderLiquidity() {
 
 // Called after each sync to update liquidity display
 window._updateLiquidityCache = (data) => {
-  const displayData = applyManualCapitalOverlay(data);
-  if (displayData?.balances) {
-    _liquidityCache = displayData;
-    window._liquidityCache = displayData;
+  if (data?.balances) {
+    _liquidityCache = data;
+    window._liquidityCache = data;
     if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
     window.syncApiModalStatus?.();
     updateCalcExchangeCapitalButtons?.(calcRequiredMarginEstimate?.() || 0);
@@ -3805,7 +3786,7 @@ function renderDashboard() {
 
   // If no liquidity cache yet, fetch balance directly and draw pie
   if (!_liquidityCache && PROXY_URL) {
-    fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
+    fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
       if (d.balances) {
         _liquidityCache = d;
         window._liquidityCache = d;
@@ -9400,9 +9381,7 @@ window.syncAllExchanges = async () => {
   if(PROXY_URL) {
     try {
       const r    = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache:'no-store' });
-      let data = await r.json();
-      const clientBalances = await fetchClientExchangeBalances();
-      data = mergeExchangeBalanceData(data, clientBalances);
+      const data = await r.json();
 
       exchangePositions        = Array.isArray(data.positions) ? data.positions : [];
       window.exchangePositions = exchangePositions;
@@ -9412,12 +9391,11 @@ window.syncAllExchanges = async () => {
 
       // Cache liquidity data for dashboard
       if (data.balances) {
-        const displayData = applyManualCapitalOverlay(data);
-        _liquidityCache = displayData;
-        window._liquidityCache = displayData;
+        _liquidityCache = data;
+        window._liquidityCache = data;
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 200);
       }
-      if (data.liquidity) window._updateLiquidityCache(applyManualCapitalOverlay(data));
+      if (data.liquidity) window._updateLiquidityCache(data);
 
       try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
@@ -9440,19 +9418,6 @@ window.syncAllExchanges = async () => {
       return;
     } catch(e) {
       console.error('Worker sync failed:', e.message);
-      const clientBalances = await fetchClientExchangeBalances();
-      if (Object.keys(clientBalances.balances || {}).length) {
-        const localData = applyManualCapitalOverlay(clientBalances);
-        _liquidityCache = localData;
-        window._liquidityCache = localData;
-        window._updateLiquidityCache?.(localData);
-        try { updateCalcExchangeCapitalButtons?.(calcRequiredMarginEstimate?.() || 0); } catch(err) {}
-        try { renderDashboard(); } catch(err) {}
-        const totalCapital = Number(localData.liquidity?.total ?? localData.totals?.total ?? 0) || 0;
-        const syncBtnEl = document.getElementById('syncBtn');
-        if(syncBtnEl){ syncBtnEl.textContent = `✅ Capital $${fmt(totalCapital)} · local`; syncBtnEl.disabled=false; }
-        return;
-      }
       toast('Error al sincronizar: ' + e.message, 'error');
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent='↻ Sync capital'; syncBtnEl.disabled=false; }
@@ -9485,8 +9450,6 @@ window.syncAllExchanges = async () => {
   exchangePositions = all;
   window.exchangePositions = all; // expose for renderPositions
   lastSyncTime = new Date();
-  const clientBalances = await fetchClientExchangeBalances();
-  if (Object.keys(clientBalances.balances || {}).length) window._updateLiquidityCache?.(clientBalances);
 
   // Show sync card in settings if open
   const sc = document.getElementById('syncCard');
@@ -10172,7 +10135,7 @@ async function getDashboardExportLiquidity() {
   try {
     const r = await fetch(`${PROXY_URL}/balance?live=1&t=${Date.now()}`, { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP '+r.status);
-    const data = applyManualCapitalOverlay(await r.json());
+    const data = await r.json();
     _liquidityCache = data;
     window._liquidityCache = data;
     return data;
