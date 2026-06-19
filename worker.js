@@ -19,7 +19,28 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': [
+    'Content-Type',
+    'Authorization',
+    'X-MBX-APIKEY',
+    'X-BAPI-API-KEY',
+    'X-BAPI-TIMESTAMP',
+    'X-BAPI-SIGN',
+    'X-BAPI-RECV-WINDOW',
+    'ApiKey',
+    'Request-Time',
+    'Signature',
+    'OK-ACCESS-KEY',
+    'OK-ACCESS-SIGN',
+    'OK-ACCESS-TIMESTAMP',
+    'OK-ACCESS-PASSPHRASE',
+    'KC-API-KEY',
+    'KC-API-SIGN',
+    'KC-API-TIMESTAMP',
+    'KC-API-PASSPHRASE',
+    'KC-API-KEY-VERSION',
+  ].join(', '),
+  'Access-Control-Max-Age': '86400',
 };
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -1143,7 +1164,9 @@ export default {
         if (['host','connection','cf-connecting-ip','cf-ray','cf-visitor','cf-ipcountry'].includes(k.toLowerCase())) continue;
         headers[k] = v;
       }
-      const r = await fetch(targetUrl, { method: request.method, headers });
+      const proxyInit = { method: request.method, headers };
+      if (!['GET', 'HEAD'].includes(request.method)) proxyInit.body = await request.arrayBuffer();
+      const r = await fetch(targetUrl, proxyInit);
       const body = await r.text();
       return new Response(body, {
         status: r.status,
