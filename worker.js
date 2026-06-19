@@ -7,6 +7,7 @@
  *    BYBIT_KEY, BYBIT_SECRET
  *    OKX_KEY, OKX_SECRET, OKX_PASSPHRASE
  *    MEXC_KEY, MEXC_SECRET
+ *    KUCOIN_KEY, KUCOIN_SECRET, KUCOIN_PASSPHRASE
  *
  * 2. Workers & Pages → tu worker → Settings → KV Namespaces:
  *    Bind: MAUEX_CACHE (crear namespace primero en KV section)
@@ -29,6 +30,15 @@ async function hmac256(secret, message) {
   );
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function hmac256Base64(secret, message) {
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
 }
 
 // ── Safe fetch (returns parsed JSON or null) ─────────────────────────────────
@@ -523,6 +533,71 @@ async function fetchBalances(env) {
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
+  // ── KuCoin ─────────────────────────────────────────────────────────────
+  const kucoinKey  = (env.KUCOIN_KEY || '').trim();
+  const kucoinSec  = (env.KUCOIN_SECRET || '').trim();
+  const kucoinPass = (env.KUCOIN_PASSPHRASE || '').trim();
+  if (kucoinKey && kucoinSec && kucoinPass) {
+    try {
+      const kucoinHeaders = async (method, path, body = '') => {
+        const ts = Date.now().toString();
+        return {
+          'KC-API-KEY': kucoinKey,
+          'KC-API-SIGN': await hmac256Base64(kucoinSec, ts + method + path + body),
+          'KC-API-TIMESTAMP': ts,
+          'KC-API-PASSPHRASE': await hmac256Base64(kucoinSec, kucoinPass),
+          'KC-API-KEY-VERSION': '2',
+          'Content-Type': 'application/json',
+        };
+      };
+
+      let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, usdt = 0, usdc = 0;
+
+      const futuresPath = '/api/v1/account-overview?currency=USDT';
+      const rF = await safeFetch(
+        `https://api-futures.kucoin.com${futuresPath}`,
+        { headers: await kucoinHeaders('GET', futuresPath) }
+      );
+      if (rF.ok && rF.data?.code === '200000') {
+        const d = rF.data.data || {};
+        const fTotal = parseFloat(d.accountEquity ?? d.marginBalance ?? 0) || 0;
+        const fFree = parseFloat(d.availableBalance ?? 0) || 0;
+        const fMargin = parseFloat(d.positionMargin ?? d.marginUsed ?? 0) || 0;
+        const fOrders = parseFloat(d.orderMargin ?? d.frozenFunds ?? 0) || 0;
+        const fPnl = parseFloat(d.unrealisedPNL ?? d.unrealisedPnl ?? 0) || 0;
+        total += fTotal;
+        free += fFree;
+        margin += fMargin;
+        orders += fOrders;
+        pnl += fPnl;
+        usdt += fFree;
+      }
+
+      for (const ccy of ['USDT', 'USDC']) {
+        const spotPath = `/api/v1/accounts?currency=${ccy}`;
+        const rS = await safeFetch(
+          `https://api.kucoin.com${spotPath}`,
+          { headers: await kucoinHeaders('GET', spotPath) }
+        );
+        if (rS.ok && rS.data?.code === '200000') {
+          for (const acc of (rS.data.data || [])) {
+            const bal = parseFloat(acc.balance || 0) || 0;
+            const avail = parseFloat(acc.available || 0) || 0;
+            const hold = parseFloat(acc.holds || 0) || 0;
+            total += bal;
+            free += avail;
+            orders += hold;
+            if (ccy === 'USDT') usdt += avail;
+            if (ccy === 'USDC') usdc += avail;
+          }
+        }
+      }
+
+      balances.KUCOIN = normalizeBalance({ total, free, margin, orders, pnl, USDT: usdt, USDC: usdc });
+      if (!rF.ok && !balances.KUCOIN.total) errors.KUCOIN = rF.data?.msg || `${rF.status}`;
+    } catch(e) { errors.KUCOIN = e.message; }
+  }
+
   let totalUsdt = 0, totalUsdc = 0;
   for (const b of Object.values(balances)) {
     totalUsdt += b.USDT || 0;
@@ -546,15 +621,33 @@ async function fetchBalances(env) {
 async function syncAll(env) {
   let balanceData = { balances: {}, totals: { USDT: 0, USDC: 0, total: 0 }, errors: {} };
   try { balanceData = await fetchBalances(env); } catch(e) {}
+  const results = await Promise.all([
+    syncBinance(env).then(r => ['BINANCE', r]).catch(e => ['BINANCE', { positions: [], orders: [], error: e.message }]),
+    syncBybit(env).then(r => ['BYBIT', r]).catch(e => ['BYBIT', { positions: [], orders: [], error: e.message }]),
+    syncOKX(env).then(r => ['OKX', r]).catch(e => ['OKX', { positions: [], orders: [], error: e.message }]),
+    syncMEXC(env).then(r => ['MEXC', r]).catch(e => ['MEXC', { positions: [], orders: [], error: e.message }]),
+  ]);
+
+  const positions = [];
+  const orders = [];
+  const errors = { ...(balanceData.errors || {}) };
+  for (const [ex, data] of results) {
+    if (Array.isArray(data?.positions)) positions.push(...data.positions);
+    if (Array.isArray(data?.orders)) orders.push(...data.orders);
+    if (data?.error && !/no keys|not set/i.test(String(data.error))) errors[ex] = data.error;
+  }
+
+  const totalPnl = positions.reduce((sum, p) => sum + (Number(p.pnl) || 0), 0);
+  const marginInUse = positions.reduce((sum, p) => sum + (Number(p.margin) || 0), 0);
 
   const payload = {
-    positions: [],
-    orders: [],
-    errors: balanceData.errors,
-    totalPnl: 0,
-    marginInUse: 0,
+    positions,
+    orders,
+    errors,
+    totalPnl: Math.round(totalPnl * 100) / 100,
+    marginInUse: Math.round(marginInUse * 100) / 100,
     lastSync:     new Date().toISOString(),
-    count: { positions: 0, orders: 0 },
+    count: { positions: positions.length, orders: orders.length },
     balances:     balanceData.balances,
     liquidity:    balanceData.totals,
     balanceErrors: balanceData.errors,
@@ -623,6 +716,7 @@ export default {
           bybit:   !!env.BYBIT_KEY,
           okx:     !!env.OKX_KEY,
           mexc:    !!env.MEXC_KEY,
+          kucoin:  !!env.KUCOIN_KEY,
         },
         railwayUrl: env.RAILWAY_URL || null
       });
@@ -979,9 +1073,10 @@ export default {
     console.log('Cron sync starting...');
     const data = await syncAll(env);
     console.log(`Cron done: ${data.count.positions} positions, ${data.count.orders} orders`);
-    if (data.errors.binance) console.error('Binance:', data.errors.binance);
-    if (data.errors.bybit)   console.error('Bybit:',   data.errors.bybit);
-    if (data.errors.okx)     console.error('OKX:',     data.errors.okx);
-    if (data.errors.mexc)    console.error('MEXC:',    data.errors.mexc);
+    if (data.errors.BINANCE || data.errors.binance) console.error('Binance:', data.errors.BINANCE || data.errors.binance);
+    if (data.errors.BYBIT || data.errors.bybit)     console.error('Bybit:',   data.errors.BYBIT || data.errors.bybit);
+    if (data.errors.OKX || data.errors.okx)         console.error('OKX:',     data.errors.OKX || data.errors.okx);
+    if (data.errors.MEXC || data.errors.mexc)       console.error('MEXC:',    data.errors.MEXC || data.errors.mexc);
+    if (data.errors.KUCOIN || data.errors.kucoin)   console.error('KuCoin:',  data.errors.KUCOIN || data.errors.kucoin);
   },
 };

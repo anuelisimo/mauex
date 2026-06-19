@@ -7104,22 +7104,31 @@ async function fetchExchangeOHLCV(source, symbol, interval, limit=300, marketKin
         volume: parseFloat(k[5] || 0),
       })).filter(c=>c.open>0&&c.close>0);
     }
-    const granularity = {'1M':43200,'1w':10080,'1d':1440,'4h':240,'1h':60,'30m':30,'15m':15}[interval] || 60;
+    const granularity = {'1M':1440,'1w':10080,'1d':1440,'4h':240,'1h':60,'30m':30,'15m':15}[interval] || 60;
     const kucoinSymbol = chartSymbolForExchange(symbol, 'kucoin', 'futures');
-    const url = `https://api-futures.kucoin.com/api/v1/kline/query?symbol=${encodeURIComponent(kucoinSymbol)}&granularity=${granularity}`;
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - granularity * 60 * Math.min(Math.max(limit, 50), 1500);
+    const url = `https://api-futures.kucoin.com/api/v1/kline/query?symbol=${encodeURIComponent(kucoinSymbol)}&granularity=${granularity}&from=${from}&to=${to}`;
     const r = await fetchFn(url);
     if(!r.ok) throw new Error(`KuCoin Futures HTTP ${r.status}`);
     const d = await r.json();
     const rows = Array.isArray(d?.data) ? d.data : [];
     if (!rows.length) throw new Error('KuCoin Futures sin velas');
-    return rows.slice(-limit).map(k=>({
-      time: Math.floor(Number(k[0]) / 1000),
+    return rows
+    .slice()
+    .sort((a,b) => Number(a[0]) - Number(b[0]))
+    .slice(-limit)
+    .map(k=>{
+      const rawTime = Number(k[0]);
+      return {
+      time: rawTime > 1e10 ? Math.floor(rawTime / 1000) : Math.floor(rawTime),
       open: parseFloat(k[1]),
       high: parseFloat(k[2]),
       low: parseFloat(k[3]),
       close: parseFloat(k[4]),
       volume: parseFloat(k[5] || 0),
-    })).filter(c=>c.open>0&&c.close>0);
+    };
+    }).filter(c=>c.open>0&&c.close>0);
   }
   throw new Error('Exchange no soportado para velas');
 }
@@ -8179,6 +8188,16 @@ async function fetchMarketData(symbol) {
       data.vol24h = parseFloat(row.volValue || 0);
       data.high24h = parseFloat(row.high);
       data.low24h = parseFloat(row.low);
+    } else if (src === 'kucoin' && kind === 'futures') {
+      const kucoinSymbol = chartSymbolForExchange(symbol, 'kucoin', 'futures');
+      const r = await fetchFn(`https://api-futures.kucoin.com/api/v1/ticker?symbol=${encodeURIComponent(kucoinSymbol)}`);
+      const d = await r.json();
+      const row = d.data || {};
+      data.price = parseFloat(row.price || row.bestBidPrice || row.bestAskPrice);
+      data.change24h = parseFloat(row.changeRate) * 100;
+      data.vol24h = parseFloat(row.turnoverOf24h || row.volumeOf24h || 0);
+      data.high24h = parseFloat(row.highPrice || row.highPriceOf24h);
+      data.low24h = parseFloat(row.lowPrice || row.lowPriceOf24h);
     } else {
       const binanceSymbol = chartSymbolForExchange(symbol, 'binance', kind);
       const r = await fetchFn(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(binanceSymbol)}`);
@@ -9103,13 +9122,13 @@ window.syncAllExchanges = async () => {
   // Use Worker backend if proxy URL is configured
   if(PROXY_URL) {
     try {
-      const r    = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache:'no-store' });
+      const r    = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache:'no-store' });
       const data = await r.json();
 
-      exchangePositions        = [];
+      exchangePositions        = Array.isArray(data.positions) ? data.positions : [];
       window.exchangePositions = exchangePositions;
-      window.exchangeOrders    = [];
-      exchangeOrders           = [];
+      exchangeOrders           = Array.isArray(data.orders) ? data.orders : [];
+      window.exchangeOrders    = exchangeOrders;
       lastSyncTime             = new Date();
 
       // Cache liquidity data for dashboard
@@ -9497,12 +9516,12 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
   const cryptoMatches = _bnbSymbols
     .filter(s=>s.s.startsWith(q)||s.n.startsWith(q))
     .slice(0,6)
-    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
+    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
 
   const stockMatches = STOCK_LIST
     .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
     .slice(0,4)
-    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
+    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
   const MEXC_KEYWORDS = {
     OIL:'USOIL_USDT',WTI:'USOIL_USDT',PETROLEO:'USOIL_USDT',PETROLEO_WTI:'USOIL_USDT',
@@ -9515,7 +9534,7 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
     .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||
                s.sym.toUpperCase().includes(q)||(kwMatch&&s.sym===kwMatch))
     .slice(0,5)
-    .map(s=>({label:`${s.sym} â€” ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
+    .map(s=>({label:`${s.sym} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
   const exactKnown = [...cryptoMatches, ...stockMatches, ...mexcMatches].some(x => x.ticker === q);
   const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
@@ -9525,7 +9544,7 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
   const all = [...cryptoMatches, ...stockMatches, ...genericYahoo, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
 
-  const typeIcon = {crypto:'â‚¿',stock:'ðŸ“ˆ',etf:'ðŸ“Š',commodity:'ðŸª™',index:'ðŸ“‰'};
+  const typeIcon = {crypto:'₿',stock:'📈',etf:'📊',commodity:'🪙',index:'📉'};
   const typeColor = {crypto:'var(--accent)',stock:'var(--blue)',etf:'var(--amber)',commodity:'var(--amber)',index:'var(--t2)'};
   const srcLabel = {binance:'SPOT/FUT',yahoo:'Yahoo',mexc:'MEXC PERP'};
 
@@ -9533,10 +9552,10 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
     <div onclick="selectCalcTicker('${r.ticker}','${r.source}','${r.type}')"
       style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
       onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-      <span style="font-size:12px;">${typeIcon[r.type]||'â€¢'}</span>
+      <span style="font-size:12px;">${typeIcon[r.type]||'•'}</span>
       <div>
         <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
-        <div style="font-size:10px;color:var(--t3);">${r.label.split('â€”')[1]?.trim()||''} Â· <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
+        <div style="font-size:10px;color:var(--t3);">${r.label.split('—')[1]?.trim()||''} · <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
       </div>
       ${srcLabel[r.source]?`<span style="margin-left:auto;font-size:9px;color:var(--t3);">${srcLabel[r.source]}</span>`:''}
     </div>`).join('');
