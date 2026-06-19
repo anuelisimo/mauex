@@ -315,7 +315,7 @@ window.saveTrade = async status => {
       marketType: calcTickerMarket.type || '',
       marketKind: calcTickerMarket.kind || '',
       dir: calcState.dir,
-      exchange: calcState.dir === 'spot' ? 'spot' : calcState.ex,
+      exchange: calcState.ex,
       leverage: lev,
       traderId, traderName, notes, invalidations, status,
       ...(watchOrder ? { watchOrder } : {}),
@@ -1220,7 +1220,7 @@ async function fetchYahooPrice(ticker) {
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
-  const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+  const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
   const d = await r.json();
   const res = d.chart?.result?.[0];
   const quote = res?.indicators?.quote?.[0]?.close || [];
@@ -1414,9 +1414,8 @@ function getPrice(ticker, dir, source='', marketKind='') {
   if (!p) return null;
   const src = String(source || '').toLowerCase();
   const kind = String(marketKind || '').toLowerCase() || (dir === 'spot' ? 'spot' : 'futures');
-  if (src && p[`${src}_${kind}`]) return p[`${src}_${kind}`];
-  if (src && kind === 'futures' && p[`${src}_spot`]) return p[`${src}_spot`];
-  if (src && kind === 'spot' && p[`${src}_futures`]) return p[`${src}_futures`];
+  const explicitSource = src && src !== 'auto';
+  if (explicitSource) return p[`${src}_${kind}`] || null;
   if (sym === 'XMR') return p.spot || p.futures || null;
   return dir === 'spot' ? (p.spot || p.futures || null) : (p.futures || p.spot || null);
 }
@@ -1573,6 +1572,21 @@ function startLivePrices() {
       };
       wsMap['bybit-fut'] = ws;
     } catch(e){}
+
+    // Bybit SPOT
+    try {
+      const ws = new WebSocket('wss://stream.bybit.com/v5/public/spot');
+      ws.onopen = () => ws.send(JSON.stringify({op:'subscribe',args:cryptoSyms.map(s=>`tickers.${s}USDT`)}));
+      ws.onmessage = e => {
+        try {
+          const d = JSON.parse(e.data);
+          const row = Array.isArray(d.data) ? d.data[0] : d.data;
+          const price = Number(row?.lastPrice || row?.lp || row?.price || 0);
+          if (d.topic && price > 0) setPrice(d.topic.replace('tickers.','').replace('USDT',''), 'spot', price, 'bybit');
+        } catch(err){}
+      };
+      wsMap['bybit-spot'] = ws;
+    } catch(e){}
   }
 
   const kucoinSpotSyms = [...new Set(relevant
@@ -1603,7 +1617,7 @@ function startLivePrices() {
         let p = 0;
         try {
           const url = `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`;
-          const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
           const d = await r.json();
           p = Number(d?.data?.price || 0);
         } catch(e) {}
@@ -1626,7 +1640,7 @@ function startLivePrices() {
       for (const fullSym of mexcSpotSyms) {
         try {
           const url = `https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`;
-          const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
           const d = await r.json();
           const p = Number(d?.price || 0);
           if (p > 0) setPrice(baseCryptoSymbol(fullSym), 'spot', p, 'mexc');
@@ -1663,7 +1677,8 @@ window.refreshPricesManual = async () => {
       if (src === 'MEXC' && (kind === 'spot' || t.dir === 'spot' || String(t.exchange || '').toLowerCase() === 'spot')) {
         try {
           const fullSym = mexcSpotSymbol(t.ticker);
-          const r = await (window.proxyFetch ? window.proxyFetch(`https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`) : fetch(`https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`));
+          const url = `https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`;
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
           const d = await r.json();
           if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'mexc');
         } catch(e){}

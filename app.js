@@ -13,6 +13,27 @@ window.proxyFetch = function proxyFetch(url, options={}) {
   return fetch(proxyUrl, options);
 }
 
+window.publicFetch = async function publicFetch(url, options={}) {
+  let directResult = null;
+  try {
+    const direct = await fetch(url, options);
+    if (direct.ok || !window.proxyFetch) return direct;
+    directResult = direct;
+  } catch(e) {
+    directResult = e;
+  }
+  if (window.proxyFetch) {
+    try {
+      return await window.proxyFetch(url, options);
+    } catch(e) {
+      if (directResult instanceof Response) return directResult;
+      throw e;
+    }
+  }
+  if (directResult instanceof Response) return directResult;
+  throw directResult;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt  = (n,d=0) => isNaN(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 // Smart price format: adapts decimals based on magnitude
@@ -48,7 +69,7 @@ async function fetchYahooSpotPrice(ticker) {
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
-  const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+  const r = await (window.publicFetch ? window.publicFetch(url) : fetch(url));
   const d = await r.json();
   const res = d.chart?.result?.[0];
   const quote = res?.indicators?.quote?.[0]?.close || [];
@@ -315,7 +336,7 @@ window.showPage = page => {
         const url = useKucoin
           ? `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${sym}-USDT`
           : `https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`;
-        (useKucoin && window.proxyFetch ? window.proxyFetch(url) : fetch(url))
+        (window.publicFetch ? window.publicFetch(url) : fetch(url))
           .then(r=>r.json())
           .then(async d=>{
             let px = useKucoin ? Number(d?.data?.price || 0) : Number(d?.price || 0);
@@ -1449,7 +1470,7 @@ function signalNeedsAi(sig={}) {
   return criticalMissing || (sig.hasImage && (criticalMissing || structuralWarning || Number(sig.confidence || 0) < 86));
 }
 
-function signalLooksActionableMessage(raw='', hasImage=false) {
+function legacySignalLooksActionableMessage(raw='', hasImage=false) {
   const text = String(raw || '').trim();
   if (!text) return false;
   const upper = text.toUpperCase();
@@ -2295,8 +2316,8 @@ function chartSymbolForExchange(raw, source, marketKind='futures') {
 function calcChartSymbolInfo() {
   const raw = (document.getElementById('cTicker')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_.\-=]/g,'');
   if (!raw) return null;
-  const exchange = calcState.dir === 'spot' ? 'MANUAL' : calcState.ex;
-  const selectedSource = calcState.marketSource === 'auto' && calcState.dir !== 'spot'
+  const exchange = calcState.ex || 'binance';
+  const selectedSource = calcState.marketSource === 'auto'
     ? (calcState.ex || 'binance')
     : (calcState.marketSource || 'auto');
   const selectedType = calcState.marketType || '';
@@ -2442,7 +2463,7 @@ window.openCalcSetupInCharts = () => {
   _analysisTradeData = {
     ticker: info.raw,
     dir: calcState.dir,
-    exchange: calcState.dir === 'spot' ? 'MANUAL' : calcState.ex.toUpperCase(),
+    exchange: (calcState.ex || '').toUpperCase(),
     marketSource: info.source,
     marketType: info.type,
     marketKind: info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures'),
@@ -2467,9 +2488,12 @@ window.setDir = d => {
     if (b.dataset.d===d) b.classList.add(d==='long'?'al':d==='short'?'as':'asp');
   });
   const sp = d==='spot';
-  document.getElementById('exchSec').style.display = sp?'none':'block';
+  document.getElementById('exchSec').style.display = 'block';
   document.getElementById('levSec').style.display  = sp?'none':'block';
   document.getElementById('spotNote').style.display = sp?'block':'none';
+  document.getElementById('mmrLabel').textContent = sp
+    ? `${String(calcState.ex || '').toUpperCase()} spot - capital libre`
+    : MMR_LBL[calcState.ex];
   calcSyncTickerSourceToExchange();
   compute();
 };
@@ -2477,12 +2501,14 @@ window.setDir = d => {
 window.setEx = ex => {
   calcState.ex = ex;
   document.querySelectorAll('[data-ex]').forEach(b => b.classList.toggle('active', b.dataset.ex===ex));
-  document.getElementById('mmrLabel').textContent = MMR_LBL[ex];
+  document.getElementById('mmrLabel').textContent = calcState.dir === 'spot'
+    ? `${String(ex || '').toUpperCase()} spot - capital libre`
+    : MMR_LBL[ex];
   calcSyncTickerSourceToExchange();
   compute();
 };
 
-function calcTickerSourceLabel() {
+function legacyCalcTickerSourceLabel() {
   const source = calcState.marketSource || 'auto';
   const type = calcState.marketType || '';
   if (source === 'binance') return `Fuente: Binance ${type ? '· ' + type.toUpperCase() : ''}`;
@@ -2496,7 +2522,7 @@ function updateCalcTickerSourceBadge() {
   if (el) el.textContent = calcTickerSourceLabel();
 }
 
-function setCalcTickerSource(source='auto', type='') {
+function legacySetCalcTickerSource(source='auto', type='') {
   calcState.marketSource = source || 'auto';
   calcState.marketType = source === 'auto' ? '' : (type || '');
   calcChartState.key = '';
@@ -2511,7 +2537,7 @@ window.handleCalcTickerInput = val => {
   compute();
 };
 
-window.selectCalcTicker = (ticker, source, type) => {
+window.legacySelectCalcTicker = (ticker, source, type) => {
   const el = document.getElementById('cTicker');
   if (el) el.value = String(ticker || '').toUpperCase();
   const dd = document.getElementById('calcTickerDD');
@@ -2520,7 +2546,7 @@ window.selectCalcTicker = (ticker, source, type) => {
   compute();
 };
 
-window.currentCalcTickerMarket = () => ({
+window.legacyCurrentCalcTickerMarket = () => ({
   source: calcState.marketSource || 'auto',
   type: calcState.marketType || '',
 });
@@ -2549,7 +2575,9 @@ function setCalcTickerSource(source='auto', type='', marketKind='') {
 function calcSyncTickerSourceToExchange() {
   const source = calcState.marketSource || 'auto';
   if (calcState.dir === 'spot') {
-    if (cryptoExchangeSource(source)) setCalcTickerSource(source, 'crypto', 'spot');
+    if (source === 'auto' || cryptoExchangeSource(source)) {
+      setCalcTickerSource(calcState.ex || 'binance', 'crypto', 'spot');
+    }
     return;
   }
   if (source === 'auto' || cryptoExchangeSource(source)) {
@@ -5403,7 +5431,7 @@ async function fetchLevelCandles(t, start, end) {
   const isFutures = (t.dir||'long') !== 'spot';
   const base = isFutures ? 'https://fapi.binance.com/fapi/v1/klines' : 'https://api.binance.com/api/v3/klines';
   const url = base + '?symbol=' + symbol + '&interval=' + interval + '&startTime=' + Math.floor(start) + '&endTime=' + Math.floor(end) + '&limit=1000';
-  const r = await (window.proxyFetch ? window.proxyFetch(url) : fetch(url));
+  const r = await (window.publicFetch ? window.publicFetch(url) : fetch(url));
   if (!r.ok) throw new Error('HTTP '+r.status);
   const data = await r.json();
   if (!Array.isArray(data)) return [];
@@ -7002,7 +7030,7 @@ window.setMarketType = type => {
 };
 
 async function fetchExchangeOHLCV(source, symbol, interval, limit=300, marketKind='futures') {
-  const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
+  const fetchFn = window.publicFetch || fetch;
   if(source === 'bybit') {
     const bybitIv = {'1M':'M','1w':'W','1d':'D','4h':'240','1h':'60','30m':'30','15m':'15'}[interval] || '60';
     const category = marketKind === 'spot' ? 'spot' : 'linear';
@@ -7110,7 +7138,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
     const mexcIv = ivMap[interval] || 'Day1';
     try {
       const url = `https://contract.mexc.com/api/v1/contract/kline/${mexcSym}?interval=${mexcIv}&limit=${limit}`;
-      const r   = await (PROXY_URL ? window.proxyFetch(url) : fetch(url));
+      const r   = await (window.publicFetch ? window.publicFetch(url) : fetch(url));
       const text = await r.text();
       let d; try { d = JSON.parse(text); } catch(e) { throw new Error(`MEXC parse error: ${text.slice(0,100)}`); }
       if(d.success && d.data) {
@@ -7144,7 +7172,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
     const range = rangeMap[interval]||'1y';
     const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
     try {
-      const r = await (PROXY_URL ? window.proxyFetch(yhUrl) : fetch(yhUrl));
+      const r = await (window.publicFetch ? window.publicFetch(yhUrl) : fetch(yhUrl));
       const d = await r.json();
       const res = d.chart?.result?.[0];
       if(!res) throw new Error('Sin datos Yahoo');
@@ -7170,7 +7198,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
         'https://data-api.binance.vision/api/v3/klines',
         'https://api.binance.com/api/v3/klines',
       ];
-  const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
+  const fetchFn = window.publicFetch || fetch;
   let data = null;
   let lastErr = null;
   for (const base of bases) {
@@ -8107,7 +8135,7 @@ async function fetchMarketData(symbol) {
   const data = {};
   try {
     // 24h ticker
-    const fetchFn = PROXY_URL ? window.proxyFetch : fetch;
+    const fetchFn = window.publicFetch || fetch;
     const src = String(window._aiSource || 'binance').toLowerCase();
     const kind = aiMarketType === 'spot' ? 'spot' : 'futures';
     if (src === 'bybit') {
@@ -8900,7 +8928,7 @@ let lastSyncTime = null;
 // ── Fetch closed trade history from exchanges (from Jan 1 2026) ─────────────
 const HISTORY_START = Math.floor(new Date('2026-01-01T00:00:00Z').getTime());
 
-async function fetchExchangeHistory(exchange, keys) {
+async function legacyFetchExchangeHistory(exchange, keys) {
   const closedTrades = [];
   try {
     if(exchange==='binance') {
@@ -9272,7 +9300,7 @@ function compactSymbolRows(rows=[]) {
 }
 
 async function fetchJsonSafe(url) {
-  const r = await (PROXY_URL ? window.proxyFetch(url) : fetch(url));
+  const r = await (window.publicFetch ? window.publicFetch(url) : fetch(url));
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -9398,7 +9426,7 @@ function renderUnifiedTickerSuggestions(dd, all, selectFnName) {
   dd.style.display = 'block';
 }
 
-window.showTickerSuggestions = async (val) => {
+window.legacyShowTickerSuggestions = async (val) => {
   const dd = document.getElementById('aiTickerDD');
   if(!dd) return;
   const q = val.toUpperCase().trim();
@@ -9458,7 +9486,7 @@ window.showTickerSuggestions = async (val) => {
   dd.style.display='block';
 };
 
-window.showCalcTickerSuggestions = async (val) => {
+window.legacyShowCalcTickerSuggestions = async (val) => {
   const dd = document.getElementById('calcTickerDD');
   if(!dd) return;
   const q = val.toUpperCase().trim();
@@ -9578,7 +9606,7 @@ window.fetchOHLCV = async (symbol, interval, limit=300) => {
     const range = interval==='1M'?'10y':interval==='1w'?'5y':interval==='1d'?'1y':interval==='4h'?'3mo':interval==='30m'?'1mo':interval==='15m'?'5d':'1mo';
     try {
       const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
-      const r = await (window.proxyFetch ? window.proxyFetch(yhUrl) : fetch(yhUrl));
+      const r = await (window.publicFetch ? window.publicFetch(yhUrl) : fetch(yhUrl));
       const d = await r.json();
       const res = d.chart?.result?.[0];
       if(!res) throw new Error('Sin datos Yahoo');
@@ -11033,7 +11061,7 @@ window.syncAllOrders = async () => {
 
 // ── Update fetchExchangeHistory to accept date range ──────────────────────────
 // Wrap existing function with date params
-const _origFetchHistory = typeof fetchExchangeHistory !== 'undefined' ? fetchExchangeHistory : null;
+const _origFetchHistory = typeof legacyFetchExchangeHistory !== 'undefined' ? legacyFetchExchangeHistory : null;
 // Override to add MEXC support and date range
 async function fetchExchangeHistory(exchange, keys, startTs, endTs) {
   startTs = startTs || new Date('2026-01-01').getTime();
@@ -11041,6 +11069,10 @@ async function fetchExchangeHistory(exchange, keys, startTs, endTs) {
   const trades = [];
 
   try {
+    if(exchange==='okx' && _origFetchHistory) {
+      return await _origFetchHistory(exchange, keys);
+    }
+
     if(exchange==='binance') {
       // Futures closed trades
       const ts  = Date.now();
