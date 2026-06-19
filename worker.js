@@ -943,10 +943,13 @@ export default {
     const targetUrl = url.searchParams.get('url');
     if (targetUrl) {
       const allowed = [
-        'api.binance.com', 'fapi.binance.com',
+        'api.binance.com', 'fapi.binance.com', 'data-api.binance.vision',
+        'api.bybit.com',
+        'www.okx.com',
+        'api.kucoin.com', 'api-futures.kucoin.com',
         'query1.finance.yahoo.com', 'query2.finance.yahoo.com',
         'api.alternative.me',
-        'contract.mexc.com',
+        'api.mexc.com', 'contract.mexc.com',
       ];
       let targetDomain;
       try { targetDomain = new URL(targetUrl).hostname; } catch(e) {

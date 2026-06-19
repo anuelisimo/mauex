@@ -3742,7 +3742,8 @@ function renderDashboard() {
   const worst  = closed.reduce((w,t)=>(t.pnl||0)<(w.pnl||0)?t:w,{pnl:0});
 
   document.getElementById('dashDate').textContent = now.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  document.getElementById('dashMetrics').innerHTML=[
+  const dashHistMetrics = document.getElementById('dashHistMetrics');
+  if (dashHistMetrics) dashHistMetrics.innerHTML=[
     {l:'Trades cerrados',v:String(closed.length),sub:`${active.length} activos`},
     {l:'Win rate',v:closed.length?Math.round(wins.length/closed.length*100)+'%':'—',cls:closed.length&&wins.length/closed.length>=.5?'green':'red'},
     {l:'PnL total',v:(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl)),cls:totPnl>=0?'green':'red'},
@@ -6449,6 +6450,19 @@ function renderHistory() {
   const wins = filtered.filter(t=>(t.pnl||0)>0).length;
   const totPnl = filtered.reduce((s,t)=>s+(t.pnl||0),0);
   document.getElementById('histStats').textContent = filtered.length+' trades · WR: '+(filtered.length?Math.round(wins/filtered.length*100):0)+'% · PnL: '+(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl));
+  const histMetrics = document.getElementById('histMetrics');
+  if (histMetrics) {
+    const best = filtered.reduce((b,t)=>(t.pnl||0)>(b.pnl||0)?t:b,{pnl:0});
+    const worst = filtered.reduce((w,t)=>(t.pnl||0)<(w.pnl||0)?t:w,{pnl:0});
+    histMetrics.innerHTML = [
+      {l:'Trades filtrados',v:String(filtered.length),sub:`${closed.length} cerrados`},
+      {l:'Win rate',v:filtered.length?Math.round(wins/filtered.length*100)+'%':'—',cls:filtered.length&&wins/filtered.length>=.5?'green':'red'},
+      {l:'PnL filtrado',v:(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl)),cls:totPnl>=0?'green':'red'},
+      {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'—',sub:best.ticker||'',cls:'green'},
+      {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'—',sub:worst.ticker||'',cls:'red'},
+      {l:'Activos',v:String([...new Set(filtered.map(t=>t.ticker).filter(Boolean))].length)},
+    ].map(dashMetricCard).join('');
+  }
   // Trader filter
   const traders = [...new Set(closed.map(t=>t.traderName).filter(Boolean))];
   const ftEl = document.getElementById('filtTrader');

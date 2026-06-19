@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -37,17 +37,17 @@
     <div class="auth-divider">o</div>
     <div class="email-form">
       <input type="email" id="authEmail" placeholder="tu@email.com">
-      <input type="password" id="authPass" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doEmailLogin()">
+      <input type="password" id="authPass" placeholder="ContraseÃ±a" onkeydown="if(event.key==='Enter')doEmailLogin()">
       <button class="btn-primary" id="authBtn" onclick="doEmailLogin()">Ingresar</button>
     </div>
-    <div class="auth-toggle"><span id="authToggleTxt">¿No tenés cuenta?</span> <a onclick="toggleAuth()" id="authToggleLink">Registrarse</a></div>
+    <div class="auth-toggle"><span id="authToggleTxt">Â¿No tenÃ©s cuenta?</span> <a onclick="toggleAuth()" id="authToggleLink">Registrarse</a></div>
   </div>
 </div>
 
 <!-- APP -->
 <div id="app">
 
-  <!-- TOP BAR — solo logo + acciones, sin nav -->
+  <!-- TOP BAR â€” solo logo + acciones, sin nav -->
   <div class="topbar">
     <div class="logo" onclick="window.showPage('dashboard')">
       <div class="logo-mark">
@@ -77,7 +77,7 @@
     </div>
   </div>
 
-  <!-- BOTTOM NAV — siempre visible, desktop y mobile -->
+  <!-- BOTTOM NAV â€” siempre visible, desktop y mobile -->
   <nav class="bottom-nav" id="bottomNav">
     <button class="bnav-btn active" data-page="dashboard" onclick="window.showPage('dashboard')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -97,7 +97,7 @@
     </button>
     <button class="bnav-btn" data-page="orders" onclick="window.showPage('orders')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      <span>Órdenes</span>
+      <span>Ã“rdenes</span>
     </button>
     <button class="bnav-btn" data-page="positions" onclick="window.showPage('positions')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18h16"/><path d="M5 14l4-4 3 3 6-7"/><circle cx="18" cy="6" r="2.2"/><path d="M18 2.8v1"/><path d="M18 8.2v1"/><path d="M14.8 6h1"/><path d="M20.2 6h1"/></svg>
@@ -115,21 +115,21 @@
       <div class="status-dot" id="sbDot"></div>
       <span id="sbPositions">0 posiciones</span>
     </div>
-    <div class="status-sep">·</div>
+    <div class="status-sep">Â·</div>
     <div class="status-item">
-      <span id="sbPnl" style="color:var(--accent);">PnL —</span>
+      <span id="sbPnl" style="color:var(--accent);">PnL â€”</span>
     </div>
-    <div class="status-sep">·</div>
+    <div class="status-sep">Â·</div>
     <div class="status-item">
-      <span id="sbOrders" style="color:var(--t3);">0 órdenes</span>
+      <span id="sbOrders" style="color:var(--t3);">0 Ã³rdenes</span>
     </div>
-    <div class="status-sep">·</div>
+    <div class="status-sep">Â·</div>
     <div class="status-item">
-      <span id="sbRisk" style="color:var(--red);">riesgo —</span>
+      <span id="sbRisk" style="color:var(--red);">riesgo â€”</span>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:16px;">
-      <span id="sbBtc" style="color:var(--t2);">BTC —</span>
-      <span id="sbFng" style="color:var(--t3);">F&G —</span>
+      <span id="sbBtc" style="color:var(--t2);">BTC â€”</span>
+      <span id="sbFng" style="color:var(--t3);">F&G â€”</span>
     </div>
   </div>
 
@@ -164,13 +164,13 @@
         <div id="dashQuality" style="margin-bottom:20px;"></div>
         <div class="dash-section-title">Distribuci&oacute;n operativa</div>
         <div class="g2">
-          <div class="card"><div class="sec-label">Distribución por activo</div><div style="position:relative;height:180px;"><canvas id="chartAssets"></canvas></div></div>
+          <div class="card"><div class="sec-label">DistribuciÃ³n por activo</div><div style="position:relative;height:180px;"><canvas id="chartAssets"></canvas></div></div>
           <div class="card"><div class="sec-label">Posiciones activas</div><div id="dashActivePos"></div></div>
         </div>
       </div>
       <!-- Historial tab -->
-      <div id="dashTabHistorialContent" style="display:none;" id="dashHistContent">
-        <div id="dashMetrics" class="g4" style="margin-bottom:20px;"></div>
+      <div id="dashTabHistorialContent" style="display:none;">
+        <div id="dashHistMetrics" class="g4" style="margin-bottom:20px;"></div>
         <div class="fxb" style="margin-bottom:16px;gap:10px;flex-wrap:wrap;">
           <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="dashHistStats"></div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -182,7 +182,7 @@
       </div>
     </div>
 
-    <!-- SEÑALES -->
+    <!-- SEÃ‘ALES -->
     <div id="signalsPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;gap:12px;align-items:flex-start;">
         <div>
@@ -205,27 +205,27 @@
 
     <!-- CALCULADORA -->
     <div id="calcPage" style="display:none;">
-      <div style="font-family:var(--mono);font-size:18px;font-weight:600;margin-bottom:20px;">Calculadora de posición</div>
+      <div style="font-family:var(--mono);font-size:18px;font-weight:600;margin-bottom:20px;">Calculadora de posiciÃ³n</div>
       <div class="calc-layout" style="display:grid;grid-template-columns:340px 1fr;gap:20px;">
         <div>
           <div class="card-sm" style="margin-bottom:12px;">
-            <div class="sec-label">Dirección</div>
+            <div class="sec-label">DirecciÃ³n</div>
             <div class="dir-toggle">
-              <button class="dir-btn" data-d="long" onclick="setDir('long')">LONG ↑</button>
-              <button class="dir-btn as" data-d="short" onclick="setDir('short')">SHORT ↓</button>
+              <button class="dir-btn" data-d="long" onclick="setDir('long')">LONG â†‘</button>
+              <button class="dir-btn as" data-d="short" onclick="setDir('short')">SHORT â†“</button>
               <button class="dir-btn" data-d="spot" onclick="setDir('spot')">SPOT</button>
             </div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;" id="exchSec">
             <div class="sec-label">Exchange</div>
             <div class="exch-tabs">
-              <div class="exch-tab active" data-ex="binance" data-calc-ex="BINANCE" onclick="setEx('binance')"><span>BINANCE</span><small>—</small></div>
-              <div class="exch-tab" data-ex="bybit" data-calc-ex="BYBIT" onclick="setEx('bybit')"><span>BYBIT</span><small>—</small></div>
-              <div class="exch-tab" data-ex="okx" data-calc-ex="OKX" onclick="setEx('okx')"><span>OKX</span><small>—</small></div>
-              <div class="exch-tab" data-ex="mexc" data-calc-ex="MEXC" onclick="setEx('mexc')"><span>MEXC</span><small>—</small></div>
-              <div class="exch-tab" data-ex="kucoin" data-calc-ex="KUCOIN" onclick="setEx('kucoin')"><span>KUCOIN</span><small>—</small></div>
+              <div class="exch-tab active" data-ex="binance" data-calc-ex="BINANCE" onclick="setEx('binance')"><span>BINANCE</span><small>â€”</small></div>
+              <div class="exch-tab" data-ex="bybit" data-calc-ex="BYBIT" onclick="setEx('bybit')"><span>BYBIT</span><small>â€”</small></div>
+              <div class="exch-tab" data-ex="okx" data-calc-ex="OKX" onclick="setEx('okx')"><span>OKX</span><small>â€”</small></div>
+              <div class="exch-tab" data-ex="mexc" data-calc-ex="MEXC" onclick="setEx('mexc')"><span>MEXC</span><small>â€”</small></div>
+              <div class="exch-tab" data-ex="kucoin" data-calc-ex="KUCOIN" onclick="setEx('kucoin')"><span>KUCOIN</span><small>â€”</small></div>
             </div>
-            <div style="font-size:10px;color:var(--t3);margin-top:6px;font-family:var(--mono);" id="mmrLabel">Binance · MMR 0.5%</div>
+            <div style="font-size:10px;color:var(--t3);margin-top:6px;font-family:var(--mono);" id="mmrLabel">Binance Â· MMR 0.5%</div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;" id="levSec">
             <div class="sec-label">Apalancamiento</div>
@@ -252,10 +252,10 @@
               <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="Entry" oninput="compute()"></div>
               <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="Stop Loss" oninput="compute()"></div>
               <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
-              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
+              <div><label class="lbl">TamaÃ±o USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
-              <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
+              <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio Â· % a cerrar</span></label>
               <input type="number" id="cTP1" placeholder="TP1 precio" oninput="handleCalcTpPriceInput()">
               <input type="number" id="cTP1pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
               <input type="number" id="cTP2" placeholder="TP2 precio" oninput="handleCalcTpPriceInput()">
@@ -275,7 +275,7 @@
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
             <div class="sec-label">Trader</div>
-            <select id="cTrader" onchange="compute()"><option value="">— Sin trader —</option></select>
+            <select id="cTrader" onchange="compute()"><option value="">â€” Sin trader â€”</option></select>
           </div>
           <div class="card-sm" style="margin-bottom:12px;" id="riskSuggestionPanel">
           </div>
@@ -288,14 +288,14 @@
           <div class="alert-box alert-danger" id="calcAlert1"></div>
           <div class="alert-box alert-warn" id="calcAlert2"></div>
           <div class="g4" id="calcMetrics" style="margin-bottom:16px;"></div>
-          <div class="card-sm" id="spotNote" style="display:none;margin-bottom:12px;"><div style="font-size:11px;color:var(--blue);font-family:var(--mono);">Spot: sin liquidación.</div></div>
+          <div class="card-sm" id="spotNote" style="display:none;margin-bottom:12px;"><div style="font-size:11px;color:var(--blue);font-family:var(--mono);">Spot: sin liquidaciÃ³n.</div></div>
           <div class="card-sm" style="margin-bottom:12px;"><div class="sec-label" style="margin-bottom:8px;">Niveles y PnL</div><div id="calcLevels"></div></div>
           <div class="card-sm" style="margin-bottom:12px;"><div class="sec-label" style="margin-bottom:8px;">Mapa de precios</div><div class="price-bar-wrap" id="calcBar"></div></div>
           <div class="card-sm calc-chart-card">
             <div class="calc-chart-head">
               <div>
                 <div class="sec-label" style="margin-bottom:3px;">Validacion en grafico</div>
-                <div id="calcChartStatus" class="calc-chart-status">Carga ticker y entry para ver la señal.</div>
+                <div id="calcChartStatus" class="calc-chart-status">Carga ticker y entry para ver la seÃ±al.</div>
               </div>
               <div class="calc-chart-tools">
                 <div class="tf-switch mini">
@@ -313,9 +313,9 @@
         </div>
       </div>
       <div class="calc-actions-final">
-        <button class="btn" style="background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes</button>
-        <button class="btn acc" onclick="saveTrade('watchlist')">📋 Agregar al Watchlist</button>
-        <button class="btn" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;" onclick="saveTrade('active')">🟢 Abrir Posición directa</button>
+        <button class="btn" style="background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">âš¡ Enviar a Ã“rdenes</button>
+        <button class="btn acc" onclick="saveTrade('watchlist')">ðŸ“‹ Agregar al Watchlist</button>
+        <button class="btn" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;" onclick="saveTrade('active')">ðŸŸ¢ Abrir PosiciÃ³n directa</button>
       </div>
     </div>
 
@@ -325,24 +325,24 @@
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Watchlist</div>
         <div class="watch-bulk-actions">
           <button class="btn sm" id="watchSelectAllBtn" onclick="window.toggleAllWatchlistSelection()">Seleccionar todo</button>
-          <button class="btn sm dan" id="watchBulkDeleteBtn" onclick="window.deleteSelectedWatchlist()" title="Eliminar seleccionadas">🗑</button>
-          <button class="btn sm" id="watchBulkChartBtn" onclick="window.openSelectedWatchlistInCharts()" title="Comparar seleccionadas en Charts">📈</button>
-          <button class="btn sm" id="watchBulkExportBtn" onclick="window.exportSelectedWatchlistForAI()" title="Exportar seleccionadas para AI">⇧</button>
+          <button class="btn sm dan" id="watchBulkDeleteBtn" onclick="window.deleteSelectedWatchlist()" title="Eliminar seleccionadas">ðŸ—‘</button>
+          <button class="btn sm" id="watchBulkChartBtn" onclick="window.openSelectedWatchlistInCharts()" title="Comparar seleccionadas en Charts">ðŸ“ˆ</button>
+          <button class="btn sm" id="watchBulkExportBtn" onclick="window.exportSelectedWatchlistForAI()" title="Exportar seleccionadas para AI">â‡§</button>
           <button class="btn acc sm" onclick="window.showPage('calc')">+ Agregar setup</button>
         </div>
       </div>
       <div id="watchCards"></div>
     </div>
 
-    <!-- ÓRDENES -->
+    <!-- Ã“RDENES -->
     <div id="ordersPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Órdenes abiertas</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Ã“rdenes abiertas</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes â€” seleccionÃ¡ varias para agrupar como trade</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
+          <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">â†» Sync Ã³rdenes</button>
         </div>
       </div>
       <div id="ordersList"></div>
@@ -355,7 +355,7 @@
         <div class="fx" style="gap:8px;flex-wrap:wrap;">
           <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
           <button class="btn sm" id="zombieToggleBtn" style="display:none;" onclick="window._showZombies=!window._showZombies;renderPositions();">Ver zombies</button>
-          <button class="btn acc sm" onclick="window.openDirectPositionModal()">+ Posición</button>
+          <button class="btn acc sm" onclick="window.openDirectPositionModal()">+ PosiciÃ³n</button>
         </div>
       </div>
       <div id="posList"></div>
@@ -370,7 +370,7 @@
         </div>
         <div class="fx" style="gap:10px;flex-wrap:wrap;justify-content:flex-end;">
           <label class="map-filter"><input type="checkbox" id="mapIncPositions" checked onchange="renderMap()"> Posiciones</label>
-          <label class="map-filter"><input type="checkbox" id="mapIncOrders" checked onchange="renderMap()"> Órdenes</label>
+          <label class="map-filter"><input type="checkbox" id="mapIncOrders" checked onchange="renderMap()"> Ã“rdenes</label>
           <label class="map-filter"><input type="checkbox" id="mapIncWatch" checked onchange="renderMap()"> Watchlist</label>
         </div>
       </div>
@@ -387,10 +387,10 @@
         </div>
       </div>
       <!-- Metrics cards (moved from dashboard) -->
-      <div class="g4" style="margin-bottom:20px;" id="dashMetrics"></div>
+      <div class="g4" style="margin-bottom:20px;" id="histMetrics"></div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
         <input type="text" id="filtTicker" placeholder="Ticker..." style="width:120px;" oninput="renderHistory()">
-        <select id="filtDir" style="width:100px;" onchange="renderHistory()"><option value="">Dirección</option><option>long</option><option>short</option><option>spot</option></select>
+        <select id="filtDir" style="width:100px;" onchange="renderHistory()"><option value="">DirecciÃ³n</option><option>long</option><option>short</option><option>spot</option></select>
         <select id="filtTrader" style="width:140px;" onchange="renderHistory()"><option value="">Trader</option></select>
         <select id="filtResult" style="width:100px;" onchange="renderHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
       </div>
@@ -429,8 +429,8 @@
           <button id="toggleFut" onclick="setMarketType('futures')"
             style="padding:9px 16px;border:none;background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">FUTUROS</button>
         </div>
-        <button class="btn" onclick="loadCharts()" id="chartsBtn">↺ Cargar</button>
-        <button class="btn acc" onclick="copyChartsToClipboard()" id="copyBtn">📋 Copiar para Claude</button>
+        <button class="btn" onclick="loadCharts()" id="chartsBtn">â†º Cargar</button>
+        <button class="btn acc" onclick="copyChartsToClipboard()" id="copyBtn">ðŸ“‹ Copiar para Claude</button>
       </div>
 
       <!-- Market data strip -->
@@ -473,10 +473,10 @@
 
       <div id="chartsTabAIContent" style="display:none;">
 
-      <!-- 2x2 chart grid — each with 3 subpanels -->
+      <!-- 2x2 chart grid â€” each with 3 subpanels -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;" id="aiChartGrid">
         <div class="card ai-tf-card tf-1w" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1W — SEMANAL</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1W â€” SEMANAL</div>
           <div id="cs1W" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
           <div id="vol1W" style="height:80px;"></div>
@@ -486,7 +486,7 @@
           <div id="rsi1W" style="height:80px;"></div>
         </div>
         <div class="card ai-tf-card tf-1d" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1D — DIARIO</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1D â€” DIARIO</div>
           <div id="cs1D" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
           <div id="vol1D" style="height:80px;"></div>
@@ -496,7 +496,7 @@
           <div id="rsi1D" style="height:80px;"></div>
         </div>
         <div class="card ai-tf-card tf-4h" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">4H — CUATRO HORAS</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">4H â€” CUATRO HORAS</div>
           <div id="cs4H" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
           <div id="vol4H" style="height:80px;"></div>
@@ -506,7 +506,7 @@
           <div id="rsi4H" style="height:80px;"></div>
         </div>
         <div class="card ai-tf-card tf-1h" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1H — UNA HORA</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1H â€” UNA HORA</div>
           <div id="cs1H" style="height:220px;"></div>
           <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
           <div id="vol1H" style="height:80px;"></div>
@@ -519,7 +519,7 @@
 
       <!-- Monthly chart -->
       <div class="card ai-tf-card tf-1m" style="padding:10px;margin-bottom:10px;" id="monthlyCard">
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1M — MENSUAL</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1M â€” MENSUAL</div>
         <div id="cs1M" style="height:220px;"></div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
         <div id="vol1M" style="height:80px;"></div>
@@ -530,7 +530,7 @@
       </div>
 
       <div id="copyStatus" style="display:none;text-align:center;padding:12px;font-family:var(--mono);font-size:12px;color:var(--accent);">
-        ✅ Imagen copiada al portapapeles. Pegala directamente en Claude!
+        âœ… Imagen copiada al portapapeles. Pegala directamente en Claude!
       </div>
       </div>
     </div>
@@ -541,19 +541,19 @@
   <div class="modal" style="width:680px;max-height:85vh;overflow-y:auto;">
     <div class="modal-hdr">
       <div class="modal-title">Configurar API Keys</div>
-      <button class="modal-close" onclick="closeModal('apiConfigModal')">✕</button>
+      <button class="modal-close" onclick="closeModal('apiConfigModal')">âœ•</button>
     </div>
     <div class="modal-body">
       <div class="card" style="margin-bottom:16px;border-left:3px solid var(--accent);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <div class="sec-label" style="margin:0;">Contraseña maestra</div>
+          <div class="sec-label" style="margin:0;">ContraseÃ±a maestra</div>
           <div id="masterStatus2" style="font-size:11px;margin-left:auto;display:none;"></div>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;"><label class="lbl">Elegí una contraseña (mínimo 8 caracteres)</label><input type="password" id="masterPass2" placeholder="Tu contraseña maestra"></div>
+          <div style="flex:1;"><label class="lbl">ElegÃ­ una contraseÃ±a (mÃ­nimo 8 caracteres)</label><input type="password" id="masterPass2" placeholder="Tu contraseÃ±a maestra"></div>
           <button class="btn acc" onclick="saveMasterPass2()">Guardar</button>
         </div>
-        <div style="font-size:11px;color:var(--t3);margin-top:8px;">⚠️ Si la olvidás, regenerá las keys en el exchange y cargalas de nuevo.</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:8px;">âš ï¸ Si la olvidÃ¡s, regenerÃ¡ las keys en el exchange y cargalas de nuevo.</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
         <div class="card">
@@ -562,12 +562,12 @@
             <div style="font-family:var(--mono);font-weight:600;">Binance</div>
             <div id="bnbStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bnbKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bnbSecret2" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bnbKey2" placeholder="PegÃ¡ tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bnbSecret2" placeholder="PegÃ¡ tu API Secret"></div>
           <div style="display:flex;gap:6px;">
             <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('binance')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('binance')">Probar</button>
-            <button class="btn dan sm" onclick="clearExchangeKeys('binance')">✕</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('binance')">âœ•</button>
           </div>
         </div>
         <div class="card">
@@ -576,12 +576,12 @@
             <div style="font-family:var(--mono);font-weight:600;">Bybit</div>
             <div id="bybitStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bybitKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bybitSecret2" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bybitKey2" placeholder="PegÃ¡ tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bybitSecret2" placeholder="PegÃ¡ tu API Secret"></div>
           <div style="display:flex;gap:6px;">
             <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('bybit')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('bybit')">Probar</button>
-            <button class="btn dan sm" onclick="clearExchangeKeys('bybit')">✕</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('bybit')">âœ•</button>
           </div>
         </div>
         <div class="card">
@@ -590,13 +590,13 @@
             <div style="font-family:var(--mono);font-weight:600;">OKX</div>
             <div id="okxStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="okxKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="okxSecret2" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="okxKey2" placeholder="PegÃ¡ tu API Key"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="okxSecret2" placeholder="PegÃ¡ tu API Secret"></div>
           <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="okxPass2" placeholder="Tu passphrase de OKX"></div>
           <div style="display:flex;gap:6px;">
             <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('okx')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('okx')">Probar</button>
-            <button class="btn dan sm" onclick="clearExchangeKeys('okx')">✕</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('okx')">âœ•</button>
           </div>
         </div>
         <div class="card">
@@ -605,12 +605,12 @@
             <div style="font-family:var(--mono);font-weight:600;">MEXC</div>
             <div id="mexcStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="mexcKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="mexcSecret2" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="mexcKey2" placeholder="PegÃ¡ tu API Key"></div>
+          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="mexcSecret2" placeholder="PegÃ¡ tu API Secret"></div>
           <div style="display:flex;gap:6px;">
             <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('mexc')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('mexc')">Probar</button>
-            <button class="btn dan sm" onclick="clearExchangeKeys('mexc')">✕</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('mexc')">âœ•</button>
           </div>
         </div>
         <div class="card">
@@ -619,13 +619,13 @@
             <div style="font-family:var(--mono);font-weight:600;">KuCoin</div>
             <div id="kucoinStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="kucoinKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="kucoinSecret2" placeholder="Pegá tu API Secret"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="kucoinKey2" placeholder="PegÃ¡ tu API Key"></div>
+          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="kucoinSecret2" placeholder="PegÃ¡ tu API Secret"></div>
           <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="kucoinPass2" placeholder="Tu passphrase de KuCoin"></div>
           <div style="display:flex;gap:6px;">
             <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('kucoin')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('kucoin')">Probar</button>
-            <button class="btn dan sm" onclick="clearExchangeKeys('kucoin')">✕</button>
+            <button class="btn dan sm" onclick="clearExchangeKeys('kucoin')">âœ•</button>
           </div>
         </div>
       </div>
@@ -637,8 +637,8 @@
     <div id="settingsPage" style="display:none;">
       <div class="fxb" style="margin-bottom:20px;">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Configuración</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">MAUex · Trading Journal</div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">ConfiguraciÃ³n</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:2px;">MAUex Â· Trading Journal</div>
         </div>
       </div>
 
@@ -647,13 +647,13 @@
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div>
             <div style="font-size:13px;font-weight:500;margin-bottom:3px;">API Keys de exchanges</div>
-            <div style="font-size:11px;color:var(--t3);">Conectá tus exchanges para sincronizar posiciones y balances</div>
+            <div style="font-size:11px;color:var(--t3);">ConectÃ¡ tus exchanges para sincronizar posiciones y balances</div>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-              <span id="bnbStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Binance —</span>
-              <span id="bybitStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Bybit —</span>
-              <span id="okxStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">OKX —</span>
-              <span id="mexcStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">MEXC —</span>
-              <span id="kucoinStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">KuCoin —</span>
+              <span id="bnbStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Binance â€”</span>
+              <span id="bybitStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Bybit â€”</span>
+              <span id="okxStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">OKX â€”</span>
+              <span id="mexcStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">MEXC â€”</span>
+              <span id="kucoinStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">KuCoin â€”</span>
             </div>
           </div>
           <button class="btn acc sm" onclick="openModal('apiConfigModal');syncApiModalStatus();">Configurar API</button>
@@ -665,21 +665,21 @@
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div>
             <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Traders seguidos</div>
-            <div style="font-size:11px;color:var(--t3);">Administrá los traders que seguís</div>
+            <div style="font-size:11px;color:var(--t3);">AdministrÃ¡ los traders que seguÃ­s</div>
           </div>
-          <button class="btn sm" onclick="window.showPage('traders')">Gestionar traders →</button>
+          <button class="btn sm" onclick="window.showPage('traders')">Gestionar traders â†’</button>
         </div>
       </div>
 
       <!-- Master password -->
       <div class="card" style="margin-bottom:12px;">
-        <div class="sec-label">Contraseña maestra</div>
+        <div class="sec-label">ContraseÃ±a maestra</div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;"><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
+          <div style="flex:1;"><input type="password" id="masterPass" placeholder="Tu contraseÃ±a maestra"></div>
           <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
         </div>
         <div id="masterStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
-        <div style="font-size:11px;color:var(--t3);margin-top:6px;">⚠️ Protege tus API Keys. Si la olvidás, regenerá las keys en el exchange.</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px;">âš ï¸ Protege tus API Keys. Si la olvidÃ¡s, regenerÃ¡ las keys en el exchange.</div>
       </div>
 
       <!-- Proxy URL -->
@@ -736,15 +736,15 @@
       <div class="card" style="margin-bottom:12px;">
         <div class="sec-label" style="color:var(--red);">Danger zone</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn sm" onclick="exportAllData()">📥 Exportar datos (CSV)</button>
-          <button class="btn dan sm" onclick="deleteExchangeTrades()">🗑 Borrar trades del exchange</button>
-          <button class="btn dan sm" onclick="deleteAllData()">🗑 Borrar TODOS los trades</button>
+          <button class="btn sm" onclick="exportAllData()">ðŸ“¥ Exportar datos (CSV)</button>
+          <button class="btn dan sm" onclick="deleteExchangeTrades()">ðŸ—‘ Borrar trades del exchange</button>
+          <button class="btn dan sm" onclick="deleteAllData()">ðŸ—‘ Borrar TODOS los trades</button>
         </div>
       </div>
 
       <!-- Sync card -->
       <div class="card" id="syncCard" style="display:none;margin-bottom:12px;">
-        <div class="sec-label">Estado de sincronización</div>
+        <div class="sec-label">Estado de sincronizaciÃ³n</div>
         <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
       </div>
     </div>
@@ -769,21 +769,21 @@
 <div class="modal-overlay" id="masterPassModal">
   <div class="modal" style="width:400px;">
     <div class="modal-hdr">
-      <div class="modal-title">🔐 Conectar exchanges</div>
+      <div class="modal-title">ðŸ” Conectar exchanges</div>
     </div>
     <div class="modal-body">
       <div style="background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:16px;font-size:12px;color:var(--t2);line-height:1.6;">
-        Tenés API Keys configuradas. Ingresá tu contraseña maestra para conectar los exchanges y ver tus posiciones en vivo.
+        TenÃ©s API Keys configuradas. IngresÃ¡ tu contraseÃ±a maestra para conectar los exchanges y ver tus posiciones en vivo.
       </div>
       <div id="masterPassExchanges" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;"></div>
       <div style="margin-bottom:12px;">
-        <label class="lbl">Contraseña maestra</label>
-        <input type="password" id="unlockPass" placeholder="Tu contraseña maestra"
+        <label class="lbl">ContraseÃ±a maestra</label>
+        <input type="password" id="unlockPass" placeholder="Tu contraseÃ±a maestra"
           onkeydown="if(event.key==='Enter')doUnlock()">
       </div>
       <label style="display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--t2);line-height:1.45;margin-bottom:12px;cursor:pointer;">
         <input type="checkbox" id="rememberDexPass" style="width:auto;margin-top:2px;">
-        <span>Recordar en este dispositivo<br><span style="color:var(--t3);">Úsalo solo en tu celular o PC personal.</span></span>
+        <span>Recordar en este dispositivo<br><span style="color:var(--t3);">Ãšsalo solo en tu celular o PC personal.</span></span>
       </label>
       <div id="unlockError" style="display:none;color:var(--red);font-size:11px;margin-bottom:8px;"></div>
     </div>
@@ -796,14 +796,14 @@
 
 <div class="modal-overlay" id="themeModal">
   <div class="modal" style="width:420px;">
-    <div class="modal-hdr"><div class="modal-title">Elegir tema</div><button class="modal-close" onclick="closeModal('themeModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Elegir tema</div><button class="modal-close" onclick="closeModal('themeModal')">âœ•</button></div>
     <div class="modal-body"><div class="theme-grid" id="themeGrid"></div></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="traderModal">
   <div class="modal" style="width:380px;">
-    <div class="modal-hdr"><div class="modal-title" id="traderModalTitle">Agregar trader</div><button class="modal-close" onclick="closeModal('traderModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title" id="traderModalTitle">Agregar trader</div><button class="modal-close" onclick="closeModal('traderModal')">âœ•</button></div>
     <div class="modal-body">
       <div style="margin-bottom:12px;"><label class="lbl">Nombre</label><input type="text" id="tName" placeholder="Dr.Profit..."></div>
       <div style="margin-bottom:12px;"><label class="lbl">Canal / Red</label><input type="text" id="tChannel" placeholder="Telegram, Twitter..."></div>
@@ -817,7 +817,7 @@
   <div class="modal" style="width:560px;">
     <div class="modal-hdr">
       <div class="modal-title">Editar trade</div>
-      <button class="modal-close" onclick="closeModal('editTradeModal')">✕</button>
+      <button class="modal-close" onclick="closeModal('editTradeModal')">âœ•</button>
     </div>
     <div class="modal-body">
       <div class="g2" style="gap:10px;margin-bottom:12px;">
@@ -826,10 +826,10 @@
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div>
-          <label class="lbl">Dirección</label>
+          <label class="lbl">DirecciÃ³n</label>
           <div class="dir-toggle" style="margin-top:4px;">
-            <button class="dir-btn al" data-ed="long" onclick="setEditDir('long')">LONG ↑</button>
-            <button class="dir-btn" data-ed="short" onclick="setEditDir('short')">SHORT ↓</button>
+            <button class="dir-btn al" data-ed="long" onclick="setEditDir('long')">LONG â†‘</button>
+            <button class="dir-btn" data-ed="short" onclick="setEditDir('short')">SHORT â†“</button>
             <button class="dir-btn" data-ed="spot" onclick="setEditDir('spot')">SPOT</button>
           </div>
         </div>
@@ -840,8 +840,8 @@
         <div><label class="lbl">Stop Loss</label><input type="number" id="eSL" oninput="syncEditFields('sl')"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
-        <div><label class="lbl">Liquidación DEX</label><input type="number" id="eLiquidation" placeholder="Precio real del DEX"></div>
-        <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL" oninput="syncEditFields('size')"></div>
+        <div><label class="lbl">LiquidaciÃ³n DEX</label><input type="number" id="eLiquidation" placeholder="Precio real del DEX"></div>
+        <div><label class="lbl">TamaÃ±o USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL" oninput="syncEditFields('size')"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 116px 1fr 116px;gap:6px;margin-bottom:12px;align-items:end;">
         <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
@@ -906,14 +906,14 @@
 
 <div class="modal-overlay" id="directPositionModal">
   <div class="modal" style="width:420px;max-height:90vh;overflow-y:auto;">
-    <div class="modal-hdr"><div class="modal-title">Agregar posición abierta</div><button class="modal-close" onclick="closeModal('directPositionModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Agregar posiciÃ³n abierta</div><button class="modal-close" onclick="closeModal('directPositionModal')">âœ•</button></div>
     <div class="modal-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Ticker</label><input type="text" id="dpTicker" oninput="this.value=this.value.toUpperCase()" placeholder="BTC"></div>
-        <div><label class="lbl">Dirección</label>
+        <div><label class="lbl">DirecciÃ³n</label>
           <div class="dir-toggle" style="margin-top:4px;">
-            <button class="dir-btn al" data-dp="long" onclick="setDPDir('long')">LONG ↑</button>
-            <button class="dir-btn" data-dp="short" onclick="setDPDir('short')">SHORT ↓</button>
+            <button class="dir-btn al" data-dp="long" onclick="setDPDir('long')">LONG â†‘</button>
+            <button class="dir-btn" data-dp="short" onclick="setDPDir('short')">SHORT â†“</button>
             <button class="dir-btn" data-dp="spot" onclick="setDPDir('spot')">SPOT</button>
           </div>
         </div>
@@ -937,7 +937,7 @@
         <div><label class="lbl">Stop Loss</label><input type="number" id="dpSL" placeholder="Opcional"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div><label class="lbl">Tamaño USD</label><input type="number" id="dpSize" placeholder="1000"></div>
+        <div><label class="lbl">TamaÃ±o USD</label><input type="number" id="dpSize" placeholder="1000"></div>
         <div><label class="lbl">Riesgo USD</label><input type="number" id="dpRisk" placeholder="Opcional"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
@@ -949,22 +949,22 @@
         <input type="number" id="dpTP3pct" placeholder="%" value="34" style="text-align:center;">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div><label class="lbl">Trader</label><select id="dpTrader"><option value="">— ninguno —</option></select></div>
+        <div><label class="lbl">Trader</label><select id="dpTrader"><option value="">â€” ninguno â€”</option></select></div>
         <div><label class="lbl">Fecha entrada</label><input type="date" id="dpDate"></div>
       </div>
       <div><label class="lbl">Notas</label><textarea id="dpNotes" placeholder="Contexto del setup..."></textarea></div>
     </div>
-    <div class="modal-footer"><button class="btn" onclick="closeModal('directPositionModal')">Cancelar</button><button class="btn acc" onclick="saveDirectPosition()">Abrir posición</button></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('directPositionModal')">Cancelar</button><button class="btn acc" onclick="saveDirectPosition()">Abrir posiciÃ³n</button></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="directTradeModal">
   <div class="modal" style="width:680px;max-height:90vh;overflow-y:auto;">
-    <div class="modal-hdr"><div class="modal-title">Agregar trade al historial</div><button class="modal-close" onclick="closeModal('directTradeModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Agregar trade al historial</div><button class="modal-close" onclick="closeModal('directTradeModal')">âœ•</button></div>
     <div class="modal-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Ticker</label><input type="text" id="dtTicker" placeholder="BTC"></div>
-        <div><label class="lbl">Dirección</label>
+        <div><label class="lbl">DirecciÃ³n</label>
           <select id="dtDir" onchange="window.updateDirectTradeSizeLabel()"><option value="long">Long</option><option value="short">Short</option><option value="spot">Spot</option></select>
         </div>
       </div>
@@ -982,14 +982,14 @@
         </div>
         <div><label class="lbl">Leverage</label><input type="number" id="dtLev" placeholder="1" value="1"></div>
       </div>
-      <div style="margin-bottom:12px;"><label class="lbl">Trader</label><select id="dtTrader"><option value="">— ninguno —</option></select></div>
+      <div style="margin-bottom:12px;"><label class="lbl">Trader</label><select id="dtTrader"><option value="">â€” ninguno â€”</option></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Precio entrada</label><input type="number" id="dtEntry" placeholder="68000"></div>
         <div><label class="lbl">Precio salida</label><input type="number" id="dtExit" placeholder="72000"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl" id="dtSizeLabel">Margen USD</label><input type="number" id="dtSize" placeholder="1000"><div id="dtSizeHint" style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Capital usado como margen.</div></div>
-        <div><label class="lbl">PnL manual <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="dtPnl" placeholder="Auto" oninput="this.dataset.manual='1'"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Si lo dejás vacío, MAUex lo calcula.</div></div>
+        <div><label class="lbl">PnL manual <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="dtPnl" placeholder="Auto" oninput="this.dataset.manual='1'"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Si lo dejÃ¡s vacÃ­o, MAUex lo calcula.</div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Fecha entrada</label><input type="date" id="dtOpenDate"></div>
@@ -1004,10 +1004,10 @@
 
 <div class="modal-overlay" id="partialCloseModal">
   <div class="modal" style="width:380px;">
-    <div class="modal-hdr"><div class="modal-title">Cierre parcial</div><button class="modal-close" onclick="closeModal('partialCloseModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Cierre parcial</div><button class="modal-close" onclick="closeModal('partialCloseModal')">âœ•</button></div>
     <div class="modal-body">
       <div style="margin-bottom:12px;"><label class="lbl">Precio de salida parcial</label><input type="number" id="partialPrice" placeholder="68000"></div>
-      <div style="margin-bottom:12px;"><label class="lbl">% del tamaño a cerrar</label><input type="number" id="partialPct" placeholder="50" min="1" max="99" value="50"></div>
+      <div style="margin-bottom:12px;"><label class="lbl">% del tamaÃ±o a cerrar</label><input type="number" id="partialPct" placeholder="50" min="1" max="99" value="50"></div>
       <div style="margin-bottom:12px;"><label class="lbl">Fecha</label><input type="text" id="partialDate"></div>
       <div><label class="lbl">Notas</label><textarea id="partialNotes" placeholder="TP1, cierre parcial..."></textarea></div>
     </div>
@@ -1017,14 +1017,14 @@
 
 <div class="modal-overlay" id="manualTradeModal">
   <div class="modal" style="width:560px;">
-    <div class="modal-hdr"><div class="modal-title">Carga manual de posición</div><button class="modal-close" onclick="closeModal('manualTradeModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Carga manual de posiciÃ³n</div><button class="modal-close" onclick="closeModal('manualTradeModal')">âœ•</button></div>
     <div class="modal-body">
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div>
-          <label class="lbl">Dirección</label>
+          <label class="lbl">DirecciÃ³n</label>
           <div class="dir-toggle" style="margin-top:4px;">
-            <button class="dir-btn al" data-md="long" onclick="setMDir('long')">LONG ↑</button>
-            <button class="dir-btn" data-md="short" onclick="setMDir('short')">SHORT ↓</button>
+            <button class="dir-btn al" data-md="long" onclick="setMDir('long')">LONG â†‘</button>
+            <button class="dir-btn" data-md="short" onclick="setMDir('short')">SHORT â†“</button>
             <button class="dir-btn" data-md="spot" onclick="setMDir('spot')">SPOT</button>
           </div>
         </div>
@@ -1033,7 +1033,7 @@
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Exchange</label><input type="text" id="mExchange" placeholder="Binance..."></div>
         <div><label class="lbl">Apalancamiento</label><input type="number" id="mLev" value="1" min="1" max="125"></div>
-        <div><label class="lbl">Trader</label><select id="mTrader"><option value="">— ninguno —</option></select></div>
+        <div><label class="lbl">Trader</label><select id="mTrader"><option value="">â€” ninguno â€”</option></select></div>
       </div>
       <div style="margin-bottom:12px;">
         <div class="fxb" style="margin-bottom:8px;"><label class="lbl" style="margin:0;">Entradas</label><button class="btn sm" onclick="addEntryRow()">+ Entrada</button></div>
@@ -1065,8 +1065,8 @@
 <div class="modal-overlay" id="orderExecutedModal">
   <div class="modal" style="width:380px;border:1px solid rgba(245,158,11,0.3);">
     <div class="modal-hdr">
-      <div class="modal-title" style="color:#f59e0b;">⚡ Orden ejecutada</div>
-      <button class="modal-close" onclick="closeModal('orderExecutedModal')">✕</button>
+      <div class="modal-title" style="color:#f59e0b;">âš¡ Orden ejecutada</div>
+      <button class="modal-close" onclick="closeModal('orderExecutedModal')">âœ•</button>
     </div>
     <div class="modal-body" id="orderExecutedBody"></div>
     <div class="modal-footer">
@@ -1077,7 +1077,7 @@
 
 <div class="modal-overlay" id="importHistoryModal">
   <div class="modal" style="width:440px;">
-    <div class="modal-hdr"><div class="modal-title">📥 Importar historial de exchanges</div><button class="modal-close" onclick="closeModal('importHistoryModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">ðŸ“¥ Importar historial de exchanges</div><button class="modal-close" onclick="closeModal('importHistoryModal')">âœ•</button></div>
     <div class="modal-body">
       <div style="font-size:12px;color:var(--t2);margin-bottom:16px;line-height:1.6;">
         Importa trades cerrados de todos los exchanges configurados. Los trades ya importados no se duplican.
@@ -1087,7 +1087,7 @@
         <div><label class="lbl">Hasta</label><input type="date" id="importTo"></div>
       </div>
       <div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--t2);">
-        Importará: futuros + spot de Binance, Bybit, OKX, MEXC y KuCoin (los que tenés configurados)
+        ImportarÃ¡: futuros + spot de Binance, Bybit, OKX, MEXC y KuCoin (los que tenÃ©s configurados)
       </div>
       <div id="importHistProgress" style="margin-top:12px;display:none;font-family:var(--mono);font-size:11px;color:var(--t2);line-height:1.8;"></div>
     </div>
@@ -1100,7 +1100,7 @@
 
 <div class="modal-overlay" id="importModal">
   <div class="modal" style="width:460px;">
-    <div class="modal-hdr"><div class="modal-title">Importar CSV</div><button class="modal-close" onclick="closeModal('importModal')">✕</button></div>
+    <div class="modal-hdr"><div class="modal-title">Importar CSV</div><button class="modal-close" onclick="closeModal('importModal')">âœ•</button></div>
     <div class="modal-body">
       <div style="background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:16px;font-size:11px;color:var(--t2);font-family:var(--mono);line-height:1.7;">Importa tu historial desde Google Sheets exportado como CSV.</div>
       <input type="file" id="csvFile" accept=".csv" style="width:100%;padding:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);color:var(--t1);font-family:var(--sans);">
@@ -1114,14 +1114,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 
-<!-- ═══════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      FIREBASE MODULE
-     ═══════════════════════════════════════════════════════════════════════ -->
-<script type="module" src="./firebase.js?v=20260526"></script>
+     â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<script type="module" src="./firebase.js?v=20260619-111144"></script>
 
-<!-- ═══════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      UI LOGIC (no Firebase deps here)
-     ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260531-12"></script>
+     â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<script src="./app.js?v=20260619-111144"></script>
 </body>
 </html>
