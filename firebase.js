@@ -1175,6 +1175,7 @@ const prices = {};  // prices[sym] = { spot: n, futures: n }
 let wsMap = {};
 let pollTimer = null;
 let kucoinPollTimer = null;
+let kucoinFuturesPollTimer = null;
 let mexcSpotPollTimer = null;
 
 const CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
@@ -1214,6 +1215,13 @@ function mexcSpotSymbol(ticker='') {
   if (!raw) return '';
   if (raw.endsWith('USDT') && !raw.includes('_')) return raw;
   return baseCryptoSymbol(raw) + 'USDT';
+}
+
+function kucoinFuturesSymbol(ticker='') {
+  const raw = String(ticker || '').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (!raw) return '';
+  if (raw.endsWith('USDTM')) return raw;
+  return baseCryptoSymbol(raw) + 'USDTM';
 }
 
 async function fetchYahooPrice(ticker) {
@@ -1500,6 +1508,7 @@ function startLivePrices() {
   wsMap = {};
   if (pollTimer) { clearInterval(pollTimer); pollTimer=null; }
   if (kucoinPollTimer) { clearInterval(kucoinPollTimer); kucoinPollTimer=null; }
+  if (kucoinFuturesPollTimer) { clearInterval(kucoinFuturesPollTimer); kucoinFuturesPollTimer=null; }
   if (mexcSpotPollTimer) { clearInterval(mexcSpotPollTimer); mexcSpotPollTimer=null; }
 
   if (cryptoSyms.length) {
@@ -1629,6 +1638,36 @@ function startLivePrices() {
     kucoinPollTimer = setInterval(pollKucoin, 30000);
   }
 
+  const kucoinFuturesSyms = [...new Set([
+    ...relevant
+      .filter(t => {
+        const src = tradeMarketSource(t);
+        const kind = String(t.marketKind || '').toLowerCase();
+        return src === 'KUCOIN' && kind !== 'spot' && t.dir !== 'spot';
+      })
+      .map(t => kucoinFuturesSymbol(t.ticker)),
+    ...(window.exchangePositions || [])
+      .filter(p => String(p.exchange || '').toUpperCase() === 'KUCOIN')
+      .map(p => kucoinFuturesSymbol(p.symbol || p.ticker)),
+  ].filter(Boolean))];
+
+  if (kucoinFuturesSyms.length) {
+    const pollKucoinFutures = async () => {
+      for (const fullSym of kucoinFuturesSyms) {
+        try {
+          const url = `https://api-futures.kucoin.com/api/v1/ticker?symbol=${encodeURIComponent(fullSym)}`;
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+          const d = await r.json();
+          const row = d?.data || {};
+          const p = Number(row.price || row.markPrice || row.bestBidPrice || row.bestAskPrice || 0);
+          if (p > 0) setPrice(baseCryptoSymbol(fullSym), 'futures', p, 'kucoin');
+        } catch(e) {}
+      }
+    };
+    pollKucoinFutures();
+    kucoinFuturesPollTimer = setInterval(pollKucoinFutures, 30000);
+  }
+
   const mexcSpotTrades = relevant.filter(t => {
     const src = tradeMarketSource(t);
     const kind = String(t.marketKind || '').toLowerCase();
@@ -1681,6 +1720,18 @@ window.refreshPricesManual = async () => {
           const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
           const d = await r.json();
           if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'mexc');
+        } catch(e){}
+        continue;
+      }
+      if (src === 'KUCOIN' && kind !== 'spot' && t.dir !== 'spot') {
+        try {
+          const fullSym = kucoinFuturesSymbol(t.ticker);
+          const url = `https://api-futures.kucoin.com/api/v1/ticker?symbol=${encodeURIComponent(fullSym)}`;
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+          const d = await r.json();
+          const row = d?.data || {};
+          const p = Number(row.price || row.markPrice || row.bestBidPrice || row.bestAskPrice || 0);
+          if (p > 0) setPrice(sym, 'futures', p, 'kucoin');
         } catch(e){}
         continue;
       }

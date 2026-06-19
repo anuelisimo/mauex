@@ -342,6 +342,91 @@ async function syncMEXC(env) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+async function syncKuCoin(env) {
+  const key = (env.KUCOIN_KEY || '').trim();
+  const sec = (env.KUCOIN_SECRET || '').trim();
+  const pass = (env.KUCOIN_PASSPHRASE || '').trim();
+  if (!key || !sec || !pass) return { positions: [], orders: [], error: 'No keys' };
+
+  const positions = [];
+  const orders = [];
+  const hdr = async (method, path, body = '') => {
+    const ts = Date.now().toString();
+    return {
+      'KC-API-KEY': key,
+      'KC-API-SIGN': await hmac256Base64(sec, ts + method + path + body),
+      'KC-API-TIMESTAMP': ts,
+      'KC-API-PASSPHRASE': await hmac256Base64(sec, pass),
+      'KC-API-KEY-VERSION': '2',
+      'Content-Type': 'application/json',
+    };
+  };
+
+  try {
+    const posPath = '/api/v1/positions';
+    const r1 = await safeFetch(`https://api-futures.kucoin.com${posPath}`, { headers: await hdr('GET', posPath) });
+    if (r1.ok && r1.data?.code === '200000') {
+      for (const p of (r1.data.data || [])) {
+        const qty = Number(p.currentQty ?? p.quantity ?? 0) || 0;
+        if (!qty) continue;
+        const symbol = String(p.symbol || '');
+        const entry = Number(p.avgEntryPrice ?? p.openAvgPrice ?? p.avgPrice ?? 0) || 0;
+        const mark = Number(p.markPrice ?? p.currentMarkPrice ?? entry) || entry;
+        const lev = Number(p.realLeverage ?? p.leverage ?? 1) || 1;
+        const margin = Math.abs(Number(p.posMargin ?? p.margin ?? p.maintMargin ?? 0) || 0);
+        const notional = Math.abs(Number(p.currentCost ?? p.posCost ?? p.positionValue ?? 0) || (qty * (mark || entry)));
+        const pnl = Number(p.unrealisedPnl ?? p.unrealisedPNL ?? 0) || 0;
+        const dir = qty > 0 ? 'long' : 'short';
+        positions.push({
+          exchange: 'KUCOIN', type: 'futures',
+          ticker: symbol.replace(/USDTM$/,''),
+          symbol, dir, entry, mark,
+          pnl: Math.round(pnl * 100) / 100,
+          pnlPct: margin > 0 ? Math.round(pnl / margin * 10000) / 100 : 0,
+          posSize: Math.round(notional * 100) / 100,
+          margin: Math.round((margin || notional / lev) * 100) / 100,
+          leverage: lev,
+          liquidation: Number(p.liquidationPrice ?? p.liqPrice ?? 0) || null,
+          exchangeId: `kucoin-pos-${symbol}-${dir}`,
+          raw: p,
+        });
+      }
+    } else if (r1.data?.code && r1.data.code !== '200000') {
+      return { positions, orders, error: r1.data.msg || r1.data.message || `KuCoin ${r1.data.code}` };
+    }
+
+    const ordPath = '/api/v1/orders?status=active';
+    const r2 = await safeFetch(`https://api-futures.kucoin.com${ordPath}`, { headers: await hdr('GET', ordPath) });
+    if (r2.ok && r2.data?.code === '200000') {
+      const list = r2.data.data?.items || r2.data.data || [];
+      for (const o of list) {
+        const symbol = String(o.symbol || '');
+        const price = Number(o.price ?? o.stopPrice ?? 0) || 0;
+        const qty = Number(o.size ?? o.quantity ?? 0) || 0;
+        const lev = Number(o.leverage ?? 1) || 1;
+        const value = Number(o.value ?? o.orderValue ?? 0) || (price * qty);
+        orders.push({
+          exchange: 'KUCOIN', type: o.type || 'limit',
+          ticker: symbol.replace(/USDTM$/,''),
+          symbol,
+          dir: String(o.side || '').toLowerCase() === 'sell' ? 'short' : 'long',
+          price,
+          origQty: qty,
+          size: Math.abs(value),
+          margin: lev > 1 ? Math.abs(value) / lev : Math.abs(value),
+          leverage: lev,
+          exchangeId: `kucoin-ord-${o.id || o.orderId || symbol + '-' + price}`,
+          raw: o,
+        });
+      }
+    }
+
+    return { positions, orders, error: null };
+  } catch(e) {
+    return { positions, orders, error: e.message };
+  }
+}
+
 // BALANCES — free USDT/USDC not locked in positions or orders
 // ═════════════════════════════════════════════════════════════════════════════
 function normalizeBalance(raw = {}) {
@@ -626,6 +711,7 @@ async function syncAll(env) {
     syncBybit(env).then(r => ['BYBIT', r]).catch(e => ['BYBIT', { positions: [], orders: [], error: e.message }]),
     syncOKX(env).then(r => ['OKX', r]).catch(e => ['OKX', { positions: [], orders: [], error: e.message }]),
     syncMEXC(env).then(r => ['MEXC', r]).catch(e => ['MEXC', { positions: [], orders: [], error: e.message }]),
+    syncKuCoin(env).then(r => ['KUCOIN', r]).catch(e => ['KUCOIN', { positions: [], orders: [], error: e.message }]),
   ]);
 
   const positions = [];

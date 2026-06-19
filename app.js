@@ -3009,26 +3009,35 @@ function normalizeDashboardBalance(raw = {}) {
 function dashboardTradeCapital(t) {
   const size = Number(t?.posSize ?? t?.totalSize ?? t?.size ?? 0) || 0;
   const lev = Math.max(1, Number(t?.leverage) || 1);
-  return (String(t?.dir || '').toLowerCase() === 'spot') ? size : size / lev;
+  const margin = Number(t?.margin ?? t?.orderMargin ?? t?.initialMargin ?? t?.positionIM ?? 0) || 0;
+  if (String(t?.dir || '').toLowerCase() === 'spot') return size || margin;
+  if (margin > 0) return margin;
+  return size / lev;
 }
 
-function manualExchangeCapitalOverlay() {
+function manualExchangeCapitalOverlay(data={}) {
   const out = {};
   const trades = window.G?.trades?.() || [];
-  trades.forEach(t => {
-    const ex = ((t.exchange || 'MANUAL') + '').toUpperCase();
-    if (!ex || ex === 'MANUAL') return;
+  const addRow = (ex, status, capital) => {
+    ex = String(ex || 'MANUAL').toUpperCase();
+    if (!ex || ex === 'MANUAL' || !Number.isFinite(capital) || capital <= 0) return;
     if (!out[ex]) out[ex] = { margin: 0, orders: 0 };
-    const capital = dashboardTradeCapital(t);
-    if (t.status === 'active' || t.status === 'zombie') out[ex].margin += capital;
-    if (t.status === 'pending') out[ex].orders += capital;
+    if (status === 'active' || status === 'zombie') out[ex].margin += capital;
+    if (status === 'pending' || status === 'watchlist') out[ex].orders += capital;
+  };
+  trades.forEach(t => {
+    addRow(t.exchange, t.status, dashboardTradeCapital(t));
   });
+  const livePositions = Array.isArray(data.positions) ? data.positions : (window.exchangePositions || []);
+  const liveOrders = Array.isArray(data.orders) ? data.orders : (window.exchangeOrders || []);
+  livePositions.forEach(p => addRow(p.exchange, 'active', dashboardTradeCapital(p)));
+  liveOrders.forEach(o => addRow(o.exchange, 'pending', dashboardTradeCapital(o)));
   return out;
 }
 
 function applyManualCapitalOverlay(data) {
   if (!data) return data;
-  const manual = manualExchangeCapitalOverlay();
+  const manual = manualExchangeCapitalOverlay(data);
   const sourceBalances = data.balances || {};
   const balanceErrors = data.errors || data.balanceErrors || {};
   const balances = {};
@@ -3036,15 +3045,12 @@ function applyManualCapitalOverlay(data) {
   Object.entries(sourceBalances).forEach(([ex, raw]) => {
     const b = normalizeDashboardBalance(raw);
     const m = manual[ex] || { margin: 0, orders: 0 };
-    const total = b.total || 0;
     let margin = Math.max(b.margin || 0, m.margin || 0);
     let orders = Math.max(b.orders || 0, m.orders || 0);
-    if (total > 0 && margin + orders > total) {
-      margin = Math.min(margin, total);
-      orders = Math.min(orders, Math.max(0, total - margin));
-    }
+    const total = Math.max(b.total || 0, (b.free || 0) + margin + orders);
     balances[ex] = {
       ...b,
+      total: Math.round(total * 100) / 100,
       margin: Math.round(margin * 100) / 100,
       orders: Math.round(orders * 100) / 100,
       free: Math.round(Math.max(0, total - margin - orders) * 100) / 100,
@@ -3118,7 +3124,7 @@ async function fetchAndRenderLiquidity() {
     try {
       el.style.display = 'block';
       el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
-      const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
         data = applyManualCapitalOverlay(d);
@@ -3793,7 +3799,7 @@ function renderDashboard() {
 
   // If no liquidity cache yet, fetch balance directly and draw pie
   if (!_liquidityCache && PROXY_URL) {
-    fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
+    fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
       if (d.balances) {
         _liquidityCache = d;
         window._liquidityCache = d;
@@ -4026,7 +4032,20 @@ window.applySuggestedRisk = () => {
 };
 
 function portfolioExposureStats(all) {
-  const open = all.filter(t => ['active','pending','watchlist'].includes(t.status));
+  const savedOpen = all.filter(t => ['active','pending','watchlist'].includes(t.status));
+  const livePositions = (window.exchangePositions || []).map(p => ({
+    ...p,
+    status: 'active',
+    exchange: p.exchange || p.exchangeSource,
+    traderName: p.traderName || 'Exchange live',
+  }));
+  const liveOrders = (window.exchangeOrders || []).map(o => ({
+    ...o,
+    status: 'pending',
+    exchange: o.exchange || o.exchangeSource,
+    traderName: o.traderName || 'Exchange live',
+  }));
+  const open = [...savedOpen, ...livePositions, ...liveOrders];
   const out = { open, long:0, short:0, spot:0, risk:0, byExchange:{}, byTicker:{}, byTrader:{}, byStatus:{} };
   open.forEach(t => {
     const capital = dashboardTradeCapital(t);
@@ -9144,6 +9163,7 @@ window.syncAllExchanges = async () => {
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
       try { renderMap(); } catch(e) { console.error('renderMap error:', e); }
       try { updateStatusBar(); } catch(e) { console.error('updateStatusBar error:', e); }
+      try { window.startLivePrices?.(); } catch(e) { console.error('startLivePrices error:', e); }
 
       const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
       const errTxt = errs.length ? ' · revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/') : '';
