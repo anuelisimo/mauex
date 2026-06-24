@@ -1177,6 +1177,7 @@ let pollTimer = null;
 let kucoinPollTimer = null;
 let kucoinFuturesPollTimer = null;
 let mexcSpotPollTimer = null;
+let mexcFuturesPollTimer = null;
 
 const CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
@@ -1215,6 +1216,13 @@ function mexcSpotSymbol(ticker='') {
   if (!raw) return '';
   if (raw.endsWith('USDT') && !raw.includes('_')) return raw;
   return baseCryptoSymbol(raw) + 'USDT';
+}
+
+function mexcFuturesSymbol(ticker='') {
+  const raw = String(ticker || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  if (!raw) return '';
+  if (raw.includes('_')) return raw;
+  return baseCryptoSymbol(raw) + '_USDT';
 }
 
 function kucoinFuturesSymbol(ticker='') {
@@ -1423,7 +1431,11 @@ function getPrice(ticker, dir, source='', marketKind='') {
   const src = String(source || '').toLowerCase();
   const kind = String(marketKind || '').toLowerCase() || (dir === 'spot' ? 'spot' : 'futures');
   const explicitSource = src && src !== 'auto';
-  if (explicitSource) return p[`${src}_${kind}`] || null;
+  if (explicitSource) {
+    const sourcePrice = p[`${src}_${kind}`];
+    if (sourcePrice != null) return sourcePrice;
+    return kind === 'spot' ? (p.spot || p.futures || null) : (p.futures || p.spot || null);
+  }
   if (sym === 'XMR') return p.spot || p.futures || null;
   return dir === 'spot' ? (p.spot || p.futures || null) : (p.futures || p.spot || null);
 }
@@ -1510,6 +1522,7 @@ function startLivePrices() {
   if (kucoinPollTimer) { clearInterval(kucoinPollTimer); kucoinPollTimer=null; }
   if (kucoinFuturesPollTimer) { clearInterval(kucoinFuturesPollTimer); kucoinFuturesPollTimer=null; }
   if (mexcSpotPollTimer) { clearInterval(mexcSpotPollTimer); mexcSpotPollTimer=null; }
+  if (mexcFuturesPollTimer) { clearInterval(mexcFuturesPollTimer); mexcFuturesPollTimer=null; }
 
   if (cryptoSyms.length) {
     // Binance SPOT
@@ -1690,6 +1703,36 @@ function startLivePrices() {
     mexcSpotPollTimer = setInterval(pollMexcSpot, 30000);
   }
 
+  const mexcFuturesSyms = [...new Set([
+    ...relevant
+      .filter(t => {
+        const src = tradeMarketSource(t);
+        const kind = String(t.marketKind || '').toLowerCase();
+        return src === 'MEXC' && kind !== 'spot' && t.dir !== 'spot';
+      })
+      .map(t => mexcFuturesSymbol(t.ticker)),
+    ...(window.exchangePositions || [])
+      .filter(p => String(p.exchange || '').toUpperCase() === 'MEXC' && String(p.dir || '').toLowerCase() !== 'spot')
+      .map(p => mexcFuturesSymbol(p.symbol || p.ticker)),
+  ].filter(Boolean))];
+
+  if (mexcFuturesSyms.length) {
+    const pollMexcFutures = async () => {
+      for (const fullSym of mexcFuturesSyms) {
+        try {
+          const url = `https://contract.mexc.com/api/v1/contract/ticker?symbol=${encodeURIComponent(fullSym)}`;
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+          const d = await r.json();
+          const row = Array.isArray(d?.data) ? d.data[0] : (d?.data || {});
+          const p = Number(row.lastPrice || row.lastPriceFair || row.fairPrice || 0);
+          if (p > 0) setPrice(baseCryptoSymbol(fullSym), 'futures', p, 'mexc');
+        } catch(e) {}
+      }
+    };
+    pollMexcFutures();
+    mexcFuturesPollTimer = setInterval(pollMexcFutures, 30000);
+  }
+
   // Stocks/ETFs - poll every 30s
   if (stockTickers.length) {
     const poll = async () => {
@@ -1720,6 +1763,18 @@ window.refreshPricesManual = async () => {
           const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
           const d = await r.json();
           if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'mexc');
+        } catch(e){}
+        continue;
+      }
+      if (src === 'MEXC' && kind !== 'spot' && t.dir !== 'spot') {
+        try {
+          const fullSym = mexcFuturesSymbol(t.ticker);
+          const url = `https://contract.mexc.com/api/v1/contract/ticker?symbol=${encodeURIComponent(fullSym)}`;
+          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+          const d = await r.json();
+          const row = Array.isArray(d?.data) ? d.data[0] : (d?.data || {});
+          const p = Number(row.lastPrice || row.lastPriceFair || row.fairPrice || 0);
+          if (p > 0) setPrice(sym, 'futures', p, 'mexc');
         } catch(e){}
         continue;
       }

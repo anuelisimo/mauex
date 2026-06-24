@@ -7,7 +7,6 @@
  *    BYBIT_KEY, BYBIT_SECRET
  *    OKX_KEY, OKX_SECRET, OKX_PASSPHRASE
  *    MEXC_KEY, MEXC_SECRET
- *    KUCOIN_KEY, KUCOIN_SECRET, KUCOIN_PASSPHRASE
  *
  * 2. Workers & Pages → tu worker → Settings → KV Namespaces:
  *    Bind: MAUEX_CACHE (crear namespace primero en KV section)
@@ -19,29 +18,209 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': [
-    'Content-Type',
-    'Authorization',
-    'X-MBX-APIKEY',
-    'X-BAPI-API-KEY',
-    'X-BAPI-TIMESTAMP',
-    'X-BAPI-SIGN',
-    'X-BAPI-RECV-WINDOW',
-    'ApiKey',
-    'Request-Time',
-    'Signature',
-    'OK-ACCESS-KEY',
-    'OK-ACCESS-SIGN',
-    'OK-ACCESS-TIMESTAMP',
-    'OK-ACCESS-PASSPHRASE',
-    'KC-API-KEY',
-    'KC-API-SIGN',
-    'KC-API-TIMESTAMP',
-    'KC-API-PASSPHRASE',
-    'KC-API-KEY-VERSION',
-  ].join(', '),
-  'Access-Control-Max-Age': '86400',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Telegram-Bot-Api-Secret-Token',
 };
+
+async function fetchBalancesV2(env) {
+  const balances = {};
+  const errors = {};
+
+  const backendUrl = (env.BINANCE_BACKEND_URL || '').trim();
+  if (backendUrl) {
+    try {
+      const r = await safeFetch(`${backendUrl}/binance-balance`);
+      if (r.ok && r.data && !r.data.error) balances.BINANCE = normalizeBalance(r.data);
+      else errors.BINANCE = `Oracle: ${r.data?.error || r.raw || r.status}`;
+    } catch(e) { errors.BINANCE = `Oracle: ${e.message}`; }
+  }
+
+  const railwayUrl = (env.RAILWAY_URL || '').trim();
+  if (!balances.BINANCE && railwayUrl) {
+    try {
+      const r = await safeFetch(`${railwayUrl}/binance-balance`);
+      if (r.ok && r.data && !r.data.error) balances.BINANCE = normalizeBalance(r.data);
+      else errors.BINANCE = `Railway: ${r.data?.error || r.raw || r.status}`;
+    } catch(e) { errors.BINANCE = `Railway: ${e.message}`; }
+  }
+
+  const bybitKey = (env.BYBIT_KEY || '').trim();
+  const bybitSec = (env.BYBIT_SECRET || '').trim();
+  if (bybitKey && bybitSec) {
+    try {
+      const bybitBalance = async (accountType) => {
+        const ts = Date.now().toString();
+        const q = `accountType=${accountType}&coin=USDT,USDC`;
+        const msg = ts + bybitKey + '5000' + q;
+        const sig = await hmac256(bybitSec, msg);
+        return safeFetch(`https://api.bybit.com/v5/account/wallet-balance?${q}`, {
+          headers: { 'X-BAPI-API-KEY': bybitKey, 'X-BAPI-TIMESTAMP': ts, 'X-BAPI-SIGN': sig, 'X-BAPI-RECV-WINDOW': '5000' },
+        });
+      };
+      let r = await bybitBalance('UNIFIED');
+      if (!r.ok || r.data?.retCode !== 0) r = await bybitBalance('CONTRACT');
+      if (r.ok && r.data?.retCode === 0) {
+        let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
+        let totalUsdt = 0, totalUsdc = 0;
+        for (const account of (r.data.result?.list || [])) {
+          const accountTotal = parseFloat(account.totalEquity || account.totalMarginBalance || account.totalWalletBalance || 0);
+          const accountFree = parseFloat(account.totalAvailableBalance || 0);
+          const accountIM = parseFloat(account.totalInitialMargin || 0);
+          const accountPnl = parseFloat(account.totalPerpUPL || 0);
+          let accountOrders = 0;
+          let accountPositionMargin = 0;
+          for (const c of (account.coin || [])) {
+            const usdValue = parseFloat(c.usdValue || c.equity || c.walletBalance || 0);
+            if (c.coin === 'USDT') totalUsdt += usdValue;
+            if (c.coin === 'USDC') totalUsdc += usdValue;
+            accountOrders += parseFloat(c.totalOrderIM || 0);
+            accountPositionMargin += parseFloat(c.totalPositionIM || 0);
+          }
+          total += accountTotal;
+          free += accountFree;
+          orders += accountOrders;
+          margin += accountPositionMargin || Math.max(0, accountIM - accountOrders);
+          pnl += accountPnl;
+        }
+        balances.BYBIT = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
+      } else {
+        errors.BYBIT = r.data?.retMsg || `${r.status}`;
+      }
+    } catch(e) { errors.BYBIT = e.message; }
+  }
+
+  const okxKey = (env.OKX_KEY || '').trim();
+  const okxSec = (env.OKX_SECRET || '').trim();
+  const okxPass = (env.OKX_PASSPHRASE || '').trim();
+  if (okxKey && okxSec && okxPass) {
+    try {
+      const okxGet = async (path) => {
+        const ts = new Date().toISOString();
+        const key2 = await crypto.subtle.importKey('raw', new TextEncoder().encode(okxSec), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const sig = await crypto.subtle.sign('HMAC', key2, new TextEncoder().encode(ts + 'GET' + path));
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
+        return safeFetch(`https://www.okx.com${path}`, {
+          headers: { 'OK-ACCESS-KEY': okxKey, 'OK-ACCESS-SIGN': b64, 'OK-ACCESS-TIMESTAMP': ts, 'OK-ACCESS-PASSPHRASE': okxPass, 'Content-Type': 'application/json' },
+        });
+      };
+      let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
+      let totalUsdt = 0, totalUsdc = 0;
+      const r1 = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
+      if (r1.ok && r1.data?.code === '0') {
+        const account = r1.data.data?.[0] || {};
+        total += parseFloat(account.totalEq || 0);
+        for (const d of (account.details || [])) {
+          const eq = parseFloat(d.eq || d.cashBal || 0);
+          const available = parseFloat(d.availEq || d.availBal || 0);
+          free += available;
+          margin += parseFloat(d.imr || 0);
+          orders += parseFloat(d.ordFrozen || 0);
+          pnl += parseFloat(d.upl || 0);
+          if (d.ccy === 'USDT') totalUsdt += eq;
+          if (d.ccy === 'USDC') totalUsdc += eq;
+        }
+      }
+      const r2 = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
+      if (r2.ok && r2.data?.code === '0') {
+        for (const b of (r2.data.data || [])) {
+          const bal = parseFloat(b.bal || b.availBal || 0);
+          const avail = parseFloat(b.availBal || bal || 0);
+          total += bal;
+          free += avail;
+          if (b.ccy === 'USDT') totalUsdt += bal;
+          if (b.ccy === 'USDC') totalUsdc += bal;
+        }
+      }
+      balances.OKX = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
+      if (!r1.ok && !r2.ok) errors.OKX = r1.data?.msg || `${r1.status}`;
+    } catch(e) { errors.OKX = e.message; }
+  }
+
+  const mexcKey = (env.MEXC_KEY || '').trim();
+  const mexcSec = (env.MEXC_SECRET || '').trim();
+  if (mexcKey && mexcSec) {
+    try {
+      let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
+      let totalUsdt = 0, totalUsdc = 0;
+      const ts1 = Date.now().toString();
+      const sig1 = await hmac256(mexcSec, mexcKey + ts1);
+      const r1 = await safeFetch('https://contract.mexc.com/api/v1/private/account/assets', {
+        headers: { 'ApiKey': mexcKey, 'Request-Time': ts1, 'Signature': sig1, 'Content-Type': 'application/json' },
+      });
+      if (r1.ok && r1.data?.success) {
+        for (const a of (r1.data.data || [])) {
+          const equity = parseFloat(a.equity || a.cashBalance || a.availableBalance || 0);
+          const available = parseFloat(a.availableBalance || 0);
+          total += equity;
+          free += available;
+          margin += parseFloat(a.positionMargin || 0);
+          orders += parseFloat(a.frozenBalance || 0);
+          pnl += parseFloat(a.unrealized || a.unrealisedPnl || 0);
+          if (a.currency === 'USDT') totalUsdt += equity;
+          if (a.currency === 'USDC') totalUsdc += equity;
+        }
+      }
+      const ts2 = Date.now().toString();
+      const q2 = `timestamp=${ts2}`;
+      const sig2 = await hmac256(mexcSec, q2);
+      const r2 = await safeFetch(`https://api.mexc.com/api/v3/account?${q2}&signature=${sig2}`, { headers: { 'X-MEXC-APIKEY': mexcKey } });
+      if (r2.ok && r2.data?.balances) {
+        for (const b of r2.data.balances) {
+          if (b.asset !== 'USDT' && b.asset !== 'USDC') continue;
+          const spotFree = parseFloat(b.free || 0);
+          const spotLocked = parseFloat(b.locked || 0);
+          const spotTotal = spotFree + spotLocked;
+          total += spotTotal;
+          free += spotFree;
+          orders += spotLocked;
+          if (b.asset === 'USDT') totalUsdt += spotTotal;
+          if (b.asset === 'USDC') totalUsdc += spotTotal;
+        }
+      }
+      balances.MEXC = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
+      if (!r1.ok && !r2.ok) errors.MEXC = r1.data?.message || `${r1.status}`;
+    } catch(e) { errors.MEXC = e.message; }
+  }
+
+  const kucoinBackendUrl = (env.KUCOIN_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
+  if (kucoinBackendUrl) {
+    try {
+      const r = await safeFetch(`${kucoinBackendUrl}/kucoin-balance`);
+      if (r.ok && r.data && !r.data.error) balances.KUCOIN = normalizeBalance(r.data);
+      else errors.KUCOIN = `Oracle: ${r.data?.error || r.raw || r.status}`;
+    } catch(e) { errors.KUCOIN = `Oracle: ${e.message}`; }
+  }
+
+  const ibkrBackendUrl = (env.IBKR_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
+  if (ibkrBackendUrl) {
+    try {
+      const r = await safeFetch(`${ibkrBackendUrl}/ibkr-balance`);
+      if (r.ok && r.data && !r.data.error) balances.IBKR = normalizeBalance(r.data);
+      else errors.IBKR = `Oracle: ${r.data?.error || r.raw || r.status}`;
+    } catch(e) { errors.IBKR = `Oracle: ${e.message}`; }
+  }
+
+  let totalUsdt = 0, totalUsdc = 0;
+  for (const b of Object.values(balances)) {
+    totalUsdt += b.USDT || 0;
+    totalUsdc += b.USDC || 0;
+  }
+
+  const totals = {
+    USDT: Math.round(totalUsdt * 100) / 100,
+    USDC: Math.round(totalUsdc * 100) / 100,
+    total: Math.round((totalUsdt + totalUsdc) * 100) / 100,
+  };
+
+  return {
+    balances,
+    totals,
+    liquidity: totals,
+    errors,
+  };
+}
+
+const WORKER_VERSION = '2026-06-13-signal-vision-v1';
+const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
 async function hmac256(secret, message) {
@@ -53,19 +232,12 @@ async function hmac256(secret, message) {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-async function hmac256Base64(secret, message) {
-  const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)));
-}
-
 // ── Safe fetch (returns parsed JSON or null) ─────────────────────────────────
 async function safeFetch(url, opts = {}) {
   try {
-    const r    = await fetch(url, { ...opts, signal: AbortSignal.timeout(15000) });
+    const timeoutMs = Number(opts.timeoutMs || 15000);
+    const { timeoutMs: _timeoutMs, ...fetchOpts } = opts;
+    const r    = await fetch(url, { ...fetchOpts, signal: AbortSignal.timeout(timeoutMs) });
     const text = await r.text();
     try {
       return { ok: r.ok, status: r.status, data: JSON.parse(text) };
@@ -75,6 +247,222 @@ async function safeFetch(url, opts = {}) {
   } catch(e) {
     return { ok: false, status: 0, data: null, raw: e.message };
   }
+}
+
+function telegramSecret(env) {
+  return (env.TELEGRAM_WEBHOOK_SECRET || env.TELEGRAM_INBOX_SECRET || '').trim();
+}
+
+function telegramSecretOk(request, url, env) {
+  const secret = telegramSecret(env);
+  if (!secret) return false;
+  const got = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+    || url.searchParams.get('secret')
+    || '';
+  return got === secret;
+}
+
+async function loadTelegramSignals(env) {
+  if (!env.MAUEX_CACHE) return [];
+  try {
+    const raw = await env.MAUEX_CACHE.get(TELEGRAM_KV_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+async function saveTelegramSignals(env, signals) {
+  if (!env.MAUEX_CACHE) throw new Error('MAUEX_CACHE KV no configurado');
+  const compact = signals.slice(0, 250).map((sig, index) => {
+    if (index < 8) return sig;
+    const { imageBase64, ...rest } = sig || {};
+    return rest;
+  });
+  await env.MAUEX_CACHE.put(TELEGRAM_KV_KEY, JSON.stringify(compact));
+}
+
+function telegramSourceName(msg = {}) {
+  const fwd = msg.forward_origin || {};
+  return msg.mauex_source_name
+    || msg.mauexSourceName
+    || fwd.chat?.title
+    || msg.forward_from_chat?.title
+    || msg.chat?.title
+    || msg.chat?.username
+    || msg.from?.username
+    || msg.from?.first_name
+    || 'Telegram';
+}
+
+function telegramOriginalDate(msg = {}) {
+  const fwd = msg.forward_origin || {};
+  const forwardedTs = Number(fwd.date || msg.forward_date || 0) || 0;
+  const readerTs = msg.mauex_source === 'telegram-user-reader' ? (Number(msg.mauex_original_date || msg.date || 0) || 0) : 0;
+  const ts = forwardedTs || readerTs;
+  return ts ? new Date(ts * 1000).toISOString() : '';
+}
+
+function normalizeTelegramSignal(update = {}) {
+  const msg = update.channel_post || update.edited_channel_post || update.message || update.edited_message || {};
+  const raw = String(msg.text || msg.caption || '').trim();
+  if (!raw) return null;
+  const chatId = msg.chat?.id || msg.forward_from_chat?.id || msg.forward_origin?.chat?.id || 'telegram';
+  const messageId = msg.message_id || update.update_id || Date.now();
+  const sourceName = telegramSourceName(msg);
+  const photo = Array.isArray(msg.photo) && msg.photo.length ? msg.photo[msg.photo.length - 1] : null;
+  const originalDate = telegramOriginalDate(msg);
+  const messageDate = msg.date ? new Date(Number(msg.date) * 1000).toISOString() : '';
+  return {
+    id: `${chatId}:${messageId}`,
+    telegramId: `${chatId}:${messageId}`,
+    raw,
+    source: 'telegram',
+    sourceName,
+    receivedAt: new Date().toISOString(),
+    date: originalDate,
+    signalTime: originalDate,
+    originalMessageDate: originalDate,
+    originalDateMissing: !originalDate,
+    messageDate,
+    hasImage: !!msg.mauex_has_image || !!photo || !!msg.document || !!msg.animation,
+    imageFileId: photo?.file_id || msg.document?.file_id || '',
+    imageWidth: Number(photo?.width || 0),
+    imageHeight: Number(photo?.height || 0),
+    imageMimeType: msg.mauex_image_mime || '',
+    imageBytes: Number(msg.mauex_image_bytes || 0),
+    imageBase64: msg.mauex_image_base64 || '',
+    imageError: msg.mauex_image_error || '',
+    imageSkipped: !!msg.mauex_image_skipped,
+    providerSignalId: msg.mauex_provider_signal_id || '',
+    messageKind: msg.mauex_message_kind || '',
+  };
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function enrichTelegramImageFromBot(env, signal) {
+  if (!signal || signal.imageBase64 || !signal.imageFileId) return signal;
+  const token = (env.TELEGRAM_BOT_TOKEN || '').trim();
+  if (!token) return signal;
+  const maxBytes = Number(env.TELEGRAM_IMAGE_MAX_BYTES || 700000);
+  try {
+    const meta = await safeFetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(signal.imageFileId)}`, {
+      timeoutMs: 15000,
+    });
+    const filePath = meta.data?.result?.file_path || '';
+    const fileSize = Number(meta.data?.result?.file_size || 0);
+    if (!meta.ok || !filePath) {
+      signal.imageError = `Telegram getFile: ${meta.data?.description || meta.raw || meta.status}`;
+      return signal;
+    }
+    if (fileSize && fileSize > maxBytes) {
+      signal.imageSkipped = true;
+      signal.imageBytes = fileSize;
+      return signal;
+    }
+    const r = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`, {
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) {
+      signal.imageError = `Telegram file HTTP ${r.status}`;
+      return signal;
+    }
+    const mime = r.headers.get('content-type') || '';
+    const buffer = await r.arrayBuffer();
+    if (buffer.byteLength > maxBytes) {
+      signal.imageSkipped = true;
+      signal.imageBytes = buffer.byteLength;
+      signal.imageMimeType = mime;
+      return signal;
+    }
+    if (!/^image\//i.test(mime)) {
+      signal.imageError = `Telegram file MIME ${mime || 'desconocido'}`;
+      signal.imageMimeType = mime;
+      return signal;
+    }
+    signal.imageBase64 = arrayBufferToBase64(buffer);
+    signal.imageMimeType = mime;
+    signal.imageBytes = buffer.byteLength;
+    signal.hasImage = true;
+  } catch(e) {
+    signal.imageError = `Telegram image: ${e.message}`;
+  }
+  return signal;
+}
+
+function signalAiBackendUrl(env) {
+  return (env.SIGNAL_AI_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim().replace(/\/+$/, '');
+}
+
+function fallbackSignalAi(raw = '', sourceName = '') {
+  const text = String(raw || '');
+  const ticker = (text.match(/(?:COIN|SYMBOL|PAIR)\s*[:=]?\s*[$#]?([A-Z0-9]{2,15})/i)
+    || text.match(/[$#]([A-Z0-9]{2,15})\s*(?:\/|-)?\s*(?:USDT|USDC|USD|PERP)?/i)
+    || [])[1] || '';
+  const dirMatch = text.match(/\b(LONG|SHORT)\b/i);
+  const numsFrom = (label) => {
+    const re = new RegExp(`(?:${label})\\s*[:=]?\\s*([^\\n]+)`, 'i');
+    const line = text.match(re)?.[1] || '';
+    return (line.match(/(?:\d+\.\d+|\.\d+|\d+)/g) || [])
+      .map(x => Number(x.startsWith('.') ? '0' + x : x))
+      .filter(Number.isFinite);
+  };
+  const entry = numsFrom('ENTRY|ENTRADA|CMP|CURRENT MARKET');
+  const sl = numsFrom('STOP LOSS|STOPLOSS|SL');
+  const targets = numsFrom('TARGETS?|TAKE PROFIT|TP');
+  return {
+    model: 'worker-fallback',
+    usedImage: false,
+    interpretation: {
+      ticker,
+      direction: dirMatch ? dirMatch[1].toLowerCase() : '',
+      exchange: /kucoin/i.test(text) ? 'KUCOIN' : 'BINANCE',
+      leverage: Number((text.match(/(?:\d+\s*-\s*)?(\d{1,3})\s*x/i) || [])[1] || 0) || undefined,
+      entryRange: entry.slice(0, 2),
+      entry: entry[0] || undefined,
+      sl: sl[0] || undefined,
+      targets,
+      providerSignalId: (text.match(/(?:signal\s*id|signal)\s*[:#]?\s*#?([A-Z]?\d{2,8})/i) || [])[1] || '',
+      confidence: 42,
+      warnings: ['AI local no disponible; lectura de respaldo del Worker'],
+      notes: `Lectura minima sin vision para ${sourceName || 'Telegram'}.`,
+    },
+  };
+}
+
+async function interpretTelegramSignalAi(env, payload = {}) {
+  const backendUrl = signalAiBackendUrl(env);
+  if (!backendUrl) {
+    return { ...fallbackSignalAi(payload.raw, payload.sourceName), warning: 'SIGNAL_AI_BACKEND_URL/BINANCE_BACKEND_URL no configurado' };
+  }
+  const body = {
+    raw: payload.raw || '',
+    sourceName: payload.sourceName || '',
+    imageBase64: payload.imageBase64 || '',
+    imageMimeType: payload.imageMimeType || '',
+    imageFileId: payload.photoFileId || payload.imageFileId || '',
+  };
+  const r = await safeFetch(`${backendUrl}/signal-vision-ai`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    timeoutMs: 55000,
+  });
+  if (r.ok && r.data) return r.data;
+  return {
+    ...fallbackSignalAi(payload.raw, payload.sourceName),
+    warning: `Oracle AI local no disponible: ${r.data?.error || r.raw || r.status}`,
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -363,91 +751,6 @@ async function syncMEXC(env) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-async function syncKuCoin(env) {
-  const key = (env.KUCOIN_KEY || '').trim();
-  const sec = (env.KUCOIN_SECRET || '').trim();
-  const pass = (env.KUCOIN_PASSPHRASE || '').trim();
-  if (!key || !sec || !pass) return { positions: [], orders: [], error: 'No keys' };
-
-  const positions = [];
-  const orders = [];
-  const hdr = async (method, path, body = '') => {
-    const ts = Date.now().toString();
-    return {
-      'KC-API-KEY': key,
-      'KC-API-SIGN': await hmac256Base64(sec, ts + method + path + body),
-      'KC-API-TIMESTAMP': ts,
-      'KC-API-PASSPHRASE': await hmac256Base64(sec, pass),
-      'KC-API-KEY-VERSION': '2',
-      'Content-Type': 'application/json',
-    };
-  };
-
-  try {
-    const posPath = '/api/v1/positions';
-    const r1 = await safeFetch(`https://api-futures.kucoin.com${posPath}`, { headers: await hdr('GET', posPath) });
-    if (r1.ok && r1.data?.code === '200000') {
-      for (const p of (r1.data.data || [])) {
-        const qty = Number(p.currentQty ?? p.quantity ?? 0) || 0;
-        if (!qty) continue;
-        const symbol = String(p.symbol || '');
-        const entry = Number(p.avgEntryPrice ?? p.openAvgPrice ?? p.avgPrice ?? 0) || 0;
-        const mark = Number(p.markPrice ?? p.currentMarkPrice ?? entry) || entry;
-        const lev = Number(p.realLeverage ?? p.leverage ?? 1) || 1;
-        const margin = Math.abs(Number(p.posMargin ?? p.margin ?? p.maintMargin ?? 0) || 0);
-        const notional = Math.abs(Number(p.currentCost ?? p.posCost ?? p.positionValue ?? 0) || (qty * (mark || entry)));
-        const pnl = Number(p.unrealisedPnl ?? p.unrealisedPNL ?? 0) || 0;
-        const dir = qty > 0 ? 'long' : 'short';
-        positions.push({
-          exchange: 'KUCOIN', type: 'futures',
-          ticker: symbol.replace(/USDTM$/,''),
-          symbol, dir, entry, mark,
-          pnl: Math.round(pnl * 100) / 100,
-          pnlPct: margin > 0 ? Math.round(pnl / margin * 10000) / 100 : 0,
-          posSize: Math.round(notional * 100) / 100,
-          margin: Math.round((margin || notional / lev) * 100) / 100,
-          leverage: lev,
-          liquidation: Number(p.liquidationPrice ?? p.liqPrice ?? 0) || null,
-          exchangeId: `kucoin-pos-${symbol}-${dir}`,
-          raw: p,
-        });
-      }
-    } else if (r1.data?.code && r1.data.code !== '200000') {
-      return { positions, orders, error: r1.data.msg || r1.data.message || `KuCoin ${r1.data.code}` };
-    }
-
-    const ordPath = '/api/v1/orders?status=active';
-    const r2 = await safeFetch(`https://api-futures.kucoin.com${ordPath}`, { headers: await hdr('GET', ordPath) });
-    if (r2.ok && r2.data?.code === '200000') {
-      const list = r2.data.data?.items || r2.data.data || [];
-      for (const o of list) {
-        const symbol = String(o.symbol || '');
-        const price = Number(o.price ?? o.stopPrice ?? 0) || 0;
-        const qty = Number(o.size ?? o.quantity ?? 0) || 0;
-        const lev = Number(o.leverage ?? 1) || 1;
-        const value = Number(o.value ?? o.orderValue ?? 0) || (price * qty);
-        orders.push({
-          exchange: 'KUCOIN', type: o.type || 'limit',
-          ticker: symbol.replace(/USDTM$/,''),
-          symbol,
-          dir: String(o.side || '').toLowerCase() === 'sell' ? 'short' : 'long',
-          price,
-          origQty: qty,
-          size: Math.abs(value),
-          margin: lev > 1 ? Math.abs(value) / lev : Math.abs(value),
-          leverage: lev,
-          exchangeId: `kucoin-ord-${o.id || o.orderId || symbol + '-' + price}`,
-          raw: o,
-        });
-      }
-    }
-
-    return { positions, orders, error: null };
-  } catch(e) {
-    return { positions, orders, error: e.message };
-  }
-}
-
 // BALANCES — free USDT/USDC not locked in positions or orders
 // ═════════════════════════════════════════════════════════════════════════════
 function normalizeBalance(raw = {}) {
@@ -639,84 +942,22 @@ async function fetchBalances(env) {
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  // ── KuCoin ─────────────────────────────────────────────────────────────
-  const kucoinKey  = (env.KUCOIN_KEY || '').trim();
-  const kucoinSec  = (env.KUCOIN_SECRET || '').trim();
-  const kucoinPass = (env.KUCOIN_PASSPHRASE || '').trim();
-  if (kucoinKey && kucoinSec && kucoinPass) {
-    try {
-      const kucoinHeaders = async (method, path, body = '') => {
-        const ts = Date.now().toString();
-        return {
-          'KC-API-KEY': kucoinKey,
-          'KC-API-SIGN': await hmac256Base64(kucoinSec, ts + method + path + body),
-          'KC-API-TIMESTAMP': ts,
-          'KC-API-PASSPHRASE': await hmac256Base64(kucoinSec, kucoinPass),
-          'KC-API-KEY-VERSION': '2',
-          'Content-Type': 'application/json',
-        };
-      };
-
-      let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, usdt = 0, usdc = 0;
-
-      const futuresPath = '/api/v1/account-overview?currency=USDT';
-      const rF = await safeFetch(
-        `https://api-futures.kucoin.com${futuresPath}`,
-        { headers: await kucoinHeaders('GET', futuresPath) }
-      );
-      if (rF.ok && rF.data?.code === '200000') {
-        const d = rF.data.data || {};
-        const fTotal = parseFloat(d.accountEquity ?? d.marginBalance ?? 0) || 0;
-        const fFree = parseFloat(d.availableBalance ?? 0) || 0;
-        const fMargin = parseFloat(d.positionMargin ?? d.marginUsed ?? 0) || 0;
-        const fOrders = parseFloat(d.orderMargin ?? d.frozenFunds ?? 0) || 0;
-        const fPnl = parseFloat(d.unrealisedPNL ?? d.unrealisedPnl ?? 0) || 0;
-        total += fTotal;
-        free += fFree;
-        margin += fMargin;
-        orders += fOrders;
-        pnl += fPnl;
-        usdt += fFree;
-      }
-
-      for (const ccy of ['USDT', 'USDC']) {
-        const spotPath = `/api/v1/accounts?currency=${ccy}`;
-        const rS = await safeFetch(
-          `https://api.kucoin.com${spotPath}`,
-          { headers: await kucoinHeaders('GET', spotPath) }
-        );
-        if (rS.ok && rS.data?.code === '200000') {
-          for (const acc of (rS.data.data || [])) {
-            const bal = parseFloat(acc.balance || 0) || 0;
-            const avail = parseFloat(acc.available || 0) || 0;
-            const hold = parseFloat(acc.holds || 0) || 0;
-            total += bal;
-            free += avail;
-            orders += hold;
-            if (ccy === 'USDT') usdt += avail;
-            if (ccy === 'USDC') usdc += avail;
-          }
-        }
-      }
-
-      balances.KUCOIN = normalizeBalance({ total, free, margin, orders, pnl, USDT: usdt, USDC: usdc });
-      if (!rF.ok && !balances.KUCOIN.total) errors.KUCOIN = rF.data?.msg || `${rF.status}`;
-    } catch(e) { errors.KUCOIN = e.message; }
-  }
-
   let totalUsdt = 0, totalUsdc = 0;
   for (const b of Object.values(balances)) {
     totalUsdt += b.USDT || 0;
     totalUsdc += b.USDC || 0;
   }
 
+  const totals = {
+    USDT: Math.round(totalUsdt * 100) / 100,
+    USDC: Math.round(totalUsdc * 100) / 100,
+    total: Math.round((totalUsdt + totalUsdc) * 100) / 100,
+  };
+
   return {
     balances,  // per-exchange breakdown
-    totals: {
-      USDT: Math.round(totalUsdt * 100) / 100,
-      USDC: Math.round(totalUsdc * 100) / 100,
-      total: Math.round((totalUsdt + totalUsdc) * 100) / 100,
-    },
+    totals,
+    liquidity: totals,
     errors,
   };
 }
@@ -726,58 +967,37 @@ async function fetchBalances(env) {
 // ═════════════════════════════════════════════════════════════════════════════
 async function syncAll(env) {
   let balanceData = { balances: {}, totals: { USDT: 0, USDC: 0, total: 0 }, errors: {} };
-  try { balanceData = await fetchBalances(env); } catch(e) {}
-  const results = await Promise.all([
-    syncBinance(env).then(r => ['BINANCE', r]).catch(e => ['BINANCE', { positions: [], orders: [], error: e.message }]),
-    syncBybit(env).then(r => ['BYBIT', r]).catch(e => ['BYBIT', { positions: [], orders: [], error: e.message }]),
-    syncOKX(env).then(r => ['OKX', r]).catch(e => ['OKX', { positions: [], orders: [], error: e.message }]),
-    syncMEXC(env).then(r => ['MEXC', r]).catch(e => ['MEXC', { positions: [], orders: [], error: e.message }]),
-    syncKuCoin(env).then(r => ['KUCOIN', r]).catch(e => ['KUCOIN', { positions: [], orders: [], error: e.message }]),
-  ]);
-
-  const positions = [];
-  const orders = [];
-  const errors = { ...(balanceData.errors || {}) };
-  for (const [ex, data] of results) {
-    if (Array.isArray(data?.positions)) positions.push(...data.positions);
-    if (Array.isArray(data?.orders)) orders.push(...data.orders);
-    if (data?.error && !/no keys|not set/i.test(String(data.error))) errors[ex] = data.error;
-  }
-
-  const totalPnl = positions.reduce((sum, p) => sum + (Number(p.pnl) || 0), 0);
-  const marginInUse = positions.reduce((sum, p) => sum + (Number(p.margin) || 0), 0);
+  try { balanceData = await fetchBalancesV2(env); } catch(e) {}
 
   const payload = {
-    positions,
-    orders,
-    errors,
-    totalPnl: Math.round(totalPnl * 100) / 100,
-    marginInUse: Math.round(marginInUse * 100) / 100,
+    positions: [],
+    orders: [],
+    errors: balanceData.errors,
+    totalPnl: 0,
+    marginInUse: 0,
     lastSync:     new Date().toISOString(),
-    count: { positions: positions.length, orders: orders.length },
+    cacheSavedAt: null,
+    count: { positions: 0, orders: 0 },
     balances:     balanceData.balances,
     liquidity:    balanceData.totals,
+    totals:       balanceData.totals,
     balanceErrors: balanceData.errors,
   };
 
   // Save to KV — only write if data changed (saves KV write quota)
   if (env.MAUEX_CACHE) {
     const prev = await env.MAUEX_CACHE.get('summary');
-    const newStr = JSON.stringify(payload);
-    // Compare position count and total PnL to detect changes
-    let changed = true;
+    let shouldWrite = true;
     if (prev) {
       try {
         const prevData = JSON.parse(prev);
-        changed = prevData.count?.positions !== payload.count?.positions ||
-                  prevData.count?.orders    !== payload.count?.orders    ||
-                  Math.abs((prevData.totalPnl||0) - (payload.totalPnl||0)) > 0.5 ||
-                  JSON.stringify(prevData.balances || {}) !== JSON.stringify(payload.balances || {}) ||
-                  JSON.stringify(prevData.balanceErrors || {}) !== JSON.stringify(payload.balanceErrors || {}) ||
-                  JSON.stringify(prevData.errors || {}) !== JSON.stringify(payload.errors || {});
+        const lastSaved = Date.parse(prevData.cacheSavedAt || prevData.lastSync || 0);
+        shouldWrite = !Number.isFinite(lastSaved) || Date.now() - lastSaved >= 5 * 60 * 1000;
       } catch(e) {}
     }
-    if (changed) {
+    if (shouldWrite) {
+      payload.cacheSavedAt = new Date().toISOString();
+      const newStr = JSON.stringify(payload);
       await env.MAUEX_CACHE.put('summary', newStr, { expirationTtl: 600 });
     }
   }
@@ -805,26 +1025,104 @@ export default {
     );
 
     // ── /health ──────────────────────────────────────────────────────────────
+    if (url.pathname === '/telegram-webhook') {
+      if (!telegramSecretOk(request, url, env)) {
+        return json({ ok: false, error: 'Forbidden' }, 403);
+      }
+      if (!env.MAUEX_CACHE) {
+        return json({ ok: false, error: 'MAUEX_CACHE KV no configurado' }, 500);
+      }
+      let update;
+      try {
+        update = await request.json();
+      } catch(e) {
+        return json({ ok: false, error: 'JSON invalido' }, 400);
+      }
+      const signal = await enrichTelegramImageFromBot(env, normalizeTelegramSignal(update));
+      if (!signal) return json({ ok: true, saved: false, reason: 'sin texto' });
+
+      const signals = await loadTelegramSignals(env);
+      const ix = signals.findIndex(x => (x.telegramId || x.id) === signal.telegramId);
+      if (ix >= 0) {
+        signals[ix] = {
+          ...signals[ix],
+          ...signal,
+          receivedAt: signals[ix].receivedAt || signal.receivedAt,
+          date: signals[ix].date || signal.date,
+          signalTime: signals[ix].signalTime || signal.signalTime,
+          originalMessageDate: signals[ix].originalMessageDate || signal.originalMessageDate,
+          originalDateMissing: signals[ix].originalDateMissing && signal.originalDateMissing,
+        };
+      } else {
+        signals.unshift(signal);
+      }
+      try {
+        await saveTelegramSignals(env, signals);
+      } catch(e) {
+        return json({ ok: false, error: 'KV write failed: ' + e.message }, 503);
+      }
+      return json({ ok: true, saved: ix < 0, updated: ix >= 0, total: signals.length, signal: { id: signal.id, sourceName: signal.sourceName } });
+    }
+
+    if (url.pathname === '/telegram-signals') {
+      if (!telegramSecretOk(request, url, env)) {
+        return json({ ok: false, error: 'Forbidden' }, 403);
+      }
+      const signals = await loadTelegramSignals(env);
+      return json({ ok: true, signals, total: signals.length });
+    }
+
+    if (url.pathname === '/telegram-signal-ai') {
+      if (!telegramSecretOk(request, url, env)) {
+        return json({ ok: false, error: 'Forbidden' }, 403);
+      }
+      let payload = {};
+      try {
+        payload = await request.json();
+      } catch(e) {
+        return json({ ok: false, error: 'JSON invalido' }, 400);
+      }
+      const result = await interpretTelegramSignalAi(env, payload);
+      return json(result);
+    }
+
     if (url.pathname === '/health') {
       let cached = null;
       if (env.MAUEX_CACHE) {
         const raw = await env.MAUEX_CACHE.get('summary');
         if (raw) cached = JSON.parse(raw);
       }
+      const telegramSignals = await loadTelegramSignals(env);
       return json({
         status:    'ok',
+        version:   WORKER_VERSION,
         lastSync:  cached?.lastSync || null,
         positions: cached?.count?.positions || 0,
         orders:    cached?.count?.orders || 0,
         errors:    cached?.errors || {},
         hasKV:     !!env.MAUEX_CACHE,
         keys: {
-          binance: !!env.RAILWAY_URL,
+          binance: (!!env.BINANCE_KEY && !!env.BINANCE_SECRET) || !!env.BINANCE_BACKEND_URL || !!env.RAILWAY_URL,
+          binanceDirect: !!env.BINANCE_KEY && !!env.BINANCE_SECRET,
+          binanceBackend: !!env.BINANCE_BACKEND_URL,
+          railway: !!env.RAILWAY_URL,
           bybit:   !!env.BYBIT_KEY,
           okx:     !!env.OKX_KEY,
           mexc:    !!env.MEXC_KEY,
-          kucoin:  !!env.KUCOIN_KEY,
+          kucoin:  !!env.KUCOIN_KEY || !!env.KUCOIN_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
+          kucoinBackend: !!env.KUCOIN_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
+          ibkr: !!env.IBKR_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
+          ibkrBackend: !!env.IBKR_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
+          telegram: !!telegramSecret(env),
+          telegramBot: !!env.TELEGRAM_BOT_TOKEN,
+          telegramInbox: !!env.MAUEX_CACHE,
+          signalAiBackend: !!signalAiBackendUrl(env),
         },
+        signalAiBackendUrl: signalAiBackendUrl(env) || null,
+        telegramSignals: telegramSignals.length,
+        binanceBackendUrl: env.BINANCE_BACKEND_URL || null,
+        kucoinBackendUrl: env.KUCOIN_BACKEND_URL || env.BINANCE_BACKEND_URL || null,
+        ibkrBackendUrl: env.IBKR_BACKEND_URL || env.BINANCE_BACKEND_URL || null,
         railwayUrl: env.RAILWAY_URL || null
       });
     }
@@ -839,13 +1137,13 @@ export default {
         if (raw) {
           try {
             const d = JSON.parse(raw);
-            if (d.liquidity) cached = { balances: d.balances, liquidity: d.liquidity, errors: d.balanceErrors || {} };
+            if (d.liquidity || d.totals) cached = { balances: d.balances || {}, liquidity: d.liquidity || d.totals, totals: d.totals || d.liquidity, errors: d.balanceErrors || d.errors || {} };
           } catch(e) {}
         }
       }
       if (cached) return json(cached);
       // No cache — fetch live
-      const data = await fetchBalances(env);
+      const data = await fetchBalancesV2(env);
       return json(data);
     }
 
@@ -1144,13 +1442,12 @@ export default {
     const targetUrl = url.searchParams.get('url');
     if (targetUrl) {
       const allowed = [
-        'api.binance.com', 'fapi.binance.com', 'data-api.binance.vision',
-        'api.bybit.com',
-        'www.okx.com',
+        'api.binance.com', 'fapi.binance.com',
         'api.kucoin.com', 'api-futures.kucoin.com',
         'query1.finance.yahoo.com', 'query2.finance.yahoo.com',
         'api.alternative.me',
-        'api.mexc.com', 'contract.mexc.com',
+        'contract.mexc.com', 'api.mexc.com',
+        'api.kraken.com', 'api.coingecko.com',
       ];
       let targetDomain;
       try { targetDomain = new URL(targetUrl).hostname; } catch(e) {
@@ -1164,9 +1461,7 @@ export default {
         if (['host','connection','cf-connecting-ip','cf-ray','cf-visitor','cf-ipcountry'].includes(k.toLowerCase())) continue;
         headers[k] = v;
       }
-      const proxyInit = { method: request.method, headers };
-      if (!['GET', 'HEAD'].includes(request.method)) proxyInit.body = await request.arrayBuffer();
-      const r = await fetch(targetUrl, proxyInit);
+      const r = await fetch(targetUrl, { method: request.method, headers });
       const body = await r.text();
       return new Response(body, {
         status: r.status,
@@ -1174,7 +1469,7 @@ export default {
       });
     }
 
-    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip'] }, 404);
+    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/telegram-webhook','/telegram-signals','/telegram-signal-ai'] }, 404);
   },
 
   // ── Cron trigger — runs every minute ─────────────────────────────────────
@@ -1182,10 +1477,9 @@ export default {
     console.log('Cron sync starting...');
     const data = await syncAll(env);
     console.log(`Cron done: ${data.count.positions} positions, ${data.count.orders} orders`);
-    if (data.errors.BINANCE || data.errors.binance) console.error('Binance:', data.errors.BINANCE || data.errors.binance);
-    if (data.errors.BYBIT || data.errors.bybit)     console.error('Bybit:',   data.errors.BYBIT || data.errors.bybit);
-    if (data.errors.OKX || data.errors.okx)         console.error('OKX:',     data.errors.OKX || data.errors.okx);
-    if (data.errors.MEXC || data.errors.mexc)       console.error('MEXC:',    data.errors.MEXC || data.errors.mexc);
-    if (data.errors.KUCOIN || data.errors.kucoin)   console.error('KuCoin:',  data.errors.KUCOIN || data.errors.kucoin);
+    if (data.errors.binance) console.error('Binance:', data.errors.binance);
+    if (data.errors.bybit)   console.error('Bybit:',   data.errors.bybit);
+    if (data.errors.okx)     console.error('OKX:',     data.errors.okx);
+    if (data.errors.mexc)    console.error('MEXC:',    data.errors.mexc);
   },
 };

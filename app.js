@@ -3114,11 +3114,25 @@ function applyManualCapitalOverlay(data) {
   };
 }
 
+function normalizeDashboardLiquidityData(data) {
+  if (!data) return data;
+  const errors = data.errors || data.balanceErrors || {};
+  const normalized = {
+    ...data,
+    balances: data.balances || {},
+    errors,
+    balanceErrors: errors,
+    liquidity: data.liquidity || data.totals || {},
+    totals: data.totals || data.liquidity || {},
+  };
+  return applyManualCapitalOverlay(normalized);
+}
+
 async function fetchAndRenderLiquidity() {
   const el = document.getElementById('dashLiquidity');
   if (!el) return;
 
-  let data = _liquidityCache;
+  let data = normalizeDashboardLiquidityData(_liquidityCache);
 
   if (!data && PROXY_URL) {
     try {
@@ -3127,12 +3141,10 @@ async function fetchAndRenderLiquidity() {
       const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
-        data = d;
-        if (d.balances) {
-          _liquidityCache = d;
-          window._liquidityCache = d;
-          if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
-        }
+        data = normalizeDashboardLiquidityData(d);
+        _liquidityCache = data;
+        window._liquidityCache = data;
+        if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
       }
     } catch(e) {}
   }
@@ -3258,9 +3270,10 @@ async function fetchAndRenderLiquidity() {
 
 // Called after each sync to update liquidity display
 window._updateLiquidityCache = (data) => {
-  if (data?.balances) {
-    _liquidityCache = data;
-    window._liquidityCache = data;
+  if (data) {
+    const normalized = normalizeDashboardLiquidityData(data);
+    _liquidityCache = normalized;
+    window._liquidityCache = normalized;
     if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
     window.syncApiModalStatus?.();
     updateCalcExchangeCapitalButtons?.(calcRequiredMarginEstimate?.() || 0);
@@ -3787,11 +3800,10 @@ function renderDashboard() {
   // If no liquidity cache yet, fetch balance directly and draw pie
   if (!_liquidityCache && PROXY_URL) {
     fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
-      if (d.balances) {
-        _liquidityCache = d;
-        window._liquidityCache = d;
-        if (window._drawCapitalPie) window._drawCapitalPie();
-      }
+      const normalized = normalizeDashboardLiquidityData(d);
+      _liquidityCache = normalized;
+      window._liquidityCache = normalized;
+      if (window._drawCapitalPie) window._drawCapitalPie();
     }).catch(()=>{});
   }
 
@@ -9390,12 +9402,13 @@ window.syncAllExchanges = async () => {
       lastSyncTime             = new Date();
 
       // Cache liquidity data for dashboard
-      if (data.balances) {
-        _liquidityCache = data;
-        window._liquidityCache = data;
+      if (data.balances || data.liquidity || data.totals) {
+        const normalizedLiquidity = normalizeDashboardLiquidityData(data);
+        _liquidityCache = normalizedLiquidity;
+        window._liquidityCache = normalizedLiquidity;
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 200);
       }
-      if (data.liquidity) window._updateLiquidityCache(data);
+      if (data.liquidity || data.totals || data.balances) window._updateLiquidityCache(data);
 
       try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }

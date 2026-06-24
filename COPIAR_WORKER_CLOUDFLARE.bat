@@ -1,8 +1,7 @@
 @echo off
 setlocal
 
-set "WORKER_FILE=C:\Users\mauap\Downloads\MauEX\WORKER_CLOUDFLARE_MAUEX_SIGNAL_VISION_2026-06-13.js"
-if not exist "%WORKER_FILE%" set "WORKER_FILE=C:\Users\mauap\Downloads\MauEX\worker.js"
+set "WORKER_FILE=C:\Users\mauap\Downloads\MauEX\worker.js"
 
 echo.
 echo ============================================
