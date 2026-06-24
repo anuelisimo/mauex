@@ -65,7 +65,7 @@ node --check worker.js
 if errorlevel 1 goto syntax_error
 
 echo 5/7 Preparando cambios...
-git add -- app.js firebase.js index.html worker.js COPIAR_WORKER_CLOUDFLARE.bat SUBIR_FIX_SYNC_PRECIOS_CAPITAL_MAUEX.bat
+git add -- app.js firebase.js index.html worker.js COPIAR_WORKER_CLOUDFLARE.bat SUBIR_FIX_SYNC_PRECIOS_CAPITAL_MAUEX.bat DIAGNOSTICAR_SYNC_PRECIOS_CAPITAL_MAUEX.bat
 if errorlevel 1 (
   echo.
   echo No pude preparar los archivos.

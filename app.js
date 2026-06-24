@@ -306,7 +306,7 @@ window.showPage = page => {
     setTimeout(()=>{ if(document.getElementById('cs1W')?.innerHTML==='') loadCharts(); }, 200);
   }
   if (page === 'positions' || page === 'map') {
-    syncAllExchanges();
+    syncAllExchanges({ force:false, quiet:true });
   }
 
   // When entering positions, do immediate REST price fetch for any missing prices
@@ -2307,7 +2307,12 @@ function chartSymbolForExchange(raw, source, marketKind='futures') {
     .replace(/[-_]?USDT$/,'')
     .replace(/USDT$/,'');
   if (source === 'okx') return clean.includes('-') ? clean : `${base}-USDT${marketKind === 'futures' ? '-SWAP' : ''}`;
-  if (source === 'kucoin') return clean.includes('-') || clean.endsWith('USDTM') ? clean : (marketKind === 'futures' ? `${base}USDTM` : `${base}-USDT`);
+  if (source === 'kucoin') {
+    const kuBase = base === 'BTC' ? 'XBT' : base;
+    if (clean.includes('-')) return clean;
+    if (clean.endsWith('USDTM')) return clean.replace(/^BTC/, 'XBT');
+    return marketKind === 'futures' ? `${kuBase}USDTM` : `${base}-USDT`;
+  }
   if (source === 'mexc') return clean.includes('_') || clean.endsWith('USDT') ? clean : `${base}${marketKind === 'futures' ? '_USDT' : 'USDT'}`;
   if (source === 'bybit' || source === 'binance') return clean.endsWith('USDT') ? clean : `${base}USDT`;
   return clean;
@@ -3138,7 +3143,7 @@ async function fetchAndRenderLiquidity() {
     try {
       el.style.display = 'block';
       el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
-      const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`${PROXY_URL}/balance`, { cache: 'default' });
       if (r.ok) {
         const d = await r.json();
         data = normalizeDashboardLiquidityData(d);
@@ -3799,7 +3804,7 @@ function renderDashboard() {
 
   // If no liquidity cache yet, fetch balance directly and draw pie
   if (!_liquidityCache && PROXY_URL) {
-    fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' }).then(r=>r.json()).then(d=>{
+    fetch(`${PROXY_URL}/balance`, { cache: 'default' }).then(r=>r.json()).then(d=>{
       const normalized = normalizeDashboardLiquidityData(d);
       _liquidityCache = normalized;
       window._liquidityCache = normalized;
@@ -9385,14 +9390,21 @@ async function importExchangeHistory(exchange, keys) {
   return count;
 }
 
-window.syncAllExchanges = async () => {
+window.syncAllExchanges = async (opts = {}) => {
+  const force = opts === true || opts?.force !== false;
+  const quiet = opts?.quiet === true;
   const syncBtn = document.getElementById('syncBtn');
-  if(syncBtn){ syncBtn.textContent='⟳ Sincronizando...'; syncBtn.disabled=true; }
+  if(syncBtn && force){ syncBtn.textContent='⟳ Sincronizando...'; syncBtn.disabled=true; }
 
   // Use Worker backend if proxy URL is configured
   if(PROXY_URL) {
     try {
-      const r    = await fetch(`${PROXY_URL}/sync?t=${Date.now()}`, { cache:'no-store' });
+      const endpoint = force ? `/sync?t=${Date.now()}` : '/summary';
+      const r    = await fetch(`${PROXY_URL}${endpoint}`, { cache: force ? 'no-store' : 'default' });
+      const contentType = r.headers.get('content-type') || '';
+      if (r.status === 429) throw new Error('Cloudflare rate limit 429. Espera unos minutos y evita sync continuo.');
+      if (!r.ok) throw new Error(`Worker HTTP ${r.status}`);
+      if (!contentType.includes('application/json')) throw new Error('Worker devolvio HTML en vez de JSON');
       const data = await r.json();
 
       exchangePositions        = Array.isArray(data.positions) ? data.positions : [];
@@ -9419,19 +9431,19 @@ window.syncAllExchanges = async () => {
       const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
       const errTxt = errs.length ? ' · revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/') : '';
       const totalCapital = Number(data.liquidity?.total ?? data.totals?.total ?? 0) || 0;
-      const msg   = `✅ Capital $${fmt(totalCapital)}${errTxt}`;
+      const msg   = `${force ? '✅' : '✓'} Capital $${fmt(totalCapital)}${errTxt}`;
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled = false; }
 
       // Show errors if any
-      if(errs.length) {
+      if(errs.length && !quiet) {
         errs.forEach(([ex, err]) => console.warn(`${ex}: ${err}`));
         toast('Sincronización parcial: ' + errs.map(([ex, err]) => `${ex.toUpperCase()} (${String(err).slice(0, 80)})`).join(' | '), 'error');
       }
       return;
     } catch(e) {
       console.error('Worker sync failed:', e.message);
-      toast('Error al sincronizar: ' + e.message, 'error');
+      if (!quiet) toast('Error al sincronizar: ' + e.message, 'error');
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent='↻ Sync capital'; syncBtnEl.disabled=false; }
       return;
@@ -9519,9 +9531,9 @@ window.importAllHistory = async () => {
 let syncTimer = null;
 function startAutoSync() {
   if(syncTimer) clearInterval(syncTimer);
-  // Sync exchange capital every 30s; positions and orders stay manual.
-  setTimeout(() => window.syncAllExchanges?.(), 1200);
-  syncTimer = setInterval(() => window.syncAllExchanges?.(), 30000);
+  // Keep the UI fresh from Worker cache; forced exchange reads are manual.
+  setTimeout(() => window.syncAllExchanges?.({ force:false, quiet:true }), 5000);
+  syncTimer = setInterval(() => window.syncAllExchanges?.({ force:false, quiet:true }), 5 * 60 * 1000);
   startTelegramAutoSync();
 }
 
@@ -9916,7 +9928,7 @@ window.checkMasterPassNeeded = async function() {
   const G = window.G;
   if(!G?._hasExchangeKeys?.()) return;
   if(_masterPass) { // already unlocked (from sessionStorage or this session)
-    syncAllExchanges();
+    syncAllExchanges({ force:false, quiet:true });
     startAutoSync();
     return;
   }
@@ -9956,7 +9968,7 @@ window.doUnlock = async () => {
     document.getElementById('unlockError').style.display='none';
     closeModal('masterPassModal');
     toast('Exchanges conectados ✓');
-    syncAllExchanges();
+    syncAllExchanges({ force:false, quiet:true });
     startAutoSync();
   } catch(e){
     _masterPass='';

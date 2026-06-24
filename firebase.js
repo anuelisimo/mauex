@@ -1228,8 +1228,9 @@ function mexcFuturesSymbol(ticker='') {
 function kucoinFuturesSymbol(ticker='') {
   const raw = String(ticker || '').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
   if (!raw) return '';
-  if (raw.endsWith('USDTM')) return raw;
-  return baseCryptoSymbol(raw) + 'USDTM';
+  if (raw.endsWith('USDTM')) return raw.replace(/^BTC/, 'XBT');
+  const base = baseCryptoSymbol(raw);
+  return (base === 'BTC' ? 'XBT' : base) + 'USDTM';
 }
 
 async function fetchYahooPrice(ticker) {
@@ -1673,7 +1674,8 @@ function startLivePrices() {
           const d = await r.json();
           const row = d?.data || {};
           const p = Number(row.price || row.markPrice || row.bestBidPrice || row.bestAskPrice || 0);
-          if (p > 0) setPrice(baseCryptoSymbol(fullSym), 'futures', p, 'kucoin');
+          const base = baseCryptoSymbol(fullSym);
+          if (p > 0) setPrice(base === 'XBT' ? 'BTC' : base, 'futures', p, 'kucoin');
         } catch(e) {}
       }
     };
