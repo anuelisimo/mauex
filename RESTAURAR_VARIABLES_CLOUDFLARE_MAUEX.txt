@@ -1,0 +1,53 @@
+MAUex - restaurar Variables and Secrets del Worker
+
+Worker correcto:
+  mauex-proxy
+  https://mauex-proxy.mauaparo.workers.dev
+
+Entrar en Cloudflare:
+  Workers & Pages > mauex-proxy > Settings > Variables and Secrets
+
+Bindings obligatorios:
+  MAUEX_CACHE
+    Tipo: KV namespace binding
+    Debe apuntar al namespace KV usado por MAUex.
+
+Variables/Secrets esperadas por el worker:
+  BINANCE_BACKEND_URL
+  RAILWAY_URL
+  KUCOIN_BACKEND_URL
+  IBKR_BACKEND_URL
+  SIGNAL_AI_BACKEND_URL
+  TELEGRAM_WEBHOOK_SECRET
+  TELEGRAM_BOT_TOKEN
+  BYBIT_KEY
+  BYBIT_SECRET
+  OKX_KEY
+  OKX_SECRET
+  OKX_PASSPHRASE
+  MEXC_KEY
+  MEXC_SECRET
+
+Minimo para que "Capital en exchanges" no de 0:
+  MAUEX_CACHE
+  BINANCE_BACKEND_URL o RAILWAY_URL
+  KUCOIN_BACKEND_URL o BINANCE_BACKEND_URL
+  IBKR_BACKEND_URL o BINANCE_BACKEND_URL
+  BYBIT_KEY / BYBIT_SECRET si queres Bybit
+  OKX_KEY / OKX_SECRET / OKX_PASSPHRASE si queres OKX
+  MEXC_KEY / MEXC_SECRET si queres MEXC
+
+Como verificar:
+  1. Ejecutar DIAGNOSTICAR_WORKER_VARIABLES_MAUEX.bat
+  2. /health debe mostrar:
+     version: 2026-06-24-capital-sync-v2
+     hasKV: true
+     binanceBackend o railway: true
+     kucoinBackend: true
+     ibkrBackend: true
+  3. /balance debe mostrar balances con exchanges y total mayor a 0.
+
+Importante:
+  Editar codigo en Cloudflare no deberia borrar variables.
+  Crear un Worker nuevo, cambiar environment, usar Wrangler sin bindings,
+  o pisar worker.js con archivos historicos puede dejar el Worker sin configuracion.
