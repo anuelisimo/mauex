@@ -219,7 +219,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-06-13-signal-vision-v1';
+const WORKER_VERSION = '2026-06-24-capital-sync-v2';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
