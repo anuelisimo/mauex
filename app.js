@@ -91,12 +91,17 @@ window.updateDirectTradeSizeLabel = () => {
     if (lev) lev.disabled = false;
   }
 };
+function formatLevValue(value) {
+  const n = Number(value || 1);
+  if (!Number.isFinite(n)) return '1';
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
 function dirLevLabel(item) {
   const dir = String(item?.dir || '').toUpperCase();
   const lev = Number(item?.leverage || item?.lev || 1);
   if (!dir) return '—';
   if (dir === 'SPOT' || !Number.isFinite(lev) || lev <= 1) return dir;
-  return dir + ' x' + lev;
+  return dir + ' x' + formatLevValue(lev);
 }
 function dirBadgeColors(dir) {
   if (dir === 'short') return { color:'#e05252', bg:'rgba(224,82,82,0.12)', border:'rgba(224,82,82,0.25)' };
@@ -2270,7 +2275,7 @@ function refreshEditLiquidationEstimate() {
   const el = document.getElementById('eLiquidation');
   if (!el || el.disabled || el.dataset.userEdited === '1') return;
   const entry = parseFloat(document.getElementById('eEntry')?.value) || 0;
-  const lev = parseInt(document.getElementById('eLev')?.value) || 1;
+  const lev = parseFloat(document.getElementById('eLev')?.value) || 1;
   const exchange = (document.getElementById('eExchange')?.value || '').trim();
   const estimate = estimatedLiquidationPrice({ dir: editDir, entry, leverage: lev, exchange });
   el.value = estimate || '';
@@ -2484,7 +2489,7 @@ window.openCalcSetupInCharts = () => {
   showChartsTab('graficos');
   loadCharts();
 };
-const LEVS = [2,3,5,7,10,15,20,25,50];
+const LEVS = [1.5,2,3,5,7,10,15,20,25,50];
 
 window.setDir = d => {
   calcState.dir = d;
@@ -2823,9 +2828,9 @@ window.pickLev = l => {
 };
 
 window.setCustomLev = v => {
-  const n = parseInt(v);
+  const n = parseFloat(v);
   if (n>=1&&n<=125) {
-    calcState.lev = n;
+    calcState.lev = Math.round(n * 100) / 100;
     document.querySelectorAll('.lev-btn').forEach(b=>b.classList.remove('sel'));
     compute();
   }
@@ -4930,6 +4935,7 @@ function renderWatchlist() {
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
               style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
             ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+            ${displaySize?`<span style="font-size:10px;color:var(--blue);font-family:var(--mono);padding:2px 7px;border-radius:4px;background:var(--blue-dim);border:0.5px solid rgba(61,156,240,0.2);">Cap $${fmt(displaySize)}</span>`:''}
             ${entryBadge}
             ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
             ${currentPrice&&distToEntry!=null?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry>=0?'▲':'▼'} ${Math.abs(distToEntry).toFixed(2)}% al entry</span>`:''}
@@ -6903,7 +6909,7 @@ window.saveEditTrade = async () => {
 
   const ticker   = document.getElementById('eTicker').value.trim().toUpperCase();
   const exchange = document.getElementById('eExchange').value.trim().toUpperCase();
-  const lev      = parseInt(document.getElementById('eLev').value)||1;
+  const lev      = parseFloat(document.getElementById('eLev').value)||1;
   const entry    = parseFloat(document.getElementById('eEntry').value)||0;
   const sl       = parseFloat(document.getElementById('eSL').value)||0;
   const risk     = parseFloat(document.getElementById('eRisk').value)||0;
@@ -9089,7 +9095,7 @@ async function fetchExchangePositions(exchange, keys) {
           const entry  = parseFloat(p.entryPrice);
           const mark   = parseFloat(p.markPrice);
           const pnl    = parseFloat(p.unRealizedProfit);
-          const lev    = parseInt(p.leverage)||1;
+          const lev    = parseFloat(p.leverage)||1;
           const notional = Math.abs(amt)*entry;
           positions.push({
             exchange:'BINANCE', type:'futures',
@@ -9125,7 +9131,7 @@ async function fetchExchangePositions(exchange, keys) {
           const entry   = parseFloat(p.avgPrice);
           const mark    = parseFloat(p.markPrice);
           const pnl     = parseFloat(p.unrealisedPnl);
-          const lev     = parseInt(p.leverage)||1;
+          const lev     = parseFloat(p.leverage)||1;
           const notional= parseFloat(p.positionValue)||0;
           positions.push({
             exchange:'BYBIT', type:'futures',
@@ -9184,7 +9190,7 @@ async function fetchExchangePositions(exchange, keys) {
           const entry   = parseFloat(p.avgPx);
           const mark    = parseFloat(p.markPx);
           const pnl     = parseFloat(p.upl);
-          const lev     = parseInt(p.lever)||1;
+          const lev     = parseFloat(p.lever)||1;
           const notional= parseFloat(p.notionalUsd)||0;
           positions.push({
             exchange:'OKX', type:'futures',
@@ -10028,7 +10034,7 @@ let userPrefs = { capital:0, risk:200, lev:10, exchange:'binance', notif:false }
 window.savePrefs = () => {
   userPrefs.capital  = parseFloat(document.getElementById('prefCapital')?.value)||0;
   userPrefs.risk     = parseFloat(document.getElementById('prefRisk')?.value)||200;
-  userPrefs.lev      = parseInt(document.getElementById('prefLev')?.value)||10;
+  userPrefs.lev      = parseFloat(document.getElementById('prefLev')?.value)||10;
   userPrefs.exchange = document.getElementById('prefExchange')?.value||'binance';
   userPrefs.notif    = document.getElementById('prefNotif')?.checked||false;
   localStorage.setItem('mauex_prefs', JSON.stringify(userPrefs));
@@ -11506,7 +11512,3 @@ buildLevGrid();
 installGlobalTooltips();
 loadUserPrefs();
 document.getElementById('dashDate').textContent = new Date().toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-
-
-
-

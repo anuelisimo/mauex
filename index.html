@@ -232,7 +232,7 @@
             <div class="lev-grid" id="levGrid"></div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:10px;color:var(--t3);font-family:var(--mono);white-space:nowrap;">Custom:</span>
-              <input type="number" id="levCustom" placeholder="ej: 12" min="1" max="125" style="height:30px;padding:4px 8px;font-size:11px;" oninput="setCustomLev(this.value)">
+              <input type="number" id="levCustom" placeholder="ej: 1.5" min="1" max="125" step="0.1" style="height:30px;padding:4px 8px;font-size:11px;" oninput="setCustomLev(this.value)">
             </div>
           </div>
           <div class="card-sm" style="margin-bottom:12px;">
@@ -707,7 +707,7 @@
           </div>
           <div>
             <label class="lbl">Apalancamiento por defecto</label>
-            <input type="number" id="prefLev" placeholder="ej: 10" min="1" max="125" oninput="savePrefs()">
+            <input type="number" id="prefLev" placeholder="ej: 1.5" min="1" max="125" step="0.1" oninput="savePrefs()">
           </div>
           <div>
             <label class="lbl">Exchange por defecto</label>
@@ -833,7 +833,7 @@
             <button class="dir-btn" data-ed="spot" onclick="setEditDir('spot')">SPOT</button>
           </div>
         </div>
-        <div><label class="lbl">Apalancamiento</label><input type="number" id="eLev" min="1" max="125"></div>
+        <div><label class="lbl">Apalancamiento</label><input type="number" id="eLev" min="1" max="125" step="0.1"></div>
       </div>
       <div class="g2" style="gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Entry</label><input type="number" id="eEntry" oninput="syncEditFields('entry')"></div>
@@ -930,7 +930,7 @@
             <option value="MANUAL">Manual</option>
           </select>
         </div>
-        <div><label class="lbl">Leverage</label><input type="number" id="dpLev" placeholder="1" value="1" min="1" max="125"></div>
+        <div><label class="lbl">Leverage</label><input type="number" id="dpLev" placeholder="1" value="1" min="1" max="125" step="0.1"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div><label class="lbl">Precio entrada</label><input type="number" id="dpEntry" placeholder="68000"></div>
@@ -980,7 +980,7 @@
             <option value="MANUAL">Manual</option>
           </select>
         </div>
-        <div><label class="lbl">Leverage</label><input type="number" id="dtLev" placeholder="1" value="1"></div>
+        <div><label class="lbl">Leverage</label><input type="number" id="dtLev" placeholder="1" value="1" min="1" max="125" step="0.1"></div>
       </div>
       <div style="margin-bottom:12px;"><label class="lbl">Trader</label><select id="dtTrader"><option value="">— ninguno —</option></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
@@ -1032,7 +1032,7 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
         <div><label class="lbl">Exchange</label><input type="text" id="mExchange" placeholder="Binance..."></div>
-        <div><label class="lbl">Apalancamiento</label><input type="number" id="mLev" value="1" min="1" max="125"></div>
+        <div><label class="lbl">Apalancamiento</label><input type="number" id="mLev" value="1" min="1" max="125" step="0.1"></div>
         <div><label class="lbl">Trader</label><select id="mTrader"><option value="">— ninguno —</option></select></div>
       </div>
       <div style="margin-bottom:12px;">
@@ -1117,11 +1117,11 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      FIREBASE MODULE
      ═══════════════════════════════════════════════════════════════════════ -->
-<script type="module" src="./firebase.js?v=20260624-211728"></script>
+<script type="module" src="./firebase.js?v=20260626-143552"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260624-211728"></script>
+<script src="./app.js?v=20260626-143552"></script>
 </body>
 </html>

@@ -289,6 +289,7 @@ window.saveTrade = async status => {
   const lev = calcState.dir === 'spot' ? 1 : (calcState.lev || 1);
   // Use manual size if provided; without SL, risk USD acts as margin/max loss.
   const posSize = sizeInput > 0 ? sizeInput : (sl && risk ? (risk / slDist) : (risk ? (calcState.dir === 'spot' ? risk : risk * lev) : 0));
+  const calcRisk = slDist && posSize ? Math.round(posSize * slDist * 100) / 100 : risk;
   const signalExtras = window._signalTradeExtras || null;
   const calcSignalSelection = window.currentCalcSignalSelection?.() || {};
   if (signalExtras) {
@@ -310,7 +311,7 @@ window.saveTrade = async status => {
     const watchOrder = status === 'watchlist' ? (currentWatchOrders.length ? Math.max(...currentWatchOrders) + 1 : 1) : null;
     const baseTrade = {
       userId: CU.uid, ticker, entry, sl, tp1, tp2, tp3,
-      tp1pct, tp2pct, tp3pct, risk, posSize,
+      tp1pct, tp2pct, tp3pct, risk: calcRisk, posSize,
       marketSource: calcTickerMarket.source || 'auto',
       marketType: calcTickerMarket.type || '',
       marketKind: calcTickerMarket.kind || '',
@@ -424,7 +425,7 @@ window.saveDirectPosition = async () => {
   const entry  = parseFloat(document.getElementById('dpEntry').value) || 0;
   if (!ticker || !entry) { toast('Ingresá ticker y precio de entrada.','error'); return; }
   const exchange   = document.getElementById('dpExchange').value || 'MANUAL';
-  const lev        = parseInt(document.getElementById('dpLev').value) || 1;
+  const lev        = parseFloat(document.getElementById('dpLev').value) || 1;
   const sl         = parseFloat(document.getElementById('dpSL').value) || 0;
   const size       = parseFloat(document.getElementById('dpSize').value) || 0;
   const risk       = parseFloat(document.getElementById('dpRisk').value) || 0;
@@ -489,7 +490,7 @@ window.saveDirectTrade = async (editId) => {
   const exchange = document.getElementById('dtExchange').value || 'MANUAL';
   const traderId   = document.getElementById('dtTrader').value;
   const traderName = (window.G?.traders()||[]).find(t=>t.id===traderId)?.name||'';
-  const lev    = parseInt(document.getElementById('dtLev').value) || 1;
+  const lev    = parseFloat(document.getElementById('dtLev').value) || 1;
   const entry  = parseFloat(document.getElementById('dtEntry').value) || 0;
   const exit   = parseFloat(document.getElementById('dtExit').value) || 0;
   const marginInput = parseFloat(document.getElementById('dtSize').value) || 0;
@@ -1048,7 +1049,7 @@ window.saveManualTrade = async () => {
   const totalSize = entries.reduce((s,e)=>s+e.size,0);
   const avgEntry  = entries.reduce((s,e)=>s+e.price*e.size,0) / totalSize;
   const sl        = parseFloat(document.getElementById('mSL').value)||0;
-  const lev       = parseInt(document.getElementById('mLev').value)||1;
+  const lev       = parseFloat(document.getElementById('mLev').value)||1;
   const traderId  = document.getElementById('mTrader').value;
   const traderName= traders.find(t=>t.id===traderId)?.name||'';
   const slDist    = sl ? Math.abs(sl-avgEntry)/avgEntry : 0.05;
