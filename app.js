@@ -2090,6 +2090,7 @@ window.signalOpenChart = async id => {
   if (aiSym) aiSym.value = info.symbol;
   window._aiSource = info.source;
   window._aiType = info.type;
+  mainChartState.symbol = info.symbol;
   if (typeof setMarketType === 'function') setMarketType(p.dir === 'spot' ? 'spot' : 'futures');
   const selectedTargets = signalOperationalTargets(sig);
   _analysisTradeData = {
@@ -2469,6 +2470,7 @@ window.openCalcSetupInCharts = () => {
   if (el) el.value = info.symbol;
   window._aiSource = info.source;
   window._aiType = info.type;
+  mainChartState.symbol = info.symbol;
   if (info.type === 'crypto') setMarketType(info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures'));
   _analysisTradeData = {
     ticker: info.raw,
@@ -4738,6 +4740,7 @@ window.openSelectedWatchlistInCharts = () => {
   const info = tradeChartMarketInfo(first);
   window._aiSource = info.source;
   window._aiType = info.type;
+  mainChartState.symbol = firstSymbol;
   setMarketType(info.source === 'yahoo' ? 'spot' : (info.marketKind || (first?.dir === 'spot' ? 'spot' : 'futures')));
   window.showPage('analysis');
   if (typeof showChartsTab === 'function') showChartsTab('graficos');
@@ -10588,6 +10591,7 @@ window.openTradeInAnalysis = (id) => {
   if(chartSymEl) chartSymEl.value = marketInfo.symbol;
   window._aiSource = marketInfo.source;
   window._aiType   = marketInfo.type;
+  mainChartState.symbol = marketInfo.symbol;
   setMarketType(marketInfo.source === 'yahoo' ? 'spot' : (marketInfo.marketKind || (t.dir==='spot'?'spot':'futures')));
 
   window.showPage('analysis');
