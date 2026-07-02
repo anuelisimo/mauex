@@ -6605,8 +6605,9 @@ const EDIT_CHANGE_REASONS = [
   'Actualizacion del trader',
   'Ajuste tecnico',
   'Reduccion de riesgo',
-  'Subi SL',
-  'Baje SL',
+  'SL a entry',
+  'SL mas cerca del entry',
+  'SL mas lejos del entry',
   'Movi TP',
   'Cierre emocional',
   'Toma de ganancia manual',
@@ -6695,9 +6696,17 @@ function changedTradeFields(before={}, after={}) {
 
 function getEditChangeAudit(before={}, after={}) {
   const changes = changedTradeFields(before, after);
-  const reasonTags = [...document.querySelectorAll('[data-edit-change-reason].selected')]
+  const selectedReasonTags = [...document.querySelectorAll('[data-edit-change-reason].selected')]
     .map(x => x.dataset.editChangeReason)
     .filter(Boolean);
+  const autoReasonTags = [];
+  const beforeSl = Number(before?.sl || 0);
+  const afterSl = Number(after?.sl || 0);
+  const afterEntry = Number(after?.entry || 0);
+  if (afterSl > 0 && afterEntry > 0 && beforeSl !== afterSl && Math.abs(afterSl - afterEntry) <= Math.max(afterEntry * 0.000001, 0.00000001)) {
+    autoReasonTags.push('SL a entry');
+  }
+  const reasonTags = [...selectedReasonTags, ...autoReasonTags];
   const note = document.getElementById('eChangeReasonNote')?.value?.trim() || '';
   if (!changes.length && !reasonTags.length && !note) return null;
   return firestoreSafeObject({
