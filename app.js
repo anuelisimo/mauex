@@ -3005,6 +3005,8 @@ window.compute = () => {
 let chPnl, chWR, chA;
 let _liquidityCache = null; // cache so we don't re-fetch on every render
 const LIQUIDITY_CACHE_KEY = 'mauex_liquidity_cache_v1';
+const LIQUIDITY_FETCH_BLOCK_KEY = 'mauex_liquidity_fetch_block_until';
+const LIQUIDITY_FETCH_BLOCK_MS = 5 * 60 * 1000;
 
 function saveLiquidityLocalCache(data) {
   if (!data?.balances || !Object.keys(data.balances).length) return;
@@ -3025,6 +3027,27 @@ function loadLiquidityLocalCache() {
   } catch(e) {
     return null;
   }
+}
+
+function liquidityFetchBlockedMessage() {
+  const until = Number(localStorage.getItem(LIQUIDITY_FETCH_BLOCK_KEY) || 0) || 0;
+  if (!until || Date.now() >= until) return '';
+  const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+  return `Cloudflare rate limit activo. Reintento automatico en ${mins} min.`;
+}
+
+function blockLiquidityFetch() {
+  try {
+    localStorage.setItem(LIQUIDITY_FETCH_BLOCK_KEY, String(Date.now() + LIQUIDITY_FETCH_BLOCK_MS));
+  } catch(e) {}
+}
+
+function liquidityFetchErrorMessage(e) {
+  const msg = String(e?.message || e || '');
+  if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+    return 'Cloudflare esta devolviendo rate limit sin CORS. Espera el cooldown del Worker y evita refrescar/sincronizar en loop.';
+  }
+  return msg || 'No pude conectar con el Worker.';
 }
 
 function normalizeDashboardBalance(raw = {}) {
@@ -3172,7 +3195,9 @@ async function fetchAndRenderLiquidity() {
     window._liquidityCache = data;
   }
 
-  if (!data && PROXY_URL) {
+  fetchError = liquidityFetchBlockedMessage();
+
+  if (!data && PROXY_URL && !fetchError) {
     try {
       el.style.display = 'block';
       el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
@@ -3186,12 +3211,16 @@ async function fetchAndRenderLiquidity() {
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
       } else {
         const body = await r.text().catch(() => '');
+        if (r.status === 429 || body.includes('1027')) blockLiquidityFetch();
         fetchError = body.includes('1027')
           ? 'Cloudflare Worker rate limited: Error 1027. Espera a que termine el cooldown del plan.'
-          : `Worker HTTP ${r.status}`;
+          : r.status === 429
+            ? 'Cloudflare Worker rate limited: HTTP 429. Espera unos minutos antes de reintentar.'
+            : `Worker HTTP ${r.status}`;
       }
     } catch(e) {
-      fetchError = e?.message || 'No pude conectar con el Worker.';
+      blockLiquidityFetch();
+      fetchError = liquidityFetchErrorMessage(e);
     }
   }
 
