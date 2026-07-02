@@ -3004,6 +3004,28 @@ window.compute = () => {
 // ── Dashboard ──────────────────────────────────────────────────────────────
 let chPnl, chWR, chA;
 let _liquidityCache = null; // cache so we don't re-fetch on every render
+const LIQUIDITY_CACHE_KEY = 'mauex_liquidity_cache_v1';
+
+function saveLiquidityLocalCache(data) {
+  if (!data?.balances || !Object.keys(data.balances).length) return;
+  try {
+    localStorage.setItem(LIQUIDITY_CACHE_KEY, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      data,
+    }));
+  } catch(e) {}
+}
+
+function loadLiquidityLocalCache() {
+  try {
+    const raw = localStorage.getItem(LIQUIDITY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.data ? { ...parsed.data, cacheSavedAt: parsed.savedAt || parsed.data.cacheSavedAt } : null;
+  } catch(e) {
+    return null;
+  }
+}
 
 function normalizeDashboardBalance(raw = {}) {
   const usdt = Number(raw.USDT ?? raw.usdt ?? 0) || 0;
@@ -3143,7 +3165,12 @@ async function fetchAndRenderLiquidity() {
   const el = document.getElementById('dashLiquidity');
   if (!el) return;
 
-  let data = normalizeDashboardLiquidityData(_liquidityCache);
+  let fetchError = '';
+  let data = normalizeDashboardLiquidityData(_liquidityCache || loadLiquidityLocalCache());
+  if (data && !_liquidityCache) {
+    _liquidityCache = data;
+    window._liquidityCache = data;
+  }
 
   if (!data && PROXY_URL) {
     try {
@@ -3155,9 +3182,17 @@ async function fetchAndRenderLiquidity() {
         data = normalizeDashboardLiquidityData(d);
         _liquidityCache = data;
         window._liquidityCache = data;
+        saveLiquidityLocalCache(data);
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
+      } else {
+        const body = await r.text().catch(() => '');
+        fetchError = body.includes('1027')
+          ? 'Cloudflare Worker rate limited: Error 1027. Espera a que termine el cooldown del plan.'
+          : `Worker HTTP ${r.status}`;
       }
-    } catch(e) {}
+    } catch(e) {
+      fetchError = e?.message || 'No pude conectar con el Worker.';
+    }
   }
 
   if (!data?.balances || Object.keys(data.balances).length === 0) {
@@ -3169,7 +3204,10 @@ async function fetchAndRenderLiquidity() {
       </div>`;
       return;
     }
-    el.style.display = 'none';
+    el.style.display = 'block';
+    el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--red);font-family:var(--mono);font-size:11px;">
+      No pude cargar Capital en exchanges${fetchError ? ': ' + dashSafe(fetchError) : '.'}
+    </div>`;
     return;
   }
 
@@ -3285,6 +3323,7 @@ window._updateLiquidityCache = (data) => {
     const normalized = normalizeDashboardLiquidityData(data);
     _liquidityCache = normalized;
     window._liquidityCache = normalized;
+    saveLiquidityLocalCache(normalized);
     if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 50);
     window.syncApiModalStatus?.();
     updateCalcExchangeCapitalButtons?.(calcRequiredMarginEstimate?.() || 0);
@@ -3814,6 +3853,7 @@ function renderDashboard() {
       const normalized = normalizeDashboardLiquidityData(d);
       _liquidityCache = normalized;
       window._liquidityCache = normalized;
+      saveLiquidityLocalCache(normalized);
       if (window._drawCapitalPie) window._drawCapitalPie();
     }).catch(()=>{});
   }
