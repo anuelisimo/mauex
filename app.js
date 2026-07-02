@@ -3129,7 +3129,7 @@ function applyManualCapitalOverlay(data) {
 function normalizeDashboardLiquidityData(data) {
   if (!data) return data;
   const errors = data.errors || data.balanceErrors || {};
-  const normalized = {
+  return {
     ...data,
     balances: data.balances || {},
     errors,
@@ -3137,7 +3137,6 @@ function normalizeDashboardLiquidityData(data) {
     liquidity: data.liquidity || data.totals || {},
     totals: data.totals || data.liquidity || {},
   };
-  return applyManualCapitalOverlay(normalized);
 }
 
 async function fetchAndRenderLiquidity() {
