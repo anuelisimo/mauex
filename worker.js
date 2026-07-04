@@ -243,7 +243,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-bybit-upl-equity-v1';
+const WORKER_VERSION = '2026-07-04-bybit-upl-diagnostic-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -365,6 +365,107 @@ async function diagnoseOKXBalance(env) {
     currencies: [...currencies].filter(Boolean).sort(),
     totalIncludesUnrealizedPnl: true,
     totals: normalizeBalance({ total: total || USDT + USDC, free, margin, orders, pnl, USDT, USDC }),
+  };
+}
+
+async function diagnoseBybitBalance(env) {
+  const bybitKey = (env.BYBIT_KEY || '').trim();
+  const bybitSec = (env.BYBIT_SECRET || '').trim();
+  const has = { key: !!bybitKey, secret: !!bybitSec };
+  if (!bybitKey || !bybitSec) {
+    return { ok: false, has, error: 'Faltan BYBIT_KEY / BYBIT_SECRET' };
+  }
+
+  const bybitBalance = async (accountType) => {
+    const ts = Date.now().toString();
+    const q = `accountType=${accountType}&coin=USDT,USDC`;
+    const msg = ts + bybitKey + '5000' + q;
+    const sig = await hmac256(bybitSec, msg);
+    return safeFetch(`https://api.bybit.com/v5/account/wallet-balance?${q}`, {
+      timeoutMs: 12000,
+      headers: {
+        'X-BAPI-API-KEY': bybitKey,
+        'X-BAPI-TIMESTAMP': ts,
+        'X-BAPI-SIGN': sig,
+        'X-BAPI-RECV-WINDOW': '5000',
+      },
+    });
+  };
+
+  const num = (...vals) => {
+    for (const v of vals) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  };
+  const summarize = r => ({
+    ok: !!r.ok,
+    status: r.status,
+    retCode: r.data?.retCode ?? null,
+    retMsg: String(r.data?.retMsg || r.raw || '').slice(0, 180),
+    accounts: Array.isArray(r.data?.result?.list) ? r.data.result.list.length : 0,
+  });
+
+  const unified = await bybitBalance('UNIFIED');
+  const contract = unified.ok && unified.data?.retCode === 0 ? null : await bybitBalance('CONTRACT');
+  const pickedType = unified.ok && unified.data?.retCode === 0 ? 'UNIFIED' : 'CONTRACT';
+  const picked = pickedType === 'UNIFIED' ? unified : contract;
+
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  const accounts = [];
+  if (picked?.ok && picked.data?.retCode === 0) {
+    for (const account of (picked.data.result?.list || [])) {
+      const accountPnl = num(account.totalPerpUPL);
+      const accountEquity = num(account.totalEquity);
+      const accountMarginBalance = num(account.totalMarginBalance);
+      const accountWallet = num(account.totalWalletBalance);
+      const accountTotal = accountEquity || accountMarginBalance || (accountWallet ? accountWallet + accountPnl : 0);
+      const accountFree = num(account.totalAvailableBalance);
+      const accountIM = num(account.totalInitialMargin);
+      let accountOrders = 0;
+      let accountPositionMargin = 0;
+      let coinUSDT = 0;
+      let coinUSDC = 0;
+      for (const c of (account.coin || [])) {
+        const usdValue = num(c.usdValue, c.equity, c.walletBalance);
+        if (c.coin === 'USDT') { USDT += usdValue; coinUSDT += usdValue; }
+        if (c.coin === 'USDC') { USDC += usdValue; coinUSDC += usdValue; }
+        accountOrders += num(c.totalOrderIM);
+        accountPositionMargin += num(c.totalPositionIM);
+      }
+      const accountMargin = accountPositionMargin || Math.max(0, accountIM - accountOrders);
+      total += accountTotal;
+      free += accountFree;
+      margin += accountMargin;
+      orders += accountOrders;
+      pnl += accountPnl;
+      accounts.push({
+        totalEquity: Math.round(accountEquity * 100) / 100,
+        totalMarginBalance: Math.round(accountMarginBalance * 100) / 100,
+        totalWalletBalance: Math.round(accountWallet * 100) / 100,
+        totalPerpUPL: Math.round(accountPnl * 100) / 100,
+        calculatedTotal: Math.round(accountTotal * 100) / 100,
+        totalAvailableBalance: Math.round(accountFree * 100) / 100,
+        margin: Math.round(accountMargin * 100) / 100,
+        orders: Math.round(accountOrders * 100) / 100,
+        coinUSDT: Math.round(coinUSDT * 100) / 100,
+        coinUSDC: Math.round(coinUSDC * 100) / 100,
+        totalSource: accountEquity ? 'totalEquity' : accountMarginBalance ? 'totalMarginBalance' : accountWallet ? 'totalWalletBalance + totalPerpUPL' : 'coins fallback',
+      });
+    }
+  }
+
+  const fallbackTotal = USDT + USDC + (total ? 0 : pnl);
+  return {
+    ok: !!(picked?.ok && picked.data?.retCode === 0),
+    has,
+    pickedType,
+    unified: summarize(unified),
+    contract: contract ? summarize(contract) : null,
+    accounts,
+    totalIncludesUnrealizedPnl: true,
+    totals: normalizeBalance({ total: total || fallbackTotal, free, margin, orders, pnl, USDT, USDC }),
   };
 }
 
@@ -1296,6 +1397,10 @@ export default {
       return json(await diagnoseOKXBalance(env));
     }
 
+    if (url.pathname === '/diagnose-bybit' || url.pathname === '/bybit-diagnostic') {
+      return json(await diagnoseBybitBalance(env));
+    }
+
     if (url.pathname === '/balance') {
       const forceLive = url.searchParams.has('live') || url.searchParams.has('t');
       // Try KV cache first (balance is part of summary)
@@ -1637,7 +1742,7 @@ export default {
       });
     }
 
-    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/telegram-webhook','/telegram-signals','/telegram-signal-ai'] }, 404);
+    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/telegram-signals','/telegram-signal-ai'] }, 404);
   },
 
   // ── Cron trigger — runs every minute ─────────────────────────────────────
