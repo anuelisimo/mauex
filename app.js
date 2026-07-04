@@ -3070,7 +3070,7 @@ function normalizeDashboardBalance(raw = {}) {
   const usdc = Number(raw.USDC ?? raw.usdc ?? 0) || 0;
   const fallbackTotal = usdt + usdc;
   const total = Number(raw.total ?? raw.totalEquity ?? raw.wallet ?? fallbackTotal) || 0;
-  const free = Number(raw.free ?? raw.available ?? raw.availableBalance ?? (fallbackTotal || total)) || 0;
+  const free = Number(raw.free ?? raw.displayFree ?? raw.available ?? raw.availableBalance ?? (fallbackTotal || total)) || 0;
   const margin = Number(raw.margin ?? raw.marginUsed ?? 0) || 0;
   const orders = Number(raw.orders ?? raw.orderMargin ?? 0) || 0;
   const pnl = Number(raw.pnl ?? raw.unrealizedPnl ?? raw.upnl ?? 0) || 0;
@@ -3199,10 +3199,11 @@ function normalizeDashboardLiquidityData(data) {
   };
 }
 
-async function fetchAndRenderLiquidity() {
+async function fetchAndRenderLiquidity(opts = {}) {
   const el = document.getElementById('dashLiquidity');
   if (!el) return;
 
+  const forceRefresh = opts === true || opts?.force === true || opts?.forceRefresh === true;
   let fetchError = '';
   let data = normalizeDashboardLiquidityData(_liquidityCache || loadLiquidityLocalCache());
   if (data && !_liquidityCache) {
@@ -3212,7 +3213,7 @@ async function fetchAndRenderLiquidity() {
 
   fetchError = liquidityFetchBlockedMessage();
 
-  const shouldRefresh = PROXY_URL && !fetchError && (!data || Date.now() - _liquidityLastFetchAt > LIQUIDITY_REFRESH_MIN_MS);
+  const shouldRefresh = PROXY_URL && !fetchError && (forceRefresh || !data || Date.now() - _liquidityLastFetchAt > LIQUIDITY_REFRESH_MIN_MS);
   if (shouldRefresh) {
     try {
       _liquidityLastFetchAt = Date.now();
@@ -3220,10 +3221,10 @@ async function fetchAndRenderLiquidity() {
       if (!data) {
         el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando capital...</div>`;
       }
-      const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`${PROXY_URL}/balance?live=1&t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
-        data = normalizeDashboardLiquidityData(d);
+        data = normalizeDashboardLiquidityData({ ...d, liquiditySource: 'balance' });
         _liquidityCache = data;
         window._liquidityCache = data;
         saveLiquidityLocalCache(data);
@@ -3381,7 +3382,11 @@ async function fetchAndRenderLiquidity() {
 }
 
 // Called after each sync to update liquidity display
-window._updateLiquidityCache = (data) => {
+window._updateLiquidityCache = (data, opts = {}) => {
+  if (opts?.source === 'summary') {
+    fetchAndRenderLiquidity();
+    return;
+  }
   if (data) {
     const normalized = normalizeDashboardLiquidityData(data);
     _liquidityCache = normalized;
@@ -3393,6 +3398,8 @@ window._updateLiquidityCache = (data) => {
   }
   fetchAndRenderLiquidity();
 };
+
+window.refreshDashboardLiquidity = () => fetchAndRenderLiquidity({ forceRefresh: true });
 
 const dashSafe = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const dashPnl = t => Number(t?.pnl) || 0;
@@ -3910,16 +3917,8 @@ function renderDashboard() {
   // Render equity curve + stats + capital pie (same as historial)
   setTimeout(() => renderHistCharts(closed), 50);
 
-  // If no liquidity cache yet, fetch balance directly and draw pie
-  if (!_liquidityCache && PROXY_URL) {
-    fetch(`${PROXY_URL}/balance`, { cache: 'default' }).then(r=>r.json()).then(d=>{
-      const normalized = normalizeDashboardLiquidityData(d);
-      _liquidityCache = normalized;
-      window._liquidityCache = normalized;
-      saveLiquidityLocalCache(normalized);
-      if (window._drawCapitalPie) window._drawCapitalPie();
-    }).catch(()=>{});
-  }
+  // Capital uses fetchAndRenderLiquidity so the dashboard does not mix stale /summary data with live /balance data.
+  if (!_liquidityCache && PROXY_URL) fetchAndRenderLiquidity({ forceRefresh: true });
 
   // Active positions mini-list with live PnL total
   let liveTot=0, hasPx=false;
@@ -9519,8 +9518,8 @@ window.syncAllExchanges = async (opts = {}) => {
   // Use Worker backend if proxy URL is configured
   if(PROXY_URL) {
     try {
-      const endpoint = force ? `/sync?t=${Date.now()}` : '/summary';
-      const r    = await fetch(`${PROXY_URL}${endpoint}`, { cache: force ? 'no-store' : 'default' });
+      const endpoint = force ? `/sync?t=${Date.now()}` : `/summary?t=${Date.now()}`;
+      const r    = await fetch(`${PROXY_URL}${endpoint}`, { cache: 'no-store' });
       const contentType = r.headers.get('content-type') || '';
       if (r.status === 429) throw new Error('Cloudflare rate limit 429. Espera unos minutos y evita sync continuo.');
       if (!r.ok) throw new Error(`Worker HTTP ${r.status}`);
@@ -9533,14 +9532,19 @@ window.syncAllExchanges = async (opts = {}) => {
       window.exchangeOrders    = exchangeOrders;
       lastSyncTime             = new Date();
 
-      // Cache liquidity data for dashboard
-      if (data.balances || data.liquidity || data.totals) {
+      // Only forced sync is allowed to refresh dashboard capital.
+      // Quiet /summary can be stale, so it must not overwrite live /balance.
+      if (force && (data.balances || data.liquidity || data.totals)) {
         const normalizedLiquidity = normalizeDashboardLiquidityData(data);
         _liquidityCache = normalizedLiquidity;
         window._liquidityCache = normalizedLiquidity;
         if (window._drawCapitalPie) setTimeout(window._drawCapitalPie, 200);
       }
-      if (data.liquidity || data.totals || data.balances) window._updateLiquidityCache(data);
+      if (force && (data.liquidity || data.totals || data.balances)) {
+        window._updateLiquidityCache(data, { source: 'sync' });
+      } else {
+        fetchAndRenderLiquidity();
+      }
 
       try { renderPositions(); } catch(e) { console.error('renderPositions error:', e); }
       try { renderOrders(); } catch(e) { console.error('renderOrders error:', e); }
