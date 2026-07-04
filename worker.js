@@ -67,7 +67,7 @@ async function fetchBalancesV2(env) {
           const accountMarginBalance = parseFloat(account.totalMarginBalance || 0);
           const accountWallet = parseFloat(account.totalWalletBalance || 0);
           const accountTotal = accountEquity || accountMarginBalance || (accountWallet ? accountWallet + accountPnl : 0);
-          const accountFree = parseFloat(account.totalAvailableBalance || 0);
+          const accountAvailable = parseFloat(account.totalAvailableBalance || 0);
           const accountIM = parseFloat(account.totalInitialMargin || 0);
           let accountOrders = 0;
           let accountPositionMargin = 0;
@@ -78,10 +78,11 @@ async function fetchBalancesV2(env) {
             accountOrders += parseFloat(c.totalOrderIM || 0);
             accountPositionMargin += parseFloat(c.totalPositionIM || 0);
           }
-          total += accountTotal;
-          free += accountFree;
           orders += accountOrders;
-          margin += accountPositionMargin || Math.max(0, accountIM - accountOrders);
+          const accountMargin = accountPositionMargin || Math.max(0, accountIM - accountOrders);
+          total += accountTotal;
+          margin += accountMargin;
+          free += accountAvailable || Math.max(0, accountTotal - accountMargin - accountOrders - accountPnl);
           pnl += accountPnl;
         }
         const fallbackTotal = totalUsdt + totalUsdc + (total ? 0 : pnl);
@@ -243,7 +244,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-okx-all-positions-upl-v1';
+const WORKER_VERSION = '2026-07-04-bybit-row-reconcile-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -317,9 +318,14 @@ async function diagnoseOKXBalance(env) {
 
   const account = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
   const funding = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
+  const accountAll = await okxGet('/api/v5/account/balance');
+  const fundingAll = await okxGet('/api/v5/asset/balances');
+  const valuation = await okxGet('/api/v5/asset/asset-valuation?ccy=USD');
   const positions = await okxGet('/api/v5/account/positions');
   let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
   const currencies = new Set();
+  const nonZeroAccount = [];
+  const nonZeroFunding = [];
 
   if (account.ok && account.data?.code === '0') {
     const a = account.data.data?.[0] || {};
@@ -335,6 +341,25 @@ async function diagnoseOKXBalance(env) {
       if (d.ccy === 'USDC') USDC += eq;
     }
   }
+  if (accountAll.ok && accountAll.data?.code === '0') {
+    for (const d of (accountAll.data.data?.[0]?.details || [])) {
+      const eq = num(d.eq, d.eqUsd, d.disEq, d.cashBal, d.availBal);
+      const available = num(d.availEq, d.availBal, d.cashBal);
+      const linePnl = num(d.upl);
+      const imr = num(d.imr);
+      const ordFrozen = num(d.ordFrozen, d.frozenBal);
+      if (eq || available || linePnl || imr || ordFrozen) {
+        nonZeroAccount.push({
+          ccy: d.ccy,
+          eq: Math.round(eq * 100) / 100,
+          available: Math.round(available * 100) / 100,
+          upl: Math.round(linePnl * 100) / 100,
+          margin: Math.round(imr * 100) / 100,
+          orders: Math.round(ordFrozen * 100) / 100,
+        });
+      }
+    }
+  }
   if (funding.ok && funding.data?.code === '0') {
     for (const b of (funding.data.data || [])) {
       currencies.add(b.ccy);
@@ -343,6 +368,19 @@ async function diagnoseOKXBalance(env) {
       free += num(b.availBal, bal);
       if (b.ccy === 'USDT') USDT += bal;
       if (b.ccy === 'USDC') USDC += bal;
+    }
+  }
+  if (fundingAll.ok && fundingAll.data?.code === '0') {
+    for (const b of (fundingAll.data.data || [])) {
+      const bal = num(b.bal, b.availBal);
+      const avail = num(b.availBal, bal);
+      if (bal || avail) {
+        nonZeroFunding.push({
+          ccy: b.ccy,
+          bal: Math.round(bal * 100000000) / 100000000,
+          available: Math.round(avail * 100000000) / 100000000,
+        });
+      }
     }
   }
   let positionPnl = 0, positionMargin = 0;
@@ -361,8 +399,17 @@ async function diagnoseOKXBalance(env) {
     has,
     account: summarize(account),
     funding: summarize(funding),
+    accountAll: summarize(accountAll),
+    fundingAll: summarize(fundingAll),
+    valuation: {
+      ...summarize(valuation),
+      totalBal: Number(valuation.data?.data?.[0]?.totalBal ?? valuation.data?.data?.totalBal ?? 0) || 0,
+      details: valuation.data?.data?.[0] || valuation.data?.data || null,
+    },
     positions: summarize(positions),
     currencies: [...currencies].filter(Boolean).sort(),
+    nonZeroAccount: nonZeroAccount.slice(0, 30),
+    nonZeroFunding: nonZeroFunding.slice(0, 30),
     totalIncludesUnrealizedPnl: true,
     totals: normalizeBalance({ total: total || USDT + USDC, free, margin, orders, pnl, USDT, USDC }),
   };
@@ -421,7 +468,7 @@ async function diagnoseBybitBalance(env) {
       const accountMarginBalance = num(account.totalMarginBalance);
       const accountWallet = num(account.totalWalletBalance);
       const accountTotal = accountEquity || accountMarginBalance || (accountWallet ? accountWallet + accountPnl : 0);
-      const accountFree = num(account.totalAvailableBalance);
+      const accountAvailable = num(account.totalAvailableBalance);
       const accountIM = num(account.totalInitialMargin);
       let accountOrders = 0;
       let accountPositionMargin = 0;
@@ -435,8 +482,9 @@ async function diagnoseBybitBalance(env) {
         accountPositionMargin += num(c.totalPositionIM);
       }
       const accountMargin = accountPositionMargin || Math.max(0, accountIM - accountOrders);
+      const accountDisplayFree = accountAvailable || Math.max(0, accountTotal - accountMargin - accountOrders - accountPnl);
       total += accountTotal;
-      free += accountFree;
+      free += accountDisplayFree;
       margin += accountMargin;
       orders += accountOrders;
       pnl += accountPnl;
@@ -446,7 +494,8 @@ async function diagnoseBybitBalance(env) {
         totalWalletBalance: Math.round(accountWallet * 100) / 100,
         totalPerpUPL: Math.round(accountPnl * 100) / 100,
         calculatedTotal: Math.round(accountTotal * 100) / 100,
-        totalAvailableBalance: Math.round(accountFree * 100) / 100,
+        totalAvailableBalance: Math.round(accountAvailable * 100) / 100,
+        displayFree: Math.round(accountDisplayFree * 100) / 100,
         margin: Math.round(accountMargin * 100) / 100,
         orders: Math.round(accountOrders * 100) / 100,
         coinUSDT: Math.round(coinUSDT * 100) / 100,
@@ -1045,7 +1094,7 @@ async function fetchBalances(env) {
           const accountMarginBalance = parseFloat(account.totalMarginBalance || 0);
           const accountWallet = parseFloat(account.totalWalletBalance || 0);
           const accountTotal = accountEquity || accountMarginBalance || (accountWallet ? accountWallet + accountPnl : 0);
-          const accountFree = parseFloat(account.totalAvailableBalance || 0);
+          const accountAvailable = parseFloat(account.totalAvailableBalance || 0);
           const accountInitialMargin = parseFloat(account.totalInitialMargin || 0);
           let accountOrders = 0;
           let accountPositionMargin = 0;
@@ -1056,10 +1105,11 @@ async function fetchBalances(env) {
             accountOrders += parseFloat(c.totalOrderIM || 0);
             accountPositionMargin += parseFloat(c.totalPositionIM || 0);
           }
-          total += accountTotal;
-          free += accountFree;
           orders += accountOrders;
-          margin += accountPositionMargin || Math.max(0, accountInitialMargin - accountOrders);
+          const accountMargin = accountPositionMargin || Math.max(0, accountInitialMargin - accountOrders);
+          total += accountTotal;
+          margin += accountMargin;
+          free += accountAvailable || Math.max(0, accountTotal - accountMargin - accountOrders - accountPnl);
           pnl += accountPnl;
         }
         const fallbackTotal = totalUsdt + totalUsdc + (total ? 0 : pnl);
