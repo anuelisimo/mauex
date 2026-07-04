@@ -73,6 +73,31 @@ window.doEmailLogin = async () => {
 
 window.doLogout = () => signOut(auth);
 
+function waitForUiReady(timeoutMs = 3000) {
+  if (typeof window.showPage === 'function') return Promise.resolve(true);
+  const started = Date.now();
+  return new Promise(resolve => {
+    const tick = () => {
+      if (typeof window.showPage === 'function') return resolve(true);
+      if (Date.now() - started >= timeoutMs) return resolve(false);
+      setTimeout(tick, 40);
+    };
+    tick();
+  });
+}
+
+function openInitialDashboard() {
+  if (typeof window.showPage === 'function') {
+    window.showPage('dashboard');
+    return;
+  }
+  document.querySelectorAll('.bnav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === 'dashboard'));
+  ['dashPage','watchPage','ordersPage','posPage','mapPage','histPage','signalsPage','calcPage','analysisPage','settingsPage','tradPage'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === 'dashPage' ? 'block' : 'none';
+  });
+}
+
 // ── Auth state ─────────────────────────────────────────────────────────────
 onAuthStateChanged(auth, async user => {
   CU = user;
@@ -93,7 +118,8 @@ onAuthStateChanged(auth, async user => {
     await loadAll();
     setTimeout(() => window.refreshSignalRemoteStates?.(), 500);
     setTimeout(() => window.checkMissedTradeLevels?.(), 1200);
-    showPage('dashboard');
+    await waitForUiReady();
+    openInitialDashboard();
     startLivePrices();
     // Show master password modal if keys are configured
     setTimeout(checkMasterPassNeeded, 800);

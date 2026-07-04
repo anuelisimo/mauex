@@ -280,7 +280,10 @@ window.showPage = page => {
   });
   const pageEl = document.getElementById(PAGES[page]);
   if (pageEl) pageEl.style.display = 'block';
-  if (page === 'calc') window.clearCalculatorEditMode?.();
+  if (page === 'calc') {
+    window.clearCalculatorEditMode?.();
+    window.syncCalcLeveragePlacement?.();
+  }
 
   // Render the page
   const renders = {
@@ -2834,6 +2837,23 @@ function buildLevGrid() {
     <div class="lev-btn ${l===calcState.lev?'sel':''}" onclick="pickLev(${l})">${l}x</div>
   `).join('');
 }
+
+window.syncCalcLeveragePlacement = () => {
+  const lev = document.getElementById('levSec');
+  const mobileSlot = document.getElementById('mobileLevSlot');
+  const exchange = document.getElementById('exchSec');
+  if (!lev || !mobileSlot || !exchange) return;
+  const mobile = window.matchMedia?.('(max-width: 768px)').matches || window.innerWidth <= 768;
+  if (mobile) {
+    if (lev.parentElement !== mobileSlot) mobileSlot.appendChild(lev);
+    return;
+  }
+  const home = exchange.parentElement;
+  if (home && lev.parentElement !== home) exchange.insertAdjacentElement('afterend', lev);
+};
+
+window.addEventListener('resize', () => window.syncCalcLeveragePlacement?.());
+setTimeout(() => window.syncCalcLeveragePlacement?.(), 0);
 
 window.pickLev = l => {
   calcState.lev = l;

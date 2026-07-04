@@ -358,6 +358,7 @@ textarea{resize:vertical;min-height:70px;}
 .main-chart-shell.fullscreen .main-chart{height:calc(100vh - 215px);}
 .main-chart-shell.fullscreen .main-obv-chart{height:120px;}
 .calc-chart-card{padding:12px!important;}
+.mobile-lev-slot{display:none;}
 .calc-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
 .calc-chart-status{font-family:var(--mono);font-size:10px;color:var(--t3);}
 .calc-chart-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
@@ -454,23 +455,7 @@ textarea{resize:vertical;min-height:70px;}
   .main-chart{height:calc(100vh - 450px);min-height:300px;}
   .main-obv-chart{height:96px;}
   .main-chart-help{display:none;}
-  .calc-layout{display:flex!important;flex-direction:column;gap:0!important;}
-  .calc-layout>div{display:contents!important;}
-  .calc-layout>div:first-child>.card-sm:nth-child(1){order:1;}
-  .calc-layout>div:first-child>.card-sm:nth-child(2){order:2;}
-  .calc-layout>div:first-child>.card-sm:nth-child(4){order:3;}
-  .calc-layout>div:first-child>.card-sm:nth-child(5){order:4;}
-  .calc-layout>div:first-child>.card-sm:nth-child(6){order:5;}
-  .calc-layout>div:first-child>.card-sm:nth-child(7){order:6;}
-  .calc-layout>div:first-child>.card-sm:nth-child(8){order:7;}
-  #calcAlert1{order:8;}
-  #calcAlert2{order:9;}
-  #calcMetrics{order:10;}
-  #spotNote{order:11;}
-  #calcLevelsCard{order:12;}
-  #calcPriceMapCard{order:13;}
-  #levSec{order:14;}
-  .calc-chart-card{order:15;}
+  .mobile-lev-slot{display:block;}
   #levSec .lev-grid{grid-template-columns:repeat(6,1fr);}
   .calc-chart-head{display:block;}
   .calc-chart-tools{margin-top:8px;width:100%;}
