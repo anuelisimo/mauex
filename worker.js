@@ -102,19 +102,26 @@ async function fetchBalancesV2(env) {
           headers: { 'OK-ACCESS-KEY': okxKey, 'OK-ACCESS-SIGN': b64, 'OK-ACCESS-TIMESTAMP': ts, 'OK-ACCESS-PASSPHRASE': okxPass, 'Content-Type': 'application/json' },
         });
       };
+      const num = (...vals) => {
+        for (const v of vals) {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return 0;
+      };
       let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
       let totalUsdt = 0, totalUsdc = 0;
       const r1 = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
       if (r1.ok && r1.data?.code === '0') {
         const account = r1.data.data?.[0] || {};
-        total += parseFloat(account.totalEq || 0);
+        total += num(account.totalEq, account.adjEq);
         for (const d of (account.details || [])) {
-          const eq = parseFloat(d.eq || d.cashBal || 0);
-          const available = parseFloat(d.availEq || d.availBal || 0);
+          const eq = num(d.eq, d.eqUsd, d.disEq, d.cashBal, d.availBal);
+          const available = num(d.availEq, d.availBal, d.cashBal);
           free += available;
-          margin += parseFloat(d.imr || 0);
-          orders += parseFloat(d.ordFrozen || 0);
-          pnl += parseFloat(d.upl || 0);
+          margin += num(d.imr);
+          orders += num(d.ordFrozen, d.frozenBal);
+          pnl += num(d.upl);
           if (d.ccy === 'USDT') totalUsdt += eq;
           if (d.ccy === 'USDC') totalUsdc += eq;
         }
@@ -122,8 +129,8 @@ async function fetchBalancesV2(env) {
       const r2 = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
       if (r2.ok && r2.data?.code === '0') {
         for (const b of (r2.data.data || [])) {
-          const bal = parseFloat(b.bal || b.availBal || 0);
-          const avail = parseFloat(b.availBal || bal || 0);
+          const bal = num(b.bal, b.availBal);
+          const avail = num(b.availBal, bal);
           total += bal;
           free += avail;
           if (b.ccy === 'USDT') totalUsdt += bal;
@@ -132,6 +139,7 @@ async function fetchBalancesV2(env) {
       }
       balances.OKX = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
       if (!r1.ok && !r2.ok) errors.OKX = r1.data?.msg || `${r1.status}`;
+      else if ((total || totalUsdt + totalUsdc || free || margin || orders || pnl) <= 0) errors.OKX = 'OKX respondio sin saldos USDT/USDC utilizables';
     } catch(e) { errors.OKX = e.message; }
   }
 
@@ -219,7 +227,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-02-bybit-equity-v3';
+const WORKER_VERSION = '2026-07-03-okx-kucoin-capital-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -863,36 +871,58 @@ async function fetchBalances(env) {
         });
       };
 
+      const num = (...vals) => {
+        for (const v of vals) {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return 0;
+      };
+      let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
       let usdtTotal = 0, usdcTotal = 0;
 
       // Trading account (futures/swaps)
       const r1 = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
       if (r1.ok && r1.data?.code === '0') {
-        const details = r1.data.data?.[0]?.details || [];
-        usdtTotal += parseFloat(details.find(d=>d.ccy==='USDT')?.availEq || 0);
-        usdcTotal += parseFloat(details.find(d=>d.ccy==='USDC')?.availEq || 0);
+        const account = r1.data.data?.[0] || {};
+        total += num(account.totalEq, account.adjEq);
+        for (const d of (account.details || [])) {
+          const eq = num(d.eq, d.eqUsd, d.disEq, d.cashBal, d.availBal);
+          const available = num(d.availEq, d.availBal, d.cashBal);
+          free += available;
+          margin += num(d.imr);
+          orders += num(d.ordFrozen, d.frozenBal);
+          pnl += num(d.upl);
+          if (d.ccy === 'USDT') usdtTotal += eq;
+          if (d.ccy === 'USDC') usdcTotal += eq;
+        }
       }
 
       // Funding account
       const r2 = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
       if (r2.ok && r2.data?.code === '0') {
         for (const b of (r2.data.data || [])) {
-          if (b.ccy === 'USDT') usdtTotal += parseFloat(b.availBal || 0);
-          if (b.ccy === 'USDC') usdcTotal += parseFloat(b.availBal || 0);
+          const bal = num(b.bal, b.availBal);
+          const avail = num(b.availBal, bal);
+          total += bal;
+          free += avail;
+          if (b.ccy === 'USDT') usdtTotal += bal;
+          if (b.ccy === 'USDC') usdcTotal += bal;
         }
       }
 
       balances.OKX = normalizeBalance({
-        total: usdtTotal + usdcTotal,
-        free: usdtTotal + usdcTotal,
-        margin: 0,
-        orders: 0,
-        pnl: 0,
+        total: total || usdtTotal + usdcTotal,
+        free,
+        margin,
+        orders,
+        pnl,
         USDT: usdtTotal,
         USDC: usdcTotal,
       });
 
       if (!r1.ok && !r2.ok) errors.OKX = r1.data?.msg || `${r1.status}`;
+      else if ((total || usdtTotal + usdcTotal || free || margin || orders || pnl) <= 0) errors.OKX = 'OKX respondio sin saldos USDT/USDC utilizables';
     } catch(e) { errors.OKX = e.message; }
   }
 
