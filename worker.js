@@ -137,6 +137,17 @@ async function fetchBalancesV2(env) {
           if (b.ccy === 'USDC') totalUsdc += bal;
         }
       }
+      let positionPnl = 0, positionMargin = 0;
+      const r3 = await okxGet('/api/v5/account/positions?instType=SWAP');
+      if (r3.ok && r3.data?.code === '0') {
+        for (const p of (r3.data.data || []).filter(p => num(p.pos) !== 0)) {
+          positionPnl += num(p.upl);
+          positionMargin += num(p.margin, p.imr, Math.abs(num(p.notionalUsd)) / Math.max(1, num(p.lever) || 1));
+        }
+      }
+      if (positionPnl) pnl = positionPnl;
+      if (positionMargin) margin = Math.max(margin, positionMargin);
+      if (pnl) total += pnl;
       balances.OKX = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
       if (!r1.ok && !r2.ok) errors.OKX = r1.data?.msg || `${r1.status}`;
       else if ((total || totalUsdt + totalUsdc || free || margin || orders || pnl) <= 0) errors.OKX = 'OKX respondio sin saldos USDT/USDC utilizables';
@@ -227,7 +238,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-okx-diagnostic-tp-alerts-v1';
+const WORKER_VERSION = '2026-07-04-okx-unrealized-pnl-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -301,6 +312,7 @@ async function diagnoseOKXBalance(env) {
 
   const account = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
   const funding = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
+  const positions = await okxGet('/api/v5/account/positions?instType=SWAP');
   let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
   const currencies = new Set();
 
@@ -328,13 +340,25 @@ async function diagnoseOKXBalance(env) {
       if (b.ccy === 'USDC') USDC += bal;
     }
   }
+  let positionPnl = 0, positionMargin = 0;
+  if (positions.ok && positions.data?.code === '0') {
+    for (const p of (positions.data.data || []).filter(p => num(p.pos) !== 0)) {
+      positionPnl += num(p.upl);
+      positionMargin += num(p.margin, p.imr, Math.abs(num(p.notionalUsd)) / Math.max(1, num(p.lever) || 1));
+    }
+  }
+  if (positionPnl) pnl = positionPnl;
+  if (positionMargin) margin = Math.max(margin, positionMargin);
+  if (pnl) total += pnl;
 
   return {
-    ok: account.ok || funding.ok,
+    ok: account.ok || funding.ok || positions.ok,
     has,
     account: summarize(account),
     funding: summarize(funding),
+    positions: summarize(positions),
     currencies: [...currencies].filter(Boolean).sort(),
+    totalIncludesUnrealizedPnl: true,
     totals: normalizeBalance({ total: total || USDT + USDC, free, margin, orders, pnl, USDT, USDC }),
   };
 }
@@ -992,6 +1016,17 @@ async function fetchBalances(env) {
           if (b.ccy === 'USDC') usdcTotal += bal;
         }
       }
+      let positionPnl = 0, positionMargin = 0;
+      const r3 = await okxGet('/api/v5/account/positions?instType=SWAP');
+      if (r3.ok && r3.data?.code === '0') {
+        for (const p of (r3.data.data || []).filter(p => num(p.pos) !== 0)) {
+          positionPnl += num(p.upl);
+          positionMargin += num(p.margin, p.imr, Math.abs(num(p.notionalUsd)) / Math.max(1, num(p.lever) || 1));
+        }
+      }
+      if (positionPnl) pnl = positionPnl;
+      if (positionMargin) margin = Math.max(margin, positionMargin);
+      if (pnl) total += pnl;
 
       balances.OKX = normalizeBalance({
         total: total || usdtTotal + usdcTotal,
