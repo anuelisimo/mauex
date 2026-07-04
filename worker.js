@@ -142,7 +142,7 @@ async function fetchBalancesV2(env) {
         }
       }
       let positionPnl = 0, positionMargin = 0;
-      const r3 = await okxGet('/api/v5/account/positions?instType=SWAP');
+      const r3 = await okxGet('/api/v5/account/positions');
       if (r3.ok && r3.data?.code === '0') {
         for (const p of (r3.data.data || []).filter(p => num(p.pos) !== 0)) {
           positionPnl += num(p.upl);
@@ -243,7 +243,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-bybit-upl-diagnostic-v1';
+const WORKER_VERSION = '2026-07-04-okx-all-positions-upl-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -317,7 +317,7 @@ async function diagnoseOKXBalance(env) {
 
   const account = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
   const funding = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
-  const positions = await okxGet('/api/v5/account/positions?instType=SWAP');
+  const positions = await okxGet('/api/v5/account/positions');
   let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
   const currencies = new Set();
 
@@ -1129,7 +1129,7 @@ async function fetchBalances(env) {
         }
       }
       let positionPnl = 0, positionMargin = 0;
-      const r3 = await okxGet('/api/v5/account/positions?instType=SWAP');
+      const r3 = await okxGet('/api/v5/account/positions');
       if (r3.ok && r3.data?.code === '0') {
         for (const p of (r3.data.data || []).filter(p => num(p.pos) !== 0)) {
           positionPnl += num(p.upl);
