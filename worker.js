@@ -62,10 +62,13 @@ async function fetchBalancesV2(env) {
         let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
         let totalUsdt = 0, totalUsdc = 0;
         for (const account of (r.data.result?.list || [])) {
-          const accountTotal = parseFloat(account.totalEquity || account.totalMarginBalance || account.totalWalletBalance || 0);
+          const accountPnl = parseFloat(account.totalPerpUPL || 0);
+          const accountEquity = parseFloat(account.totalEquity || 0);
+          const accountMarginBalance = parseFloat(account.totalMarginBalance || 0);
+          const accountWallet = parseFloat(account.totalWalletBalance || 0);
+          const accountTotal = accountEquity || accountMarginBalance || (accountWallet ? accountWallet + accountPnl : 0);
           const accountFree = parseFloat(account.totalAvailableBalance || 0);
           const accountIM = parseFloat(account.totalInitialMargin || 0);
-          const accountPnl = parseFloat(account.totalPerpUPL || 0);
           let accountOrders = 0;
           let accountPositionMargin = 0;
           for (const c of (account.coin || [])) {
@@ -81,7 +84,8 @@ async function fetchBalancesV2(env) {
           margin += accountPositionMargin || Math.max(0, accountIM - accountOrders);
           pnl += accountPnl;
         }
-        balances.BYBIT = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
+        const fallbackTotal = totalUsdt + totalUsdc + (total ? 0 : pnl);
+        balances.BYBIT = normalizeBalance({ total: total || fallbackTotal, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
       } else {
         errors.BYBIT = r.data?.retMsg || `${r.status}`;
       }
@@ -239,7 +243,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-all-exchanges-upl-equity-v1';
+const WORKER_VERSION = '2026-07-04-bybit-upl-equity-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -935,10 +939,13 @@ async function fetchBalances(env) {
         let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
         let totalUsdt = 0, totalUsdc = 0;
         for (const account of (r.data.result?.list || [])) {
-          const accountTotal = parseFloat(account.totalEquity || account.totalMarginBalance || account.totalWalletBalance || 0);
+          const accountPnl = parseFloat(account.totalPerpUPL || 0);
+          const accountEquity = parseFloat(account.totalEquity || 0);
+          const accountMarginBalance = parseFloat(account.totalMarginBalance || 0);
+          const accountWallet = parseFloat(account.totalWalletBalance || 0);
+          const accountTotal = accountEquity || accountMarginBalance || (accountWallet ? accountWallet + accountPnl : 0);
           const accountFree = parseFloat(account.totalAvailableBalance || 0);
           const accountInitialMargin = parseFloat(account.totalInitialMargin || 0);
-          const accountPnl = parseFloat(account.totalPerpUPL || 0);
           let accountOrders = 0;
           let accountPositionMargin = 0;
           for (const c of (account.coin || [])) {
@@ -954,7 +961,8 @@ async function fetchBalances(env) {
           margin += accountPositionMargin || Math.max(0, accountInitialMargin - accountOrders);
           pnl += accountPnl;
         }
-        balances.BYBIT = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
+        const fallbackTotal = totalUsdt + totalUsdc + (total ? 0 : pnl);
+        balances.BYBIT = normalizeBalance({ total: total || fallbackTotal, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
       } else {
         errors.BYBIT = r.data?.retMsg || `${r.status}`;
       }
