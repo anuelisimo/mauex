@@ -167,7 +167,7 @@ body{background:var(--bg0);color:var(--t1);font-family:var(--sans);font-size:14p
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
 
 /* ── AUTH ────────────────────────────────────────────────────────────────── */
-#authScreen{position:fixed;inset:0;background:var(--bg0);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:32px;z-index:200;}
+#authScreen{position:fixed;inset:0;background:var(--bg0);display:none;align-items:center;justify-content:center;flex-direction:column;gap:32px;z-index:200;}
 .auth-logo{display:flex;align-items:center;gap:14px;}
 .auth-logo-mark{width:56px;height:56px;border:2px solid var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;}
 .auth-logo-text{font-family:var(--mono);font-size:28px;font-weight:600;letter-spacing:2px;}
@@ -454,6 +454,24 @@ textarea{resize:vertical;min-height:70px;}
   .main-chart{height:calc(100vh - 450px);min-height:300px;}
   .main-obv-chart{height:96px;}
   .main-chart-help{display:none;}
+  .calc-layout{display:flex!important;flex-direction:column;gap:0!important;}
+  .calc-layout>div{display:contents!important;}
+  .calc-layout>div:first-child>.card-sm:nth-child(1){order:1;}
+  .calc-layout>div:first-child>.card-sm:nth-child(2){order:2;}
+  .calc-layout>div:first-child>.card-sm:nth-child(4){order:3;}
+  .calc-layout>div:first-child>.card-sm:nth-child(5){order:4;}
+  .calc-layout>div:first-child>.card-sm:nth-child(6){order:5;}
+  .calc-layout>div:first-child>.card-sm:nth-child(7){order:6;}
+  .calc-layout>div:first-child>.card-sm:nth-child(8){order:7;}
+  #calcAlert1{order:8;}
+  #calcAlert2{order:9;}
+  #calcMetrics{order:10;}
+  #spotNote{order:11;}
+  #calcLevelsCard{order:12;}
+  #calcPriceMapCard{order:13;}
+  #levSec{order:14;}
+  .calc-chart-card{order:15;}
+  #levSec .lev-grid{grid-template-columns:repeat(6,1fr);}
   .calc-chart-head{display:block;}
   .calc-chart-tools{margin-top:8px;width:100%;}
   .calc-chart-tools .tf-switch{flex:1;}
