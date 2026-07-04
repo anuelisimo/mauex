@@ -227,7 +227,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-03-okx-kucoin-capital-v1';
+const WORKER_VERSION = '2026-07-04-okx-diagnostic-tp-alerts-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -255,6 +255,88 @@ async function safeFetch(url, opts = {}) {
   } catch(e) {
     return { ok: false, status: 0, data: null, raw: e.message };
   }
+}
+
+async function diagnoseOKXBalance(env) {
+  const okxKey = (env.OKX_KEY || '').trim();
+  const okxSec = (env.OKX_SECRET || '').trim();
+  const okxPass = (env.OKX_PASSPHRASE || '').trim();
+  const has = { key: !!okxKey, secret: !!okxSec, passphrase: !!okxPass };
+  if (!okxKey || !okxSec || !okxPass) {
+    return { ok: false, has, error: 'Faltan OKX_KEY / OKX_SECRET / OKX_PASSPHRASE' };
+  }
+
+  const okxGet = async (path) => {
+    const ts = new Date().toISOString();
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(okxSec), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(ts + 'GET' + path));
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
+    return safeFetch(`https://www.okx.com${path}`, {
+      timeoutMs: 12000,
+      headers: {
+        'OK-ACCESS-KEY': okxKey,
+        'OK-ACCESS-SIGN': b64,
+        'OK-ACCESS-TIMESTAMP': ts,
+        'OK-ACCESS-PASSPHRASE': okxPass,
+        'Content-Type': 'application/json',
+      },
+    });
+  };
+
+  const num = (...vals) => {
+    for (const v of vals) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  };
+  const summarize = r => ({
+    ok: !!r.ok,
+    status: r.status,
+    code: String(r.data?.code || ''),
+    msg: String(r.data?.msg || r.data?.message || r.raw || '').slice(0, 180),
+    rows: Array.isArray(r.data?.data) ? r.data.data.length : 0,
+    detailRows: Array.isArray(r.data?.data?.[0]?.details) ? r.data.data[0].details.length : 0,
+  });
+
+  const account = await okxGet('/api/v5/account/balance?ccy=USDT,USDC');
+  const funding = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC');
+  let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
+  const currencies = new Set();
+
+  if (account.ok && account.data?.code === '0') {
+    const a = account.data.data?.[0] || {};
+    total += num(a.totalEq, a.adjEq);
+    for (const d of (a.details || [])) {
+      currencies.add(d.ccy);
+      const eq = num(d.eq, d.eqUsd, d.disEq, d.cashBal, d.availBal);
+      free += num(d.availEq, d.availBal, d.cashBal);
+      margin += num(d.imr);
+      orders += num(d.ordFrozen, d.frozenBal);
+      pnl += num(d.upl);
+      if (d.ccy === 'USDT') USDT += eq;
+      if (d.ccy === 'USDC') USDC += eq;
+    }
+  }
+  if (funding.ok && funding.data?.code === '0') {
+    for (const b of (funding.data.data || [])) {
+      currencies.add(b.ccy);
+      const bal = num(b.bal, b.availBal);
+      total += bal;
+      free += num(b.availBal, bal);
+      if (b.ccy === 'USDT') USDT += bal;
+      if (b.ccy === 'USDC') USDC += bal;
+    }
+  }
+
+  return {
+    ok: account.ok || funding.ok,
+    has,
+    account: summarize(account),
+    funding: summarize(funding),
+    currencies: [...currencies].filter(Boolean).sort(),
+    totals: normalizeBalance({ total: total || USDT + USDC, free, margin, orders, pnl, USDT, USDC }),
+  };
 }
 
 function telegramSecret(env) {
@@ -1163,6 +1245,10 @@ export default {
     }
 
     // ── /balance — free liquidity per exchange ───────────────────────────────
+    if (url.pathname === '/diagnose-okx' || url.pathname === '/okx-diagnostic') {
+      return json(await diagnoseOKXBalance(env));
+    }
+
     if (url.pathname === '/balance') {
       const forceLive = url.searchParams.has('live') || url.searchParams.has('t');
       // Try KV cache first (balance is part of summary)
@@ -1504,7 +1590,7 @@ export default {
       });
     }
 
-    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/telegram-webhook','/telegram-signals','/telegram-signal-ai'] }, 404);
+    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/telegram-webhook','/telegram-signals','/telegram-signal-ai'] }, 404);
   },
 
   // ── Cron trigger — runs every minute ─────────────────────────────────────

@@ -1388,7 +1388,8 @@ function checkPriceAlerts(sym, price) {
       if (tp1) {
         const tp1Hit = isLong ? price >= tp1 : price <= tp1;
         const tp1Key = _alertKey(t.id, 'tp1_hit');
-        if (tp1Hit && _shouldAlert(tp1Key, false)) {
+        const alreadyMarked = !!(t.levelAlerts?.tp1 || window.hasAlert?.(t.id, 'tp1'));
+        if (tp1Hit && !alreadyMarked && _shouldAlert(tp1Key, false)) {
           _recordAlert(tp1Key, false);
           window.setAlert?.(t.id, 'tp1', { price, source:'live' });
           _notify(`🎯 ${t.ticker} TP1 alcanzado`, `Precio ${price.toFixed(4)} tocó TP1 ${tp1}`, false);
@@ -1399,7 +1400,8 @@ function checkPriceAlerts(sym, price) {
       if (tp2) {
         const tp2Hit = isLong ? price >= tp2 : price <= tp2;
         const tp2Key = _alertKey(t.id, 'tp2_hit');
-        if (tp2Hit && _shouldAlert(tp2Key, false)) {
+        const alreadyMarked = !!(t.levelAlerts?.tp2 || window.hasAlert?.(t.id, 'tp2'));
+        if (tp2Hit && !alreadyMarked && _shouldAlert(tp2Key, false)) {
           _recordAlert(tp2Key, false);
           window.setAlert?.(t.id, 'tp2', { price, source:'live' });
           _notify(`🎯 ${t.ticker} TP2 alcanzado`, `Precio ${price.toFixed(4)} tocó TP2 ${tp2}`, false);
@@ -1410,7 +1412,8 @@ function checkPriceAlerts(sym, price) {
       if (tp3) {
         const tp3Hit = isLong ? price >= tp3 : price <= tp3;
         const tp3Key = _alertKey(t.id, 'tp3_hit');
-        if (tp3Hit && _shouldAlert(tp3Key, false)) {
+        const alreadyMarked = !!(t.levelAlerts?.tp3 || window.hasAlert?.(t.id, 'tp3'));
+        if (tp3Hit && !alreadyMarked && _shouldAlert(tp3Key, false)) {
           _recordAlert(tp3Key, false);
           window.setAlert?.(t.id, 'tp3', { price, source:'live' });
           _notify(`🎯 ${t.ticker} TP3 alcanzado`, `Precio ${price.toFixed(4)} tocó TP3 ${tp3}`, false);
