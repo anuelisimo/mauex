@@ -388,7 +388,16 @@ function signalEsc(v) {
 }
 
 function signalOriginalTime(sig={}) {
-  return String(sig.signalTime || sig.originalMessageDate || sig.date || '').trim();
+  return String(
+    sig.signalTime ||
+    sig.originalMessageDate ||
+    sig.messageDate ||
+    sig.sentAt ||
+    sig.date ||
+    sig.receivedAt ||
+    sig.createdAt ||
+    ''
+  ).trim();
 }
 
 function signalHasOriginalTime(sig={}) {
@@ -436,14 +445,18 @@ function parseSignalManualDateTime(raw='') {
 function signalTimeUnix(sig={}) {
   const raw = signalOriginalTime(sig);
   if (!raw || sig.originalDateMissing) return 0;
-  const ms = Date.parse(raw);
-  return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
+  return dateLikeToUnix(raw);
 }
 
 function dateLikeToUnix(raw) {
   if (!raw) return 0;
   if (typeof raw === 'number') return raw > 1000000000000 ? Math.floor(raw / 1000) : Math.floor(raw);
-  const ms = Date.parse(String(raw));
+  const s = String(raw).trim();
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = Number(s);
+    return n > 1000000000000 ? Math.floor(n / 1000) : Math.floor(n);
+  }
+  const ms = Date.parse(s);
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
 }
 
@@ -3004,9 +3017,11 @@ window.compute = () => {
 // ── Dashboard ──────────────────────────────────────────────────────────────
 let chPnl, chWR, chA;
 let _liquidityCache = null; // cache so we don't re-fetch on every render
+let _liquidityLastFetchAt = 0;
 const LIQUIDITY_CACHE_KEY = 'mauex_liquidity_cache_v1';
 const LIQUIDITY_FETCH_BLOCK_KEY = 'mauex_liquidity_fetch_block_until';
 const LIQUIDITY_FETCH_BLOCK_MS = 5 * 60 * 1000;
+const LIQUIDITY_REFRESH_MIN_MS = 30 * 1000;
 
 function saveLiquidityLocalCache(data) {
   if (!data?.balances || !Object.keys(data.balances).length) return;
@@ -3197,11 +3212,15 @@ async function fetchAndRenderLiquidity() {
 
   fetchError = liquidityFetchBlockedMessage();
 
-  if (!data && PROXY_URL && !fetchError) {
+  const shouldRefresh = PROXY_URL && !fetchError && (!data || Date.now() - _liquidityLastFetchAt > LIQUIDITY_REFRESH_MIN_MS);
+  if (shouldRefresh) {
     try {
-      el.style.display = 'block';
-      el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">⟳ Cargando capital...</div>`;
-      const r = await fetch(`${PROXY_URL}/balance`, { cache: 'default' });
+      _liquidityLastFetchAt = Date.now();
+      if (!data) el.style.display = 'block';
+      if (!data) {
+        el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando capital...</div>`;
+      }
+      const r = await fetch(`${PROXY_URL}/balance?t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
         data = normalizeDashboardLiquidityData(d);
@@ -3243,8 +3262,20 @@ async function fetchAndRenderLiquidity() {
   window.syncApiModalStatus?.();
 
   const balances = Object.fromEntries(
-    Object.entries(data.balances).map(([ex, b]) => [ex, normalizeDashboardBalance(b)])
+    Object.entries(data.balances).map(([ex, b]) => {
+      const normalized = normalizeDashboardBalance(b);
+      if (b?.error) normalized.error = String(b.error);
+      return [ex, normalized];
+    })
   );
+  Object.entries(data.errors || data.balanceErrors || {}).forEach(([ex, msg]) => {
+    const key = String(ex || '').toUpperCase();
+    if (!key || !msg) return;
+    if (!balances[key]) {
+      balances[key] = { total: 0, free: 0, margin: 0, orders: 0, pnl: 0, USDT: 0, USDC: 0 };
+    }
+    balances[key].error = String(msg);
+  });
 
   // Totals — pure exchange data, no Firestore crossing
   let grandTotal = 0, grandFree = 0, grandMargin = 0, grandOrders = 0, grandPnl = 0;
@@ -3262,14 +3293,17 @@ async function fetchAndRenderLiquidity() {
     const margin = b.margin || 0;
     const orders = b.orders || 0;
     const pnl    = b.pnl    || 0;
-    if (total === 0) return '';
+    if (total === 0 && !b.error) return '';
+    const errorLine = b.error
+      ? `<div style="font-size:8px;color:var(--red);font-family:var(--mono);margin-top:2px;">${dashSafe(b.error)}</div>`
+      : '';
 
     const pnlStr = pnl !== 0
       ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
       : '<span style="color:var(--t3);">—</span>';
 
     return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
-      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}</span>
+      <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}${errorLine}</span>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
         <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${free>0?'$'+fmt(free):'—'}</div>
@@ -3288,7 +3322,7 @@ async function fetchAndRenderLiquidity() {
       </div>
       <div style="text-align:right;">
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">TOTAL</div>
-        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">$${fmt(total)}</div>
+        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--t1);">${total>0?'$'+fmt(total):'-'}</div>
       </div>
     </div>`;
   }).join('');
@@ -4649,7 +4683,7 @@ window.loadTradeIntoCalculator = id => {
   const dir = t.dir || 'long';
   window.showPage('calc');
   setCalculatorEditMode(id);
-  calcChartState.signalTime = dateLikeToUnix(t.signalTime || t.originalMessageDate || '');
+  calcChartState.signalTime = dateLikeToUnix(t.signalTime || t.originalMessageDate || t.messageDate || t.sentAt || t.receivedAt || '');
   calcChartState.key = '';
   window._signalTradeExtras = null;
   window.clearCalcSignalTargets?.();
@@ -7951,7 +7985,7 @@ function drawMainTradeLevels(chart, series, candles, trade) {
 }
 
 function tradeSignalUnix(trade={}) {
-  return dateLikeToUnix(trade.signalTime || trade.originalMessageDate || trade.signalOriginalTime || '');
+  return dateLikeToUnix(trade.signalTime || trade.originalMessageDate || trade.signalOriginalTime || trade.messageDate || trade.sentAt || trade.receivedAt || '');
 }
 
 function tradeExecutionUnix(trade={}) {
