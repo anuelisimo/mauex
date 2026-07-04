@@ -218,16 +218,17 @@ async function fetchBalancesV2(env) {
     } catch(e) { errors.IBKR = `Oracle: ${e.message}`; }
   }
 
-  let totalUsdt = 0, totalUsdc = 0;
+  let totalUsdt = 0, totalUsdc = 0, totalEquity = 0;
   for (const b of Object.values(balances)) {
     totalUsdt += b.USDT || 0;
     totalUsdc += b.USDC || 0;
+    totalEquity += b.total || 0;
   }
 
   const totals = {
     USDT: Math.round(totalUsdt * 100) / 100,
     USDC: Math.round(totalUsdc * 100) / 100,
-    total: Math.round((totalUsdt + totalUsdc) * 100) / 100,
+    total: Math.round((totalEquity || totalUsdt + totalUsdc) * 100) / 100,
   };
 
   return {
@@ -238,7 +239,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-okx-unrealized-pnl-v1';
+const WORKER_VERSION = '2026-07-04-all-exchanges-upl-equity-v1';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -871,11 +872,13 @@ function normalizeBalance(raw = {}) {
   const usdt = Number(raw.USDT ?? raw.usdt ?? 0) || 0;
   const usdc = Number(raw.USDC ?? raw.usdc ?? 0) || 0;
   const fallbackTotal = usdt + usdc;
-  const total = Number(raw.total ?? raw.totalEquity ?? raw.wallet ?? fallbackTotal) || 0;
+  const pnl = Number(raw.pnl ?? raw.unrealizedPnl ?? raw.upnl ?? 0) || 0;
+  const wallet = Number(raw.wallet ?? raw.totalWalletBalance ?? 0) || 0;
+  const rawTotal = Number(raw.total ?? raw.totalEquity ?? raw.equity ?? 0) || 0;
+  const total = rawTotal || (wallet ? wallet + pnl : fallbackTotal) || 0;
   const free = Number(raw.free ?? raw.available ?? raw.availableBalance ?? (fallbackTotal || total)) || 0;
   const margin = Number(raw.margin ?? raw.marginUsed ?? 0) || 0;
   const orders = Number(raw.orders ?? raw.orderMargin ?? 0) || 0;
-  const pnl = Number(raw.pnl ?? raw.unrealizedPnl ?? raw.upnl ?? 0) || 0;
 
   return {
     total: Math.round(total * 100) / 100,
@@ -1094,16 +1097,17 @@ async function fetchBalances(env) {
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  let totalUsdt = 0, totalUsdc = 0;
+  let totalUsdt = 0, totalUsdc = 0, totalEquity = 0;
   for (const b of Object.values(balances)) {
     totalUsdt += b.USDT || 0;
     totalUsdc += b.USDC || 0;
+    totalEquity += b.total || 0;
   }
 
   const totals = {
     USDT: Math.round(totalUsdt * 100) / 100,
     USDC: Math.round(totalUsdc * 100) / 100,
-    total: Math.round((totalUsdt + totalUsdc) * 100) / 100,
+    total: Math.round((totalEquity || totalUsdt + totalUsdc) * 100) / 100,
   };
 
   return {
