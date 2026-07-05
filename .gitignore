@@ -1,0 +1,23 @@
+# MAUex local secrets and credentials.
+# Do not commit real API keys, exchange secrets, env files, or temporary restore files.
+.env
+.env.*
+*.env
+*SECRET*
+*SECRETS*
+*KEYS*
+*API_KEYS*
+MAUEX_SECRET_KEYS.txt
+MAUEX_API_KEYS.txt
+!MAUEX_API_KEYS.example.txt
+BACKUP_VARIABLES_CLOUDFLARE_MAUEX_SECRET*.txt
+.mauex_restore_secrets*.json
+mauex-*-firebase-adminsdk-*.json
+*-firebase-adminsdk-*.json
+*.session
+seen.json
+
+# Local tool/cache folders.
+.npm-cache/
+.wrangler/
+node_modules/

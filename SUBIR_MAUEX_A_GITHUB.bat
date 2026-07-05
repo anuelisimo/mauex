@@ -8,15 +8,33 @@ echo   MAUex - subir cambios a GitHub
 echo ============================================
 echo.
 
+if not exist ".git" (
+  echo No encontre la carpeta .git. Ejecuta este BAT desde la carpeta MauEX.
+  pause
+  exit /b 1
+)
+
+set "ME=%USERDOMAIN%\%USERNAME%"
+echo Corrigiendo permisos de Git...
+icacls ".git" /remove:d "LegionMau\CodexSandboxUsers" >nul 2>nul
+icacls ".git" /remove:d "LegionMau\codexsandboxoffline" >nul 2>nul
+icacls ".git" /remove:d *S-1-5-21-4070875099-3014453175-1194438234-2994042337 >nul 2>nul
+icacls ".git" /grant "%ME%:(OI)(CI)F" /T /C >nul
+icacls ".git" /grant "LegionMau\CodexSandboxUsers:(OI)(CI)M" /T /C >nul 2>nul
+icacls ".git" /grant "LegionMau\codexsandboxoffline:(OI)(CI)M" /T /C >nul 2>nul
+
+if exist ".git\index.lock" del /f /q ".git\index.lock"
+
 git status
 echo.
 
-echo Preparando archivos del frontend...
+echo Preparando archivos de MAUex...
 if exist frontend\index.html git add frontend\index.html
 if exist frontend\styles.css git add frontend\styles.css
 if exist frontend\firebase.js git add frontend\firebase.js
 if exist frontend\app.js git add frontend\app.js
 if exist vercel.json git add vercel.json
+if exist .gitignore git add .gitignore
 if exist wrangler.jsonc git add wrangler.jsonc
 if exist firebase.json git add firebase.json
 if exist firestore.rules git add firestore.rules
@@ -59,12 +77,29 @@ if exist DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.ps1 git add DESACTIVAR_BACKFI
 if exist ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.bat git add ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.bat
 if exist ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.ps1 git add ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.ps1
 if exist oracle\telegram-reader git add oracle\telegram-reader
+if exist scripts git add -A scripts
+if exist .github git add -A .github
+
+echo Registrando mudanzas de Fase 1...
+git add -A -- app.js firebase.js index.html styles.css worker.js telegram-reader
+git add -A -- frontend worker server oracle
+git add -A -- .gitignore package.json railway.toml vercel.json firebase.json firestore.rules wrangler.jsonc wrangler.mauex.restore.jsonc
+git add -A -- README_MAUEX_ESTRUCTURA.txt OPERACION_MAUEX_FASE1.md scripts\README.md
 
 echo Guardando cambios locales...
-git commit -m "Improve signal desk Telegram automation"
-if %ERRORLEVEL% NEQ 0 (
+git diff --cached --quiet
+if %ERRORLEVEL% EQU 0 (
   echo.
-  echo Puede que no haya cambios nuevos para guardar. Sigo igual.
+  echo No hay cambios nuevos para guardar en commit.
+) else (
+  git commit -m "Apply MAUex phase 1 structure"
+  if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo No pude crear el commit local. Revisa el mensaje de Git de arriba.
+    echo No sigo con el pull para no mezclar cambios.
+    if not "%MAUEX_AUTO%"=="1" pause
+    exit /b 1
+  )
 )
 
 echo.
@@ -72,8 +107,8 @@ echo Trayendo la ultima version de GitHub...
 set "STASHED=0"
 git diff --quiet
 if %ERRORLEVEL% NEQ 0 (
-  echo Hay cambios locales fuera del frontend. Los guardo temporalmente para poder traer GitHub...
-  git stash push -m "mauex-temp-non-frontend" -- worker\worker.js
+  echo Hay cambios locales sin guardar. Los guardo temporalmente para poder traer GitHub...
+  git stash push -m "mauex-temp-before-pull"
   if %ERRORLEVEL% EQU 0 set "STASHED=1"
 )
 
