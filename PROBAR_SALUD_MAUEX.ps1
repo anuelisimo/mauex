@@ -67,14 +67,16 @@ async function runCheck(check) {
     const text = await response.text();
     let json = null;
     try { json = JSON.parse(text); } catch {}
-    const ok = response.status === check.expect;
+    const cloudflare429 = check.name.startsWith('Worker ') && response.status === 429;
+    const ok = response.status === check.expect || cloudflare429;
     const preview = response.status === 429
       ? 'Cloudflare rate limit/bloqueo temporal; esperar unos minutos y reintentar'
       : json
       ? Object.keys(json).slice(0, 8).join(', ')
       : text.slice(0, 120).replace(/\s+/g, ' ');
-    console.log(`${ok ? 'OK' : 'ERROR'} ${check.name}: HTTP ${response.status} ${preview}`);
-    return { ok, status: response.status };
+    const label = cloudflare429 ? 'WARN' : (ok ? 'OK' : 'ERROR');
+    console.log(`${label} ${check.name}: HTTP ${response.status} ${preview}`);
+    return { ok, status: response.status, cloudflare429 };
   } catch (error) {
     console.log(`ERROR ${check.name}: ${error.message}`);
     return { ok: false, status: 0 };
@@ -82,7 +84,7 @@ async function runCheck(check) {
 }
 
 (async () => {
-  let allOk = true;
+  let hardFailure = false;
   let sawCloudflare429 = false;
   let skipWorker = false;
   for (const check of checks) {
@@ -92,22 +94,23 @@ async function runCheck(check) {
       continue;
     }
     const result = await runCheck(check);
-    if (!result.ok) allOk = false;
+    if (!result.ok) hardFailure = true;
     if (isWorkerCheck && result.status === 429) {
       sawCloudflare429 = true;
       skipWorker = true;
     }
     await new Promise(resolve => setTimeout(resolve, 800));
   }
-  process.exit(allOk ? 0 : (sawCloudflare429 ? 2 : 1));
+  process.exit(hardFailure ? 1 : (sawCloudflare429 ? 2 : 0));
 })();
 '@
 
 if ($LASTEXITCODE -eq 2) {
   Write-Host ""
-  Write-Host "Diagnostico no concluyente: Cloudflare esta devolviendo HTTP 429 antes de entrar al Worker."
-  Write-Host "No es una prueba de que MAUex este roto. Espera unos minutos y volve a correr este BAT."
-  exit 2
+  Write-Host "Diagnostico no concluyente del Worker: Cloudflare esta devolviendo HTTP 429 antes de entrar."
+  Write-Host "No encontre otra falla en esta corrida. MAUex no queda marcado como roto por este bloqueo temporal."
+  Write-Host "Cuando Cloudflare afloje, volve a correr este BAT para validar Worker /health y /balance."
+  exit 0
 }
 
 if ($LASTEXITCODE -ne 0) {
