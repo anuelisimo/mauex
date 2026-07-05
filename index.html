@@ -691,6 +691,9 @@
           <button class="btn acc sm" onclick="saveProxyUrl()">Guardar</button>
           <button class="btn sm" onclick="testProxyUrl()">Probar</button>
         </div>
+        <div style="margin-top:8px;">
+          <input type="password" id="proxyToken" placeholder="MAUEX_API_TOKEN del Worker">
+        </div>
         <div id="proxyStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
       </div>
 
@@ -782,10 +785,6 @@
         <input type="password" id="unlockPass" placeholder="Tu contraseña maestra"
           onkeydown="if(event.key==='Enter')doUnlock()">
       </div>
-      <label style="display:flex;align-items:flex-start;gap:8px;font-size:11px;color:var(--t2);line-height:1.45;margin-bottom:12px;cursor:pointer;">
-        <input type="checkbox" id="rememberDexPass" style="width:auto;margin-top:2px;">
-        <span>Recordar en este dispositivo<br><span style="color:var(--t3);">Úsalo solo en tu celular o PC personal.</span></span>
-      </label>
       <div id="unlockError" style="display:none;color:var(--red);font-size:11px;margin-bottom:8px;"></div>
     </div>
     <div class="modal-footer" style="justify-content:space-between;">
@@ -1118,11 +1117,11 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      FIREBASE MODULE
      ═══════════════════════════════════════════════════════════════════════ -->
-<script type="module" src="./firebase.js?v=20260704-182330"></script>
+<script type="module" src="./firebase.js?v=20260705-150806"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./app.js?v=20260704-182330"></script>
+<script src="./app.js?v=20260705-150806"></script>
 </body>
 </html>

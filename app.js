@@ -2,6 +2,20 @@
 // Set this to your Cloudflare Worker URL after deploying worker.js
 // Example: 'https://mauex-proxy.tuusuario.workers.dev'
 const PROXY_URL = localStorage.getItem('mauex_proxy') || 'https://mauex-proxy.mauaparo.workers.dev';
+const WORKER_API_TOKEN_KEY = 'mauex_api_token';
+
+function getWorkerApiToken() {
+  return localStorage.getItem(WORKER_API_TOKEN_KEY) || '';
+}
+
+window.workerFetch = function workerFetch(path, options={}) {
+  if (!PROXY_URL) return fetch(path, options);
+  const token = getWorkerApiToken();
+  const headers = new Headers(options.headers || {});
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const url = path.startsWith('http') ? path : `${PROXY_URL}${path.startsWith('/') ? path : '/' + path}`;
+  return fetch(url, { ...options, headers });
+};
 
 // Wrap fetch to go through proxy for exchange private APIs
 window.proxyFetch = function proxyFetch(url, options={}) {
@@ -9,8 +23,7 @@ window.proxyFetch = function proxyFetch(url, options={}) {
     // No proxy configured - try direct (will fail for private APIs due to CORS)
     return fetch(url, options);
   }
-  const proxyUrl = `${PROXY_URL}/proxy?url=${encodeURIComponent(url)}`;
-  return fetch(proxyUrl, options);
+  return window.workerFetch(`/proxy?url=${encodeURIComponent(url)}`, options);
 }
 
 window.publicFetch = async function publicFetch(url, options={}) {
@@ -1466,11 +1479,12 @@ window.editSignalOriginalTime = async id => {
 
 async function fetchTelegramSignals(secret='') {
   const qs = new URLSearchParams({ t: Date.now().toString() });
-  if (secret) qs.set('secret', secret);
-  const r = await fetch(`${PROXY_URL}/telegram-signals?${qs.toString()}`, { cache:'no-store' });
-  if (r.status === 403) {
+  const headers = {};
+  if (secret) headers['X-Telegram-Bot-Api-Secret-Token'] = secret;
+  const r = await window.workerFetch(`/telegram-signals?${qs.toString()}`, { cache:'no-store', headers });
+  if (r.status === 401 || r.status === 403) {
     const e = new Error('secret_required');
-    e.status = 403;
+    e.status = r.status;
     throw e;
   }
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -1533,10 +1547,12 @@ function signalLooksActionableMessage(raw='', hasImage=false) {
 async function fetchSignalAi(sig={}, secret='') {
   if (!PROXY_URL) return null;
   const qs = new URLSearchParams({ t: Date.now().toString() });
-  if (secret) qs.set('secret', secret);
-  const r = await fetch(`${PROXY_URL}/telegram-signal-ai?${qs.toString()}`, {
+  const r = await window.workerFetch(`/telegram-signal-ai?${qs.toString()}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(secret ? { 'X-Telegram-Bot-Api-Secret-Token': secret } : {}),
+    },
     body: JSON.stringify({
       raw: sig.raw || '',
       sourceName: sig.sourceName || sig.traderName || '',
@@ -1545,9 +1561,9 @@ async function fetchSignalAi(sig={}, secret='') {
       imageMimeType: sig.imageMimeType || '',
     }),
   });
-  if (r.status === 403) {
+  if (r.status === 401 || r.status === 403) {
     const e = new Error('secret_required');
-    e.status = 403;
+    e.status = r.status;
     throw e;
   }
   const data = await r.json().catch(() => null);
@@ -3241,7 +3257,7 @@ async function fetchAndRenderLiquidity(opts = {}) {
       if (!data) {
         el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando capital...</div>`;
       }
-      const r = await fetch(`${PROXY_URL}/balance?live=1&t=${Date.now()}`, { cache: 'no-store' });
+      const r = await window.workerFetch(`/balance?live=1&t=${Date.now()}`, { cache: 'no-store' });
       if (r.ok) {
         const d = await r.json();
         data = normalizeDashboardLiquidityData({ ...d, liquiditySource: 'balance' });
@@ -8655,29 +8671,45 @@ window.copyChartsToClipboard = async () => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── Crypto helpers (AES-GCM via WebCrypto) ────────────────────────────────
-async function deriveKey(password) {
+function bytesToB64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function b64ToBytes(b64) {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+async function deriveKey(password, saltBytes, iterations = 310000) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    { name:'PBKDF2', salt: enc.encode('mauex-salt-v1'), iterations:100000, hash:'SHA-256' },
+    { name:'PBKDF2', salt: saltBytes, iterations, hash:'SHA-256' },
     keyMaterial, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']
   );
 }
 
 async function encryptData(plaintext, password) {
-  const key = await deriveKey(password);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKey(password, salt, 310000);
   const iv  = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();
   const ct  = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(plaintext));
-  // Combine iv + ciphertext, encode as base64
   const combined = new Uint8Array(iv.length + ct.byteLength);
   combined.set(iv); combined.set(new Uint8Array(ct), iv.length);
-  return btoa(String.fromCharCode(...combined));
+  return `v2:${bytesToB64(salt)}:${bytesToB64(combined)}`;
 }
 
 async function decryptData(b64, password) {
-  const key  = await deriveKey(password);
-  const data = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  let key;
+  let data;
+  if (String(b64 || '').startsWith('v2:')) {
+    const [, saltB64, payloadB64] = String(b64).split(':');
+    key = await deriveKey(password, b64ToBytes(saltB64), 310000);
+    data = b64ToBytes(payloadB64);
+  } else {
+    key = await deriveKey(password, new TextEncoder().encode('mauex-salt-v1'), 100000);
+    data = b64ToBytes(b64);
+  }
   const iv   = data.slice(0,12);
   const ct   = data.slice(12);
   const dec  = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
@@ -8701,8 +8733,8 @@ async function hmacSHA256Base64(secret, message) {
 
 // ── Master password state ─────────────────────────────────────────────────
 const MASTER_PASS_SESSION_KEY = 'mauex_mp';
-const MASTER_PASS_DEVICE_KEY = 'mauex_mp_remembered';
-let _masterPass = sessionStorage.getItem(MASTER_PASS_SESSION_KEY) || localStorage.getItem(MASTER_PASS_DEVICE_KEY) || '';
+let _masterPass = sessionStorage.getItem(MASTER_PASS_SESSION_KEY) || '';
+localStorage.removeItem('mauex_mp_remembered');
 
 window.saveMasterPass = () => {
   const p = document.getElementById('masterPass').value;
@@ -8876,7 +8908,14 @@ window.testExchangeKeys = async exchange => {
 async function getDecryptedKeys(exchange) {
   const encrypted = window.G?._getExchangeKey?.(exchange);
   if(!encrypted) return null;
-  try { return JSON.parse(await decryptData(encrypted, _masterPass)); }
+  try {
+    const plaintext = await decryptData(encrypted, _masterPass);
+    const keys = JSON.parse(plaintext);
+    if (!String(encrypted).startsWith('v2:') && window.G?._saveExchangeKey) {
+      await window.G._saveExchangeKey(exchange, await encryptData(plaintext, _masterPass));
+    }
+    return keys;
+  }
   catch(e){ toast('Contraseña maestra incorrecta.','error'); return null; }
 }
 
@@ -9522,7 +9561,7 @@ async function importExchangeHistory(exchange, keys) {
   for(const t of history) {
     if(existing.has(t.exchangeId)) continue;
     try {
-      await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'), { userId:window._getCU()?.uid, ...t });
+      await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'), { ...t, userId:window._getCU()?.uid });
       count++;
     } catch(e){}
   }
@@ -9539,7 +9578,7 @@ window.syncAllExchanges = async (opts = {}) => {
   if(PROXY_URL) {
     try {
       const endpoint = force ? `/sync?t=${Date.now()}` : `/summary?t=${Date.now()}`;
-      const r    = await fetch(`${PROXY_URL}${endpoint}`, { cache: 'no-store' });
+      const r    = await window.workerFetch(endpoint, { cache: 'no-store' });
       const contentType = r.headers.get('content-type') || '';
       if (r.status === 429) throw new Error('Cloudflare rate limit 429. Espera unos minutos y evita sync continuo.');
       if (!r.ok) throw new Error(`Worker HTTP ${r.status}`);
@@ -10071,7 +10110,7 @@ window.fetchOHLCV = async (symbol, interval, limit=300) => {
 window.checkMasterPassNeeded = async function() {
   const G = window.G;
   if(!G?._hasExchangeKeys?.()) return;
-  if(_masterPass) { // already unlocked (from sessionStorage or this session)
+  if(_masterPass) { // already unlocked in this session
     syncAllExchanges({ force:false, quiet:true });
     startAutoSync();
     return;
@@ -10086,22 +10125,17 @@ window.checkMasterPassNeeded = async function() {
       ${ex==='binance'?'⬡ Binance':ex==='bybit'?'◈ Bybit':'OK OKX'}
     </span>`).join('');
   document.getElementById('masterPassExchanges').innerHTML = badges;
-  const remember = document.getElementById('rememberDexPass');
-  if (remember) remember.checked = !!localStorage.getItem(MASTER_PASS_DEVICE_KEY);
   openModal('masterPassModal');
   setTimeout(()=>document.getElementById('unlockPass')?.focus(), 300);
 };
 
 window.doUnlock = async () => {
   const pass = document.getElementById('unlockPass').value;
-  const remember = document.getElementById('rememberDexPass')?.checked || false;
   if(!pass){ document.getElementById('unlockError').textContent='Ingresá tu contraseña.'; document.getElementById('unlockError').style.display='block'; return; }
   // Test decryption with a known exchange
   const G = window.G;
   _masterPass = pass;
   sessionStorage.setItem(MASTER_PASS_SESSION_KEY, pass);
-  if (remember) localStorage.setItem(MASTER_PASS_DEVICE_KEY, pass);
-  else localStorage.removeItem(MASTER_PASS_DEVICE_KEY);
   try {
     const configured = ['binance','bybit','okx','mexc','kucoin'].filter(ex=>G?._hasExchangeKey?.(ex));
     if(configured.length){
@@ -10117,7 +10151,6 @@ window.doUnlock = async () => {
   } catch(e){
     _masterPass='';
     sessionStorage.removeItem(MASTER_PASS_SESSION_KEY);
-    localStorage.removeItem(MASTER_PASS_DEVICE_KEY);
     document.getElementById('unlockError').textContent='Contraseña incorrecta. Intentá de nuevo.';
     document.getElementById('unlockError').style.display='block';
   }
@@ -10302,7 +10335,7 @@ async function getDashboardExportLiquidity() {
   if (window._liquidityCache?.balances) return window._liquidityCache;
   if (!PROXY_URL) return null;
   try {
-    const r = await fetch(`${PROXY_URL}/balance?live=1&t=${Date.now()}`, { cache:'no-store' });
+    const r = await window.workerFetch(`/balance?live=1&t=${Date.now()}`, { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP '+r.status);
     const data = await r.json();
     _liquidityCache = data;
@@ -10675,13 +10708,17 @@ window.deleteAllData = async () => {
 // ── Proxy URL management ────────────────────────────────────────────────────
 window.saveProxyUrl = () => {
   const url = document.getElementById('proxyUrl')?.value?.trim();
+  const token = document.getElementById('proxyToken')?.value?.trim() || '';
   if(url) {
     localStorage.setItem('mauex_proxy', url);
+    if (token) localStorage.setItem(WORKER_API_TOKEN_KEY, token);
+    else localStorage.removeItem(WORKER_API_TOKEN_KEY);
     // Update PROXY_URL - need to reload to take effect
     const st = document.getElementById('proxyStatus');
     if(st){ st.textContent='✅ Guardado. Recargá la página para aplicar.'; st.style.display='block'; st.style.color='var(--accent)'; }
   } else {
     localStorage.removeItem('mauex_proxy');
+    localStorage.removeItem(WORKER_API_TOKEN_KEY);
     const st = document.getElementById('proxyStatus');
     if(st){ st.textContent='Proxy eliminado.'; st.style.display='block'; st.style.color='var(--t2)'; }
   }
@@ -10709,6 +10746,8 @@ window.testProxyUrl = async () => {
 function loadProxyUrlField() {
   const el = document.getElementById('proxyUrl');
   if(el) el.value = localStorage.getItem('mauex_proxy') || '';
+  const tokenEl = document.getElementById('proxyToken');
+  if(tokenEl) tokenEl.value = getWorkerApiToken();
 }
 
 // ── Open trade in AI Analysis with levels drawn ─────────────────────────────
@@ -10991,8 +11030,8 @@ window.runImportHistory = async () => {
 
   try {
     // Call Worker to fetch history (Worker has the keys, no CORS issues)
-    const url = `${PROXY_URL}/position-history?from=${fromDate}&to=${toDate||new Date().toISOString().split('T')[0]}`;
-    const r   = await fetch(url);
+    const url = `/position-history?from=${fromDate}&to=${toDate||new Date().toISOString().split('T')[0]}`;
+    const r   = await window.workerFetch(url);
     if(!r.ok) throw new Error(`Worker error: ${r.status}`);
     const data = await r.json();
 
@@ -11007,7 +11046,7 @@ window.runImportHistory = async () => {
       if(existing.has(t.exchangeId)) continue;
       try {
         await window._fb.addDoc(window._fb.collection(window._fb.db,'trades'),
-          { userId:window._getCU()?.uid, ...t });
+          { ...t, userId:window._getCU()?.uid });
         saved++;
       } catch(e){}
     }
@@ -11484,7 +11523,7 @@ window.syncAllOrders = async () => {
   if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
   try {
     if(PROXY_URL) {
-      const r = await fetch(`${PROXY_URL}/orders`);
+      const r = await window.workerFetch('/orders');
       const d = await r.json();
       const freshOrders = d.orders || [];
       // Restore grouped orders (remove any that are now individual)

@@ -15,11 +15,24 @@
  *    Agregar: * * * * * (cada minuto)
  */
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Telegram-Bot-Api-Secret-Token',
-};
+const DEFAULT_ALLOWED_ORIGIN = 'https://mauex.vercel.app';
+
+function requestOriginAllowed(origin, env) {
+  if (!origin) return true;
+  const allowed = (env.ALLOWED_ORIGIN || DEFAULT_ALLOWED_ORIGIN).trim();
+  if (origin === allowed) return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  return {
+    'Access-Control-Allow-Origin': requestOriginAllowed(origin, env) ? (origin || (env.ALLOWED_ORIGIN || DEFAULT_ALLOWED_ORIGIN)) : (env.ALLOWED_ORIGIN || DEFAULT_ALLOWED_ORIGIN),
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Telegram-Bot-Api-Secret-Token',
+    'Vary': 'Origin',
+  };
+}
 
 async function fetchBalancesV2(env) {
   const balances = {};
@@ -28,7 +41,7 @@ async function fetchBalancesV2(env) {
   const backendUrl = (env.BINANCE_BACKEND_URL || '').trim();
   if (backendUrl) {
     try {
-      const r = await safeFetch(`${backendUrl}/binance-balance`);
+      const r = await backendFetch(env, `${backendUrl}/binance-balance`);
       if (r.ok && r.data && !r.data.error) balances.BINANCE = normalizeBalance(r.data);
       else errors.BINANCE = `Oracle: ${r.data?.error || r.raw || r.status}`;
     } catch(e) { errors.BINANCE = `Oracle: ${e.message}`; }
@@ -37,7 +50,7 @@ async function fetchBalancesV2(env) {
   const railwayUrl = (env.RAILWAY_URL || '').trim();
   if (!balances.BINANCE && railwayUrl) {
     try {
-      const r = await safeFetch(`${railwayUrl}/binance-balance`);
+      const r = await backendFetch(env, `${railwayUrl}/binance-balance`);
       if (r.ok && r.data && !r.data.error) balances.BINANCE = normalizeBalance(r.data);
       else errors.BINANCE = `Railway: ${r.data?.error || r.raw || r.status}`;
     } catch(e) { errors.BINANCE = `Railway: ${e.message}`; }
@@ -208,7 +221,7 @@ async function fetchBalancesV2(env) {
   const kucoinBackendUrl = (env.KUCOIN_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
   if (kucoinBackendUrl) {
     try {
-      const r = await safeFetch(`${kucoinBackendUrl}/kucoin-balance`);
+      const r = await backendFetch(env, `${kucoinBackendUrl}/kucoin-balance`);
       if (r.ok && r.data && !r.data.error) balances.KUCOIN = normalizeBalance(r.data);
       else errors.KUCOIN = `Oracle: ${r.data?.error || r.raw || r.status}`;
     } catch(e) { errors.KUCOIN = `Oracle: ${e.message}`; }
@@ -217,7 +230,7 @@ async function fetchBalancesV2(env) {
   const ibkrBackendUrl = (env.IBKR_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
   if (ibkrBackendUrl) {
     try {
-      const r = await safeFetch(`${ibkrBackendUrl}/ibkr-balance`);
+      const r = await backendFetch(env, `${ibkrBackendUrl}/ibkr-balance`);
       if (r.ok && r.data && !r.data.error) balances.IBKR = normalizeBalance(r.data);
       else errors.IBKR = `Oracle: ${r.data?.error || r.raw || r.status}`;
     } catch(e) { errors.IBKR = `Oracle: ${e.message}`; }
@@ -272,6 +285,36 @@ async function safeFetch(url, opts = {}) {
   } catch(e) {
     return { ok: false, status: 0, data: null, raw: e.message };
   }
+}
+
+function authHeaders(env, headers = {}) {
+  const token = (env.MAUEX_API_TOKEN || '').trim();
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+}
+
+function backendFetch(env, url, opts = {}) {
+  return safeFetch(url, {
+    ...opts,
+    headers: authHeaders(env, opts.headers || {}),
+  });
+}
+
+function constantTimeEqual(a, b) {
+  const left = new TextEncoder().encode(String(a || ''));
+  const right = new TextEncoder().encode(String(b || ''));
+  let diff = left.length ^ right.length;
+  const len = Math.max(left.length, right.length);
+  for (let i = 0; i < len; i++) {
+    diff |= (left[i] || 0) ^ (right[i] || 0);
+  }
+  return diff === 0;
+}
+
+function apiTokenOk(request, env) {
+  const expected = (env.MAUEX_API_TOKEN || '').trim();
+  if (!expected) return false;
+  const got = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  return constantTimeEqual(got, expected);
 }
 
 async function diagnoseOKXBalance(env) {
@@ -525,10 +568,8 @@ function telegramSecret(env) {
 function telegramSecretOk(request, url, env) {
   const secret = telegramSecret(env);
   if (!secret) return false;
-  const got = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
-    || url.searchParams.get('secret')
-    || '';
-  return got === secret;
+  const got = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
+  return constantTimeEqual(got, secret);
 }
 
 async function loadTelegramSignals(env) {
@@ -721,7 +762,7 @@ async function interpretTelegramSignalAi(env, payload = {}) {
     imageMimeType: payload.imageMimeType || '',
     imageFileId: payload.photoFileId || payload.imageFileId || '',
   };
-  const r = await safeFetch(`${backendUrl}/signal-vision-ai`, {
+  const r = await backendFetch(env, `${backendUrl}/signal-vision-ai`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -742,7 +783,7 @@ async function syncBinance(env) {
   if (!railwayUrl) return { positions: [], orders: [], error: 'RAILWAY_URL not set' };
 
   try {
-    const r = await safeFetch(`${railwayUrl}/binance-positions`);
+    const r = await backendFetch(env, `${railwayUrl}/binance-positions`);
     if (!r.ok || !r.data) {
       return { positions: [], orders: [], error: `Railway: ${r.status} ${r.raw || ''}` };
     }
@@ -750,7 +791,7 @@ async function syncBinance(env) {
       return { positions: [], orders: [], error: `Binance via Railway: ${r.data.error}` };
     }
 
-    const r2 = await safeFetch(`${railwayUrl}/binance-orders`);
+    const r2 = await backendFetch(env, `${railwayUrl}/binance-orders`);
     const orders = r2.ok && r2.data?.orders ? r2.data.orders : [];
 
     return {
@@ -1053,7 +1094,7 @@ async function fetchBalances(env) {
   const railwayUrl = (env.RAILWAY_URL || '').trim();
   if (railwayUrl) {
     try {
-      const r = await safeFetch(`${railwayUrl}/binance-balance`);
+      const r = await backendFetch(env, `${railwayUrl}/binance-balance`);
       if (r.ok && r.data && !r.data.error) {
         balances.BINANCE = normalizeBalance(r.data);
       } else {
@@ -1328,15 +1369,16 @@ export default {
   // ── HTTP requests ─────────────────────────────────────────────────────────
   async fetch(request, env) {
     const url = new URL(request.url);
+    const cors = corsHeaders(request, env);
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS });
+      return new Response(null, { status: 204, headers: cors });
     }
 
     const json = (data, status = 200) => new Response(
       JSON.stringify(data),
-      { status, headers: { 'Content-Type': 'application/json', ...CORS } }
+      { status, headers: { 'Content-Type': 'application/json', ...cors } }
     );
 
     // ── /health ──────────────────────────────────────────────────────────────
@@ -1379,6 +1421,23 @@ export default {
       return json({ ok: true, saved: ix < 0, updated: ix >= 0, total: signals.length, signal: { id: signal.id, sourceName: signal.sourceName } });
     }
 
+    if (url.pathname === '/health') {
+      let cached = null;
+      if (env.MAUEX_CACHE) {
+        const raw = await env.MAUEX_CACHE.get('summary');
+        if (raw) cached = JSON.parse(raw);
+      }
+      return json({
+        status:    'ok',
+        version:   WORKER_VERSION,
+        lastSync:  cached?.lastSync || null,
+      });
+    }
+
+    if (!apiTokenOk(request, env)) {
+      return json({ error: 'unauthorized' }, 401);
+    }
+
     if (url.pathname === '/telegram-signals') {
       if (!telegramSecretOk(request, url, env)) {
         return json({ ok: false, error: 'Forbidden' }, 403);
@@ -1399,47 +1458,6 @@ export default {
       }
       const result = await interpretTelegramSignalAi(env, payload);
       return json(result);
-    }
-
-    if (url.pathname === '/health') {
-      let cached = null;
-      if (env.MAUEX_CACHE) {
-        const raw = await env.MAUEX_CACHE.get('summary');
-        if (raw) cached = JSON.parse(raw);
-      }
-      const telegramSignals = await loadTelegramSignals(env);
-      return json({
-        status:    'ok',
-        version:   WORKER_VERSION,
-        lastSync:  cached?.lastSync || null,
-        positions: cached?.count?.positions || 0,
-        orders:    cached?.count?.orders || 0,
-        errors:    cached?.errors || {},
-        hasKV:     !!env.MAUEX_CACHE,
-        keys: {
-          binance: (!!env.BINANCE_KEY && !!env.BINANCE_SECRET) || !!env.BINANCE_BACKEND_URL || !!env.RAILWAY_URL,
-          binanceDirect: !!env.BINANCE_KEY && !!env.BINANCE_SECRET,
-          binanceBackend: !!env.BINANCE_BACKEND_URL,
-          railway: !!env.RAILWAY_URL,
-          bybit:   !!env.BYBIT_KEY,
-          okx:     !!env.OKX_KEY,
-          mexc:    !!env.MEXC_KEY,
-          kucoin:  !!env.KUCOIN_KEY || !!env.KUCOIN_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
-          kucoinBackend: !!env.KUCOIN_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
-          ibkr: !!env.IBKR_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
-          ibkrBackend: !!env.IBKR_BACKEND_URL || !!env.BINANCE_BACKEND_URL,
-          telegram: !!telegramSecret(env),
-          telegramBot: !!env.TELEGRAM_BOT_TOKEN,
-          telegramInbox: !!env.MAUEX_CACHE,
-          signalAiBackend: !!signalAiBackendUrl(env),
-        },
-        signalAiBackendUrl: signalAiBackendUrl(env) || null,
-        telegramSignals: telegramSignals.length,
-        binanceBackendUrl: env.BINANCE_BACKEND_URL || null,
-        kucoinBackendUrl: env.KUCOIN_BACKEND_URL || env.BINANCE_BACKEND_URL || null,
-        ibkrBackendUrl: env.IBKR_BACKEND_URL || env.BINANCE_BACKEND_URL || null,
-        railwayUrl: env.RAILWAY_URL || null
-      });
     }
 
     // ── /balance — free liquidity per exchange ───────────────────────────────
@@ -1524,7 +1542,7 @@ export default {
       const railwayUrl = (env.RAILWAY_URL || '').trim();
       if (railwayUrl) {
         try {
-          const r = await safeFetch(`${railwayUrl}/binance-history?from=${startTs}&to=${endTs}`);
+          const r = await backendFetch(env, `${railwayUrl}/binance-history?from=${startTs}&to=${endTs}`);
           if (r.ok && r.data?.trades) {
             trades.push(...r.data.trades);
             summary.push(`✅ BINANCE: ${r.data.trades.length} trades`);
@@ -1748,7 +1766,7 @@ export default {
       const railwayUrl = (env.RAILWAY_URL || '').trim();
       if (railwayUrl) {
         try {
-          const r = await safeFetch(`${railwayUrl}/binance-position-history?from=${startTs}&to=${endTs}`);
+          const r = await backendFetch(env, `${railwayUrl}/binance-position-history?from=${startTs}&to=${endTs}`);
           if (r.ok && r.data?.trades) {
             trades.push(...r.data.trades);
             summary.push(`✅ BINANCE: ${r.data.trades.length} posiciones`);
@@ -1788,7 +1806,7 @@ export default {
       const body = await r.text();
       return new Response(body, {
         status: r.status,
-        headers: { 'Content-Type': r.headers.get('Content-Type') || 'application/json', ...CORS }
+        headers: { 'Content-Type': r.headers.get('Content-Type') || 'application/json', ...cors }
       });
     }
 

@@ -1160,7 +1160,7 @@ window.importCSV = async () => {
   if (!rows.length) { toast('No se encontraron datos.','error'); return; }
   let count = 0;
   for (const row of rows) {
-    try { await addDoc(collection(db,'trades'), {userId:CU.uid,...row}); count++; } catch(e) {}
+    try { await addDoc(collection(db,'trades'), {...row,userId:CU.uid}); count++; } catch(e) {}
   }
   await loadTrades();
   closeModal('importModal');
