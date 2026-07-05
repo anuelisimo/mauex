@@ -20,6 +20,7 @@ Preparado:
 - `frontend/package.json`
 - `frontend/vite.config.js`
 - `frontend/proxy.js` como primer corte real desde `app.js`
+- `frontend/helpers.js` como segundo corte real desde `app.js`
 
 Esto permite correr Vite en `frontend/` sin cambiar todavia el deploy estatico actual.
 
@@ -40,7 +41,7 @@ El split no debe hacerse en un solo commit. `app.js` comparte muchas variables d
 Orden recomendado:
 
 1. `proxy.js`: `PROXY_URL`, `WORKER_API_TOKEN_KEY`, `workerFetch`, `proxyFetch`, `publicFetch`. **Hecho.**
-2. `helpers.js`: formatos, crypto-neutral helpers, tooltips, modals, `toast`, `esc`.
+2. `helpers.js`: formatos, crypto-neutral helpers, tooltips, modals, `toast`, `esc`. **Parcial: helpers iniciales, tooltips, modales y toast movidos. `esc` unico queda para 3.3.**
 3. `nav.js`: `PAGES`, `showPage`, tabs y estado operativo.
 4. `themes.js`: temas y selector.
 5. `signals.js`: Signal Desk completo.

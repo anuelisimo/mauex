@@ -18,6 +18,7 @@ Write-Host ""
 Check "frontend/package.json" (Test-Path "frontend\package.json")
 Check "frontend/vite.config.js" (Test-Path "frontend\vite.config.js")
 Check "frontend/proxy.js" (Test-Path "frontend\proxy.js")
+Check "frontend/helpers.js" (Test-Path "frontend\helpers.js")
 Check "frontend/src/README.md" (Test-Path "frontend\src\README.md")
 Check "plan Fase 3" (Test-Path "MAUEX_FASE3_FRONTEND_PLAN.md")
 
@@ -43,6 +44,7 @@ Write-Host "HTML actual"
 $html = Get-Content -LiteralPath "frontend\index.html" -Raw
 Check "carga firebase.js" ($html -match 'firebase\.js')
 Check "carga proxy.js antes de app.js" ($html.IndexOf('proxy.js') -ge 0 -and $html.IndexOf('proxy.js') -lt $html.IndexOf('app.js'))
+Check "carga helpers.js entre proxy y app" ($html.IndexOf('proxy.js') -ge 0 -and $html.IndexOf('helpers.js') -gt $html.IndexOf('proxy.js') -and $html.IndexOf('helpers.js') -lt $html.IndexOf('app.js'))
 Check "carga app.js" ($html -match 'app\.js')
 Check "mantiene HTML actual" ($html -match '<div id="app"')
 
@@ -50,9 +52,13 @@ Write-Host ""
 Write-Host "Mapa de split"
 $app = Get-Content -LiteralPath "frontend\app.js" -Raw
 $proxy = Get-Content -LiteralPath "frontend\proxy.js" -Raw
+$helpers = Get-Content -LiteralPath "frontend\helpers.js" -Raw
 Check "proxy.js contiene workerFetch" ($proxy.Contains('window.workerFetch'))
 Check "app.js sin workerFetch propio" (-not $app.Contains('window.workerFetch = function workerFetch'))
-foreach ($marker in @("Proxy config","Helpers","Navigation","Themes","Calc state","Dashboard","EXCHANGE INTEGRATION","Init")) {
+Check "helpers.js contiene toast" ($helpers.Contains('window.toast'))
+Check "helpers.js contiene modales" ($helpers.Contains('window.openModal') -and $helpers.Contains('showOrderExecutedModal'))
+Check "app.js sin helpers iniciales" (-not $app.Contains('window.toast ='))
+foreach ($marker in @("Navigation","Themes","Calc state","Dashboard","EXCHANGE INTEGRATION","Init")) {
   Check "seccion $marker" ($app.Contains($marker))
 }
 

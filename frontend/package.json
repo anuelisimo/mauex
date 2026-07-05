@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "check": "node --check proxy.js && node --check app.js && node --check firebase.js"
+    "check": "node --check proxy.js && node --check helpers.js && node --check app.js && node --check firebase.js"
   },
   "dependencies": {
     "firebase": "^10.12.0"

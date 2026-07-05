@@ -33,6 +33,7 @@ if exist frontend\index.html git add frontend\index.html
 if exist frontend\styles.css git add frontend\styles.css
 if exist frontend\firebase.js git add frontend\firebase.js
 if exist frontend\app.js git add frontend\app.js
+if exist frontend\helpers.js git add frontend\helpers.js
 if exist vercel.json git add vercel.json
 if exist .gitignore git add .gitignore
 if exist wrangler.jsonc git add wrangler.jsonc
@@ -64,6 +65,7 @@ if exist MAUEX_FASE3_DIAGNOSTICO_FRONTEND.ps1 git add MAUEX_FASE3_DIAGNOSTICO_FR
 if exist frontend\package.json git add frontend\package.json
 if exist frontend\vite.config.js git add frontend\vite.config.js
 if exist frontend\proxy.js git add frontend\proxy.js
+if exist frontend\helpers.js git add frontend\helpers.js
 if exist frontend\src\README.md git add frontend\src\README.md
 if exist MAUEX_API_KEYS.example.txt git add MAUEX_API_KEYS.example.txt
 if exist GUIA_IBKR_FLEX_MAUEX.txt git add GUIA_IBKR_FLEX_MAUEX.txt

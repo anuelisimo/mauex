@@ -1,193 +1,4 @@
-// ── Proxy config ──────────────────────────────────────────────────────────
-// Set this to your Cloudflare Worker URL after deploying worker.js
-// Example: 'https://mauex-proxy.tuusuario.workers.dev'
-// ── Helpers ────────────────────────────────────────────────────────────────
-const fmt  = (n,d=0) => isNaN(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-// Smart price format: adapts decimals based on magnitude
-const fmtPx = n => {
-  if(isNaN(n)||n==null) return '—';
-  if(n>=1000)  return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
-  if(n>=100)   return n.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
-  if(n>=1)     return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  if(n>=0.01)  return n.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
-  return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
-};
-const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
-const fmtQty = n => {
-  if(isNaN(n)||n==null) return '—';
-  const a = Math.abs(n);
-  const d = a>=100 ? 2 : a>=10 ? 3 : a>=1 ? 4 : 6;
-  return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:d});
-};
-const APP_CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
-  'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
-  'TRX','IOTA','RSR','KAVA','OMG','WAXP','BLOK','VLX','AKRO','AAVE','ONDO','XMR','ANKR',
-  'HYPE','CAKE','LINEA','XVG','POL','TAO','VIRTUAL','ASTER','JUP','SUI','IDOL','PTB','WLD'];
-const APP_CRYPTO_EXCHANGES = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','GATE','KRAKEN','COINBASE','HUOBI'];
-function appIsCryptoTicker(ticker, exchange) {
-  if (window.isCryptoTicker) return window.isCryptoTicker(ticker, exchange);
-  const ex = String(exchange || '').toUpperCase();
-  if (APP_CRYPTO_EXCHANGES.includes(ex)) return true;
-  const raw = String(ticker || '').trim().toUpperCase();
-  const sym = raw.replace(/USDT|BUSD|USD$/,'');
-  return APP_CRYPTOS.includes(sym) || raw.endsWith('USDT') || raw.endsWith('BUSD');
-}
-async function fetchYahooSpotPrice(ticker) {
-  const sym = String(ticker || '').trim().toUpperCase();
-  if (!sym) return 0;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
-  const r = await (window.publicFetch ? window.publicFetch(url) : fetch(url));
-  const d = await r.json();
-  const res = d.chart?.result?.[0];
-  const quote = res?.indicators?.quote?.[0]?.close || [];
-  const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();
-  return Number(res?.meta?.regularMarketPrice || lastClose || res?.meta?.previousClose || 0);
-}
-window.updateDirectTradeSizeLabel = () => {
-  const dir = document.getElementById('dtDir')?.value || 'long';
-  const label = document.getElementById('dtSizeLabel');
-  const hint = document.getElementById('dtSizeHint');
-  const lev = document.getElementById('dtLev');
-  if (dir === 'spot') {
-    if (label) label.textContent = 'Tamaño spot USD';
-    if (hint) hint.textContent = 'Capital comprado en spot. Sin margen ni leverage.';
-    if (lev) { lev.value = '1'; lev.disabled = true; }
-  } else {
-    if (label) label.textContent = 'Margen USD';
-    if (hint) hint.textContent = 'Capital usado como margen. MAUex calcula el nominal con el leverage.';
-    if (lev) lev.disabled = false;
-  }
-};
-function formatLevValue(value) {
-  const n = Number(value || 1);
-  if (!Number.isFinite(n)) return '1';
-  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
-}
-function dirLevLabel(item) {
-  const dir = String(item?.dir || '').toUpperCase();
-  const lev = Number(item?.leverage || item?.lev || 1);
-  if (!dir) return '—';
-  if (dir === 'SPOT' || !Number.isFinite(lev) || lev <= 1) return dir;
-  return dir + ' x' + formatLevValue(lev);
-}
-function dirBadgeColors(dir) {
-  if (dir === 'short') return { color:'#e05252', bg:'rgba(224,82,82,0.12)', border:'rgba(224,82,82,0.25)' };
-  if (dir === 'spot') return { color:'var(--blue)', bg:'var(--blue-dim)', border:'rgba(61,156,240,0.28)' };
-  return { color:'#22c55e', bg:'rgba(34,197,94,0.12)', border:'rgba(34,197,94,0.25)' };
-}
-function effectiveTradeSize(t={}) {
-  const saved = Number(t.posSize || 0);
-  if (saved > 0) return saved;
-  const risk = Number(t.risk || 0);
-  const entry = Number(t.entry || 0);
-  const sl = Number(t.sl || 0);
-  if (!risk) return 0;
-  if (entry && sl) {
-    const slDist = Math.abs(sl - entry) / entry;
-    return slDist ? Math.round((risk / slDist) * 100) / 100 : 0;
-  }
-  if (t.dir === 'spot') return risk;
-  return Math.round(risk * (Number(t.leverage || 1) || 1) * 100) / 100;
-}
-const fmtD = d => {
-  if (!d) return '—';
-  const str = String(d);
-  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
-  try { return new Date(d).toLocaleDateString('es',{day:'2-digit',month:'2-digit',year:'2-digit'}); }
-  catch(e) { return str || '—'; }
-};
-
-window.toast = (msg, type='success') => {
-  const el = document.createElement('div');
-  el.className = `toast-item ${type}`;
-  el.textContent = msg;
-  document.getElementById('toast').appendChild(el);
-  setTimeout(()=>el.remove(), 3500);
-};
-
-function installGlobalTooltips() {
-  let tipEl = null;
-  let touchOpen = false;
-  const hide = () => {
-    if (tipEl) tipEl.remove();
-    tipEl = null;
-    touchOpen = false;
-  };
-  const show = (target, isTouch=false) => {
-    const text = target?.dataset?.tip;
-    if (!text) return;
-    hide();
-    tipEl = document.createElement('div');
-    tipEl.className = 'mauex-tooltip' + (isTouch ? ' open-touch' : '');
-    tipEl.textContent = text;
-    (document.body || document.documentElement).appendChild(tipEl);
-    const r = target.getBoundingClientRect();
-    const tr = tipEl.getBoundingClientRect();
-    let left = r.left + r.width / 2 - tr.width / 2;
-    left = Math.max(12, Math.min(left, window.innerWidth - tr.width - 12));
-    let top = r.bottom + 9;
-    if (top + tr.height > window.innerHeight - 12) top = r.top - tr.height - 9;
-    if (top < 12) top = 12;
-    tipEl.style.left = left + 'px';
-    tipEl.style.top = top + 'px';
-    touchOpen = isTouch;
-  };
-  document.addEventListener('mouseover', e => {
-    const target = e.target.closest?.('.info-dot[data-tip]');
-    if (target) show(target, false);
-  });
-  document.addEventListener('mouseout', e => {
-    if (e.target.closest?.('.info-dot[data-tip]') && !touchOpen) hide();
-  });
-  document.addEventListener('click', e => {
-    const target = e.target.closest?.('.info-dot[data-tip]');
-    if (target) {
-      e.preventDefault();
-      e.stopPropagation();
-      show(target, true);
-      return;
-    }
-    if (touchOpen) hide();
-  });
-  window.addEventListener?.('scroll', hide, true);
-  window.addEventListener?.('resize', hide);
-}
-
-window.openModal  = id => document.getElementById(id).classList.add('open');
-window.closeModal = id => document.getElementById(id).classList.remove('open');
-
-function showOrderExecutedModal(order) {
-  const body = document.getElementById('orderExecutedBody');
-  if (!body) return;
-  const dir   = order.dir || '—';
-  const dirCls = dir==='long'?'bl':dir==='short'?'bs':'bsp';
-  const size  = order.totalSize || order.size || 0;
-  const entry = order.entry || order.price || 0;
-  const lev   = order.leverage ? ` x${order.leverage}` : '';
-  body.innerHTML = `
-    <div style="font-family:var(--mono);margin-bottom:14px;">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
-        <span style="font-size:16px;font-weight:600;">${order.ticker||order.symbol||'—'}</span>
-        <span class="badge ${dirCls}">${dir.toUpperCase()}${lev}</span>
-        <span style="font-size:11px;color:var(--t3);">${order.exchange||''}</span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
-        <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Precio de entrada</div><div style="color:#3d9cf0;">$${fmtPx(entry)}</div></div>
-        <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Tamaño</div><div>$${fmt(size)}</div></div>
-      </div>
-      <div style="margin-top:12px;padding:10px 12px;background:var(--bg3);border-radius:var(--r);font-size:11px;color:var(--t2);line-height:1.6;">
-        La orden ya no aparece en el exchange — probablemente fue ejecutada.<br>
-        Usá el desplegable en la tarjeta para moverla a Posiciones.
-      </div>
-    </div>`;
-  openModal('orderExecutedModal');
-}
-document.querySelectorAll('.modal-overlay').forEach(el =>
-  el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); })
-);
-
-// ── Navigation ─────────────────────────────────────────────────────────────
+// â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PAGES = {
   dashboard:'dashPage', calc:'calcPage', watchlist:'watchPage',
   signals:'signalsPage', orders:'ordersPage', positions:'posPage', map:'mapPage', history:'histPage',
@@ -216,8 +27,8 @@ window.syncApiModalStatus = () => {
     const src = document.getElementById(`${ex === 'binance' ? 'bnb' : ex}Status2`);
     if (el && src) {
       const txt = src.textContent || '';
-      el.textContent = `${ex.charAt(0).toUpperCase()+ex.slice(1)} ${txt.includes('✅') ? '✅' : txt.includes('❌') ? '❌' : '—'}`;
-      el.style.color = txt.includes('✅') ? 'var(--accent)' : txt.includes('❌') ? 'var(--red)' : 'var(--t3)';
+      el.textContent = `${ex.charAt(0).toUpperCase()+ex.slice(1)} ${txt.includes('âœ…') ? 'âœ…' : txt.includes('âŒ') ? 'âŒ' : 'â€”'}`;
+      el.style.color = txt.includes('âœ…') ? 'var(--accent)' : txt.includes('âŒ') ? 'var(--red)' : 'var(--t3)';
     }
   });
   const row = document.getElementById('kucoinStatusBadge')?.parentElement;
@@ -402,7 +213,7 @@ window.showPage = page => {
   }
 };
 
-// ── Themes ─────────────────────────────────────────────────────────────────
+// â”€â”€ Themes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Signal Desk: local inbox for Telegram-style signals
 const SIGNAL_INBOX_KEY = 'mauex_signal_inbox_v1';
 const SIGNAL_TELEGRAM_SECRET_KEY = 'mauex_telegram_inbox_secret';
@@ -670,7 +481,7 @@ function signalIsManagementUpdate(sig={}) {
   const p = sig.parsed || {};
   const raw = String(sig.raw || '');
   if (p.type !== 'update_or_management') return false;
-  return /\b(UPDATE|TARGET\s*\d+\s*(?:HIT|TOC|✅)|TP\s*\d+\s*(?:HIT|TOC|✅)|CLOSING|CLOSED|CLOSE|BREAKEVEN|BREAK\s*EVEN|MOVE\s+SL|MOVER\s+SL|TRAIL|CANCEL|CANCELAR|STOP\s*HIT|SL\s*HIT)\b/i.test(raw);
+  return /\b(UPDATE|TARGET\s*\d+\s*(?:HIT|TOC|âœ…)|TP\s*\d+\s*(?:HIT|TOC|âœ…)|CLOSING|CLOSED|CLOSE|BREAKEVEN|BREAK\s*EVEN|MOVE\s+SL|MOVER\s+SL|TRAIL|CANCEL|CANCELAR|STOP\s*HIT|SL\s*HIT)\b/i.test(raw);
 }
 
 function signalFindExistingSignalIndex(items=[], sig={}) {
@@ -771,7 +582,7 @@ function signalDetectTicker(raw) {
   const lines = upper.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   for (const line of lines) {
     if (/\bSIGNAL\s*ID\b/.test(line)) continue;
-    const newSignal = line.match(/\bNEW\s+SIGNAL\s*[-—:]\s*#?\$?\s*([A-Z0-9]{2,12})(?:\s*[-/]?\s*(USDT|USDC|USD|PERP))?/);
+    const newSignal = line.match(/\bNEW\s+SIGNAL\s*[-â€”:]\s*#?\$?\s*([A-Z0-9]{2,12})(?:\s*[-/]?\s*(USDT|USDC|USD|PERP))?/);
     if (newSignal && !SIGNAL_STOPWORDS.has(newSignal[1])) return newSignal[1].replace(/USDT|USDC|USD|PERP/g,'');
     const coin = line.match(/\bCOIN\s*:\s*#?\$?\s*([A-Z0-9]{2,12})(?:\s*[-/]?\s*(USDT|USDC|USD|PERP))?/);
     if (coin && !SIGNAL_STOPWORDS.has(coin[1])) return coin[1].replace(/USDT|USDC|USD|PERP/g,'');
@@ -961,17 +772,17 @@ function signalMarketState(parsed={}, price=0) {
   const low = entries.length ? Math.min(...entries) : entry;
   const high = entries.length ? Math.max(...entries) : entry;
   const inZone = current >= low && current <= high;
-  let state = { price: current, code: 'unknown', label: 'Precio leído', tone: 'blue', detail: '' };
+  let state = { price: current, code: 'unknown', label: 'Precio leÃ­do', tone: 'blue', detail: '' };
   if (dir === 'short') {
-    if (sl && current >= sl) state = { price: current, code:'invalidated', label:'SL tocado', tone:'red', detail:'El precio actual ya está arriba del SL del short.' };
-    else if (current > high) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasó la entrada y está yendo contra el short.' };
-    else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual está dentro del rango de entrada.' };
-    else if (current < low) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se movió a favor del short desde la zona de entrada.' };
+    if (sl && current >= sl) state = { price: current, code:'invalidated', label:'SL tocado', tone:'red', detail:'El precio actual ya estÃ¡ arriba del SL del short.' };
+    else if (current > high) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasÃ³ la entrada y estÃ¡ yendo contra el short.' };
+    else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual estÃ¡ dentro del rango de entrada.' };
+    else if (current < low) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se moviÃ³ a favor del short desde la zona de entrada.' };
   } else {
-    if (sl && current <= sl) state = { price: current, code:'invalidated', label:'SL tocado', tone:'red', detail:'El precio actual ya está debajo del SL del long.' };
-    else if (current < low) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasó la entrada y está yendo contra el long.' };
-    else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual está dentro del rango de entrada.' };
-    else if (current > high) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se movió a favor del long desde la zona de entrada.' };
+    if (sl && current <= sl) state = { price: current, code:'invalidated', label:'SL tocado', tone:'red', detail:'El precio actual ya estÃ¡ debajo del SL del long.' };
+    else if (current < low) state = { price: current, code:'active_against', label:'Activada en contra', tone:'amber', detail:'El precio ya pasÃ³ la entrada y estÃ¡ yendo contra el long.' };
+    else if (inZone) state = { price: current, code:'in_entry', label:'En zona de entrada', tone:'green', detail:'El precio actual estÃ¡ dentro del rango de entrada.' };
+    else if (current > high) state = { price: current, code:'missed_favor', label:'Entrada perdida a favor', tone:'blue', detail:'El precio ya se moviÃ³ a favor del long desde la zona de entrada.' };
   }
   return state;
 }
@@ -1040,7 +851,7 @@ function parseSignalMessage(raw, opts={}) {
   else if (levExplicit) parsed.leverage = Math.max(1, Math.min(125, Number(levExplicit[1]) || 1));
   else if (levRange) parsed.leverage = Math.max(1, Math.min(125, Number(levRange[2]) || Number(levRange[1]) || 1));
   else if (levMatch) parsed.leverage = Math.max(1, Math.min(125, Number(levMatch[1]) || 1));
-  if (/\b(MOVE|MOVER|TRAIL|UPDATE|ACTUALIZA|BE|BREAK\s*EVEN|BREAKEVEN|CANCEL|CANCELAR|CLOSE|CLOSING|CERRAR|CLOSED|TP\s*HIT|TOCO|TOCÓ)\b/i.test(joined)) parsed.type = 'update_or_management';
+  if (/\b(MOVE|MOVER|TRAIL|UPDATE|ACTUALIZA|BE|BREAK\s*EVEN|BREAKEVEN|CANCEL|CANCELAR|CLOSE|CLOSING|CERRAR|CLOSED|TP\s*HIT|TOCO|TOCÃ“)\b/i.test(joined)) parsed.type = 'update_or_management';
 
   const targetNums = [];
   lines.forEach(line => {
@@ -1107,7 +918,7 @@ function parseSignalMessage(raw, opts={}) {
   if (!parsed.sl) missing.push('SL');
   if (!parsed.tp1) missing.push('TP');
   const warnings = [];
-  if (parsed.type !== 'new_signal') warnings.push('Parece update, no señal nueva');
+  if (parsed.type !== 'new_signal') warnings.push('Parece update, no seÃ±al nueva');
   if (parsed.dir === 'long' && parsed.sl && parsed.entry && parsed.sl >= parsed.entry) warnings.push('SL raro para LONG');
   if (parsed.dir === 'short' && parsed.sl && parsed.entry && parsed.sl <= parsed.entry) warnings.push('SL raro para SHORT');
   if (parsed.entryRange.length > 1) warnings.push('Entry operativo elegido dentro del rango');
@@ -1223,10 +1034,10 @@ function signalBestTargetLabel(parsed={}) {
   const targets = Array.isArray(parsed.targets) && parsed.targets.length
     ? parsed.targets
     : [parsed.tp1, parsed.tp2, parsed.tp3].filter(Boolean);
-  if (!targets.length) return { value:'—', sub:'' };
+  if (!targets.length) return { value:'â€”', sub:'' };
   return {
     value: targets.length === 1 ? '$' + fmtPx(targets[0]) : String(targets.length),
-    sub: targets.length === 1 ? 'TP1' : `TP1 $${fmtPx(targets[0])} · final $${fmtPx(targets[targets.length - 1])}`,
+    sub: targets.length === 1 ? 'TP1' : `TP1 $${fmtPx(targets[0])} Â· final $${fmtPx(targets[targets.length - 1])}`,
   };
 }
 
@@ -1307,9 +1118,9 @@ function signalCardHtml(sig) {
   const rrColor = sig.rr && sig.rr >= 2 ? 'var(--accent)' : 'var(--red)';
   const updates = Array.isArray(sig.updates) ? sig.updates : [];
   const chips = [
-    ...(sig.market ? [`<span class="signal-chip ${signalEsc(sig.market.tone || '')}">${signalEsc(sig.market.label)}${sig.market.price ? ' · $'+fmtPx(sig.market.price) : ''}</span>`] : []),
+    ...(sig.market ? [`<span class="signal-chip ${signalEsc(sig.market.tone || '')}">${signalEsc(sig.market.label)}${sig.market.price ? ' Â· $'+fmtPx(sig.market.price) : ''}</span>`] : []),
     ...(sig.hasImage ? ['<span class="signal-chip blue">Imagen Telegram</span>'] : []),
-    ...(sig.aiInterpreted ? [`<span class="signal-chip blue">AI interpretó${sig.aiUsedImage ? ' imagen' : ''} · revisar</span>`] : []),
+    ...(sig.aiInterpreted ? [`<span class="signal-chip blue">AI interpretÃ³${sig.aiUsedImage ? ' imagen' : ''} Â· revisar</span>`] : []),
     ...(sig.aiError ? [`<span class="signal-chip red">AI: ${signalEsc(sig.aiError)}</span>`] : []),
     ...(updates.length ? [`<span class="signal-chip blue">${updates.length} update${updates.length === 1 ? '' : 's'} Telegram</span>`] : []),
     ...(sig.missing || []).map(x => `<span class="signal-chip red">Falta ${signalEsc(x)}</span>`),
@@ -1333,7 +1144,7 @@ function signalCardHtml(sig) {
     ? `<div style="margin-top:10px;"><div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-bottom:6px;">Updates de Telegram</div>${updates.slice().reverse().map(u => `<div class="signal-raw" style="margin-top:6px;max-height:110px;">${signalEsc(fmtD(u.createdAt))}\n${signalEsc(u.raw)}</div>`).join('')}</div>`
     : '';
   const aiHtml = sig.aiInterpreted
-    ? `<div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--t2);line-height:1.5;"><strong style="color:var(--blue);">AI</strong>${sig.aiConfidence ? ' · confianza '+Math.round(sig.aiConfidence) : ''}${sig.aiUsedImage ? ' · usó imagen' : ''}${sig.aiNotes ? '<br>'+signalEsc(sig.aiNotes) : ''}</div>`
+    ? `<div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--t2);line-height:1.5;"><strong style="color:var(--blue);">AI</strong>${sig.aiConfidence ? ' Â· confianza '+Math.round(sig.aiConfidence) : ''}${sig.aiUsedImage ? ' Â· usÃ³ imagen' : ''}${sig.aiNotes ? '<br>'+signalEsc(sig.aiNotes) : ''}</div>`
     : '';
   const originalTime = signalOriginalTime(sig);
   const originalTimeOk = signalHasOriginalTime(sig);
@@ -1351,9 +1162,9 @@ function signalCardHtml(sig) {
             <span>${signalEsc(p.ticker || 'Ticker?')}</span>
             <span class="badge ${dirCls}">${signalEsc((p.dir || 'dir?').toUpperCase())}${p.leverage > 1 ? ' x'+p.leverage : ''}</span>
             <span style="font-size:11px;color:var(--t3);">${signalEsc(p.exchange || '')}</span>
-            <span style="font-size:11px;color:var(--t3);">· ${signalEsc(sig.traderName || 'Sin trader')}</span>
+            <span style="font-size:11px;color:var(--t3);">Â· ${signalEsc(sig.traderName || 'Sin trader')}</span>
           </div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:5px;">${statusText} · ${fmtD(sig.createdAt)}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:5px;">${statusText} Â· ${fmtD(sig.createdAt)}</div>
           ${signalTimeHtml}
         </div>
         <div style="text-align:right;">
@@ -1363,18 +1174,18 @@ function signalCardHtml(sig) {
       </div>
       <div class="signal-body">
         <div class="signal-grid">
-          ${signalFieldHtml('Precio actual', sig.market?.price ? '$'+fmtPx(sig.market.price) : '—', 'var(--magenta)', sig.market?.label || '')}
-          ${signalFieldHtml('Entry', p.entry ? '$'+fmtPx(p.entry) : '—', 'var(--t1)', entryRangeLabel ? `zona ${entryRangeLabel}` : '')}
-          ${signalFieldHtml('SL', p.sl ? '$'+fmtPx(p.sl) : '—', 'var(--red)')}
-          ${signalFieldHtml('Liq.', liq ? '$'+fmtPx(liq) : '—', 'var(--amber)')}
+          ${signalFieldHtml('Precio actual', sig.market?.price ? '$'+fmtPx(sig.market.price) : 'â€”', 'var(--magenta)', sig.market?.label || '')}
+          ${signalFieldHtml('Entry', p.entry ? '$'+fmtPx(p.entry) : 'â€”', 'var(--t1)', entryRangeLabel ? `zona ${entryRangeLabel}` : '')}
+          ${signalFieldHtml('SL', p.sl ? '$'+fmtPx(p.sl) : 'â€”', 'var(--red)')}
+          ${signalFieldHtml('Liq.', liq ? '$'+fmtPx(liq) : 'â€”', 'var(--amber)')}
           ${signalFieldHtml('TP', tpSummary.value, 'var(--accent)', tpSummary.sub)}
-          ${signalFieldHtml('R:R', sig.rr ? sig.rr.toFixed(2)+':1' : '—', rrColor, sig.rrFirst ? `TP1 ${sig.rrFirst.toFixed(2)}:1` : '')}
+          ${signalFieldHtml('R:R', sig.rr ? sig.rr.toFixed(2)+':1' : 'â€”', rrColor, sig.rrFirst ? `TP1 ${sig.rrFirst.toFixed(2)}:1` : '')}
         </div>
         ${targetsHtml}
         ${chips ? `<div class="signal-warnings">${chips}</div>` : ''}
         <button class="signal-toggle" type="button" onclick="toggleSignalRaw('${sig.id}')">
           <span>Texto de la se&ntilde;al</span>
-          <span id="signalRawArrow-${sig.id}">▼</span>
+          <span id="signalRawArrow-${sig.id}">â–¼</span>
         </button>
         <div id="signalRawPanel-${sig.id}" class="signal-raw-panel" style="display:none;">
           <div class="signal-raw">${signalEsc(sig.raw)}</div>
@@ -1383,7 +1194,7 @@ function signalCardHtml(sig) {
         </div>
         <button class="signal-toggle" type="button" onclick="toggleSignalChart('${sig.id}')">
           <span>Gr&aacute;fico</span>
-          <span id="signalChartArrow-${sig.id}">▼</span>
+          <span id="signalChartArrow-${sig.id}">â–¼</span>
         </button>
         <div id="signalChartPanel-${sig.id}" class="signal-chart-panel" style="display:none;">
           <div class="signal-chart-tools">
@@ -1394,7 +1205,7 @@ function signalCardHtml(sig) {
       </div>
       <div class="signal-actions">
         <button class="btn sm acc" onclick="signalToCalculator('${sig.id}')">Calculadora</button>
-        <button class="btn sm signal-chart-btn" title="Abrir en Charts" onclick="signalOpenChart('${sig.id}')">📈</button>
+        <button class="btn sm signal-chart-btn" title="Abrir en Charts" onclick="signalOpenChart('${sig.id}')">ðŸ“ˆ</button>
         <button class="btn sm" onclick="discardSignal('${sig.id}')">${sig.status === 'discarded' ? 'Borrar' : 'Descartar'}</button>
       </div>
     </div>`;
@@ -1418,7 +1229,7 @@ window.toggleSignalTarget = (id, index) => {
     selected = selected.filter(i => i !== index);
   } else {
     if (selected.length >= 3) {
-      toast('Máximo 3 TP operativos para Calculadora.', 'error');
+      toast('MÃ¡ximo 3 TP operativos para Calculadora.', 'error');
       return;
     }
     selected.push(index);
@@ -1439,7 +1250,7 @@ window.toggleSignalTarget = (id, index) => {
     const panel = document.getElementById(`signalChartPanel-${id}`);
     const arrow = document.getElementById(`signalChartArrow-${id}`);
     if (panel) panel.style.display = 'block';
-    if (arrow) arrow.textContent = '▲';
+    if (arrow) arrow.textContent = 'â–²';
     renderSignalInlineChart(sig, { visibleLogicalRange });
   }
 };
@@ -1449,7 +1260,7 @@ window.toggleSignalRaw = id => {
   if (!panel) return;
   const opening = panel.style.display === 'none';
   panel.style.display = opening ? 'block' : 'none';
-  if (arrow) arrow.textContent = opening ? '▲' : '▼';
+  if (arrow) arrow.textContent = opening ? 'â–²' : 'â–¼';
 };
 
 function renderSignals() {
@@ -1462,7 +1273,7 @@ function renderSignals() {
   const visible = items.filter(x => signalMatchesFilters(x));
   el.innerHTML = visible.length
     ? visible.map(signalCardHtml).join('')
-    : `<div class="empty"><div class="empty-icon">◇</div><div class="empty-text">No hay señales en inbox</div><div class="empty-sub">Pegá un mensaje de Telegram para empezar.</div></div>`;
+    : `<div class="empty"><div class="empty-icon">â—‡</div><div class="empty-text">No hay seÃ±ales en inbox</div><div class="empty-sub">PegÃ¡ un mensaje de Telegram para empezar.</div></div>`;
 }
 
 window.editSignalOriginalTime = async id => {
@@ -1470,11 +1281,11 @@ window.editSignalOriginalTime = async id => {
   const sig = items.find(x => x.id === id);
   if (!sig) return;
   const current = signalDateTimeInputValue(signalOriginalTime(sig));
-  const raw = prompt('Hora original de la señal (ej: 2026-06-14 22:58). Dejá vacío para quitarla.', current);
+  const raw = prompt('Hora original de la seÃ±al (ej: 2026-06-14 22:58). DejÃ¡ vacÃ­o para quitarla.', current);
   if (raw === null) return;
   const iso = parseSignalManualDateTime(raw);
   if (raw.trim() && !iso) {
-    toast('No pude leer esa fecha. Usá formato 2026-06-14 22:58 o 14/06/2026 22:58.', 'error');
+    toast('No pude leer esa fecha. UsÃ¡ formato 2026-06-14 22:58 o 14/06/2026 22:58.', 'error');
     return;
   }
   sig.signalTime = iso;
@@ -1527,9 +1338,9 @@ function legacySignalLooksActionableMessage(raw='', hasImage=false) {
   const hasTicker = /(?:COIN|PAIR|SYMBOL)\s*[:=]?\s*[$#]?[A-Z0-9]{2,15}/i.test(text) || /[$#][A-Z0-9]{2,15}(?:\/?(?:USDT|USDC|USD|PERP))?\b/i.test(text);
   const hasSetupWord = /\b(LONG|SHORT|LONGS|SHORTS|BUYING\s+SETUP|SELLING\s+SETUP|LIMIT\s+LONG|LIMIT\s+SHORT|SCALP\s+LONGS?|SCALP\s+SHORTS?)\b/i.test(text);
   const hasLevels = /\b(ENTRY|ENTRADA|CMP|TARGETS?|TAKE\s*PROFIT|TP\d*|STOP\s*LOSS|SL)\b/i.test(text);
-  const hasPriceZone = /(?:\d+(?:\.\d+)?\s*K?|\d+\.\d+)\s*[-–]\s*(?:\d+(?:\.\d+)?\s*K?|\d+\.\d+)/i.test(text);
+  const hasPriceZone = /(?:\d+(?:\.\d+)?\s*K?|\d+\.\d+)\s*[-â€“]\s*(?:\d+(?:\.\d+)?\s*K?|\d+\.\d+)/i.test(text);
   const hasTargetLanguage = /\b(TARGET|TARGETS?|SUB\s*[- ]?\s*\d+K?|SL|STOP|ZONE|AREA)\b/i.test(text);
-  const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|✅))\b/i.test(text);
+  const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|âœ…))\b/i.test(text);
   const looksLikeAdOnly = /\b(SUBSCRIBE|PROMO|DISCOUNT|JOIN\s+VIP|SALE|RESULTS?|PROFIT\s+TODAY)\b/i.test(text) && !hasLevels;
   const looksLikeMacroOnly = /\b(MACRO|MARKET\s+UPDATE|NEWS|CPI|FOMC|FED|INFLATION|DXY|YIELDS?)\b/i.test(text) && !hasLevels;
   if (looksLikeAdOnly || looksLikeMacroOnly) return false;
@@ -1541,14 +1352,14 @@ function legacySignalLooksActionableMessage(raw='', hasImage=false) {
 function signalLooksActionableMessage(raw='', hasImage=false) {
   const text = String(raw || '').trim();
   if (!text) return false;
-  const hasTicker = /(?:NEW\s+SIGNAL|COIN|PAIR|SYMBOL)\s*[-—:]?\s*[$#]?[A-Z0-9]{2,15}/i.test(text)
+  const hasTicker = /(?:NEW\s+SIGNAL|COIN|PAIR|SYMBOL)\s*[-â€”:]?\s*[$#]?[A-Z0-9]{2,15}/i.test(text)
     || /[$#][A-Z0-9]{2,15}(?:\/?(?:USDT|USDC|USD|PERP))?\b/i.test(text)
     || /\b[A-Z0-9]{2,15}\s*\/\s*(?:USDT|USDC|USD|PERP)\b/i.test(text);
   const hasSetupWord = /\b(LONG|SHORT|LONGS|SHORTS|BUYING\s+SETUP|SELLING\s+SETUP|LIMIT\s+LONG|LIMIT\s+SHORT|SCALP\s+LONGS?|SCALP\s+SHORTS?)\b/i.test(text);
   const hasLevels = /\b(ENTRY|ENTRADA|CMP|TARGETS?|TAKE\s*PROFIT|TP\d*|STOP\s*LOSS|SL)\b/i.test(text);
-  const hasPriceZone = /(?:\d+(?:[.,]\d+)?\s*K?|\d+[.,]\d+)\s*[-–—]\s*(?:\d+(?:[.,]\d+)?\s*K?|\d+[.,]\d+)/i.test(text);
+  const hasPriceZone = /(?:\d+(?:[.,]\d+)?\s*K?|\d+[.,]\d+)\s*[-â€“â€”]\s*(?:\d+(?:[.,]\d+)?\s*K?|\d+[.,]\d+)/i.test(text);
   const hasTargetLanguage = /\b(TARGET|TARGETS?|SUB\s*[- ]?\s*\d+K?|SL|STOP|ZONE|AREA|RISK)\b/i.test(text);
-  const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|OK))\b/i.test(text) || /✅/.test(text);
+  const hasManagement = /\b(SIGNAL\s*ID|UPDATE|CLOSING|CLOSED|BREAKEVEN|BREAK\s*EVEN|TARGET\s*\d+\s*:|TP\s*\d+\s*(HIT|TOC|OK))\b/i.test(text) || /âœ…/.test(text);
   const hasManyPrices = (text.match(/\$?\d+(?:[.,]\d+)?\s*[kK]?/g) || []).length >= 3;
   const looksLikeAdOnly = /\b(SUBSCRIBE|PROMO|DISCOUNT|JOIN\s+VIP|SALE|RESULTS?|PROFIT\s+TODAY)\b/i.test(text) && !hasLevels;
   const looksLikeMacroOnly = /\b(MACRO|MARKET\s+UPDATE|NEWS|CPI|FOMC|FED|INFLATION|DXY|YIELDS?)\b/i.test(text) && !hasLevels;
@@ -1684,7 +1495,7 @@ window.syncTelegramSignals = async (silent=false) => {
       data = await fetchTelegramSignals(secret);
     } catch(e) {
       if (e.status === 403 && !silent) {
-        secret = prompt('Ingresá la clave de la bandeja Telegram de MAUex:') || '';
+        secret = prompt('IngresÃ¡ la clave de la bandeja Telegram de MAUex:') || '';
         if (!secret) return;
         localStorage.setItem(SIGNAL_TELEGRAM_SECRET_KEY, secret);
         data = await fetchTelegramSignals(secret);
@@ -1783,7 +1594,7 @@ function startTelegramAutoSync() {
 
 window.parseSignalInboxInput = async () => {
   const raw = document.getElementById('signalRawInput')?.value || '';
-  if (!raw.trim()) { toast('Pegá primero el mensaje del trader.', 'error'); return; }
+  if (!raw.trim()) { toast('PegÃ¡ primero el mensaje del trader.', 'error'); return; }
   const traderId = document.getElementById('signalTraderSelect')?.value || '';
   const exchange = document.getElementById('signalExchangeSelect')?.value || 'BINANCE';
   const sig = parseSignalMessage(raw, { traderId, exchange });
@@ -1802,12 +1613,12 @@ window.parseSignalInboxInput = async () => {
   saveSignalInbox(items);
   document.getElementById('signalRawInput').value = '';
   renderSignals();
-  toast(sig.status === 'ready' ? 'Señal interpretada.' : 'Señal creada para revisar.', sig.status === 'ready' ? 'success' : 'error');
+  toast(sig.status === 'ready' ? 'SeÃ±al interpretada.' : 'SeÃ±al creada para revisar.', sig.status === 'ready' ? 'success' : 'error');
 };
 
 function applySignalToCalculator(sig) {
   const p = sig?.parsed || {};
-  if (!p.ticker || !p.entry) { toast('La señal necesita ticker y entry.', 'error'); return false; }
+  if (!p.ticker || !p.entry) { toast('La seÃ±al necesita ticker y entry.', 'error'); return false; }
   const dir = p.dir || 'long';
   window.showPage('calc');
   window.clearCalculatorEditMode?.();
@@ -1856,7 +1667,7 @@ function applySignalToCalculator(sig) {
   const fullTargetsNote = p.targets?.length
     ? `Targets completos: ${p.targets.map((x,i)=>`TP${i+1} ${fmtPx(x)}`).join(' / ')}`
     : '';
-  set('cNotes', [sig.traderName ? `Trader: ${sig.traderName}` : '', p.entryRange?.length > 1 ? `Entry original: ${p.entryRange.map(fmtPx).join(' - ')}` : '', operationalTargetsNote, fullTargetsNote, 'Señal original:', sig.raw].filter(Boolean).join('\n') );
+  set('cNotes', [sig.traderName ? `Trader: ${sig.traderName}` : '', p.entryRange?.length > 1 ? `Entry original: ${p.entryRange.map(fmtPx).join(' - ')}` : '', operationalTargetsNote, fullTargetsNote, 'SeÃ±al original:', sig.raw].filter(Boolean).join('\n') );
   window._signalTradeExtras = {
     source: 'signal_desk',
     signalId: sig.id || '',
@@ -1888,7 +1699,7 @@ window.signalToCalculator = async id => {
   saveSignalInbox(items);
   renderSignals();
   updateNavAlertBadges?.();
-  if (applySignalToCalculator(sig)) toast('Señal cargada en Calculadora.');
+  if (applySignalToCalculator(sig)) toast('SeÃ±al cargada en Calculadora.');
 };
 
 const signalChartState = {};
@@ -1972,7 +1783,7 @@ function syncCalcChartSignalTime() {
   return 0;
 }
 
-function addChartTimeGuide(el, chart, unix, label='Señal', tone='signal') {
+function addChartTimeGuide(el, chart, unix, label='SeÃ±al', tone='signal') {
   if (!el || !chart || !unix) return null;
   el.style.position = 'relative';
   const guide = document.createElement('div');
@@ -2031,7 +1842,7 @@ function nearestCandleTimeForGuide(candles=[], unix=0) {
 
 function addSignalTimeGuide(el, chart, sig, candles=[]) {
   const guideTime = nearestCandleTimeForGuide(candles, signalTimeUnix(sig));
-  return addChartTimeGuide(el, chart, guideTime, 'Señal');
+  return addChartTimeGuide(el, chart, guideTime, 'SeÃ±al');
 }
 
 async function renderSignalInlineChart(sig, opts={}) {
@@ -2044,7 +1855,7 @@ async function renderSignalInlineChart(sig, opts={}) {
   const p = sig?.parsed || {};
   const tf = signalChartTfState[id] || '1h';
   document.querySelectorAll(`[data-sig-chart="${id}"]`).forEach(b => b.classList.toggle('active', b.dataset.sigTf === tf));
-  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando gráfico ${mainChartLabel(tf)}...</div>`;
+  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando grÃ¡fico ${mainChartLabel(tf)}...</div>`;
   const prevSource = window._aiSource;
   const prevType = window._aiType;
   const prevMarketType = aiMarketType;
@@ -2106,7 +1917,7 @@ window.toggleSignalChart = async id => {
   if (!panel) return;
   const opening = panel.style.display === 'none';
   panel.style.display = opening ? 'block' : 'none';
-  if (arrow) arrow.textContent = opening ? '▲' : '▼';
+  if (arrow) arrow.textContent = opening ? 'â–²' : 'â–¼';
   if (!opening) { destroySignalChart(id); return; }
   const items = loadSignalInbox();
   const sig = items.find(x => x.id === id);
@@ -2132,7 +1943,7 @@ window.signalOpenChart = async id => {
   saveSignalInbox(items);
   const p = sig?.parsed || {};
   const info = signalChartInfo(sig);
-  if (!info) { toast('La señal necesita ticker para abrir Charts.', 'error'); return; }
+  if (!info) { toast('La seÃ±al necesita ticker para abrir Charts.', 'error'); return; }
   const aiSym = document.getElementById('aiSymbol');
   if (aiSym) aiSym.value = info.symbol;
   window._aiSource = info.source;
@@ -2174,7 +1985,7 @@ window.signalConvert = async (id, status) => {
     renderSignals();
     updateNavAlertBadges?.();
   } catch(e) {
-    toast('No pude convertir la señal: ' + e.message, 'error');
+    toast('No pude convertir la seÃ±al: ' + e.message, 'error');
   }
 };
 
@@ -2201,10 +2012,10 @@ window.clearSignalInbox = async () => {
   const items = loadSignalInbox();
   const discarded = items.filter(x => signalStatusKey(x) === 'discarded');
   if (!discarded.length) {
-    toast('No hay señales descartadas para limpiar.');
+    toast('No hay seÃ±ales descartadas para limpiar.');
     return;
   }
-  if (!confirm(`¿Limpiar ${discarded.length} señal${discarded.length === 1 ? '' : 'es'} descartada${discarded.length === 1 ? '' : 's'}?`)) return;
+  if (!confirm(`Â¿Limpiar ${discarded.length} seÃ±al${discarded.length === 1 ? '' : 'es'} descartada${discarded.length === 1 ? '' : 's'}?`)) return;
   const clearedAt = new Date().toISOString();
   await Promise.all(discarded.map(sig => {
     sig.status = 'cleared';
@@ -2214,7 +2025,7 @@ window.clearSignalInbox = async () => {
   saveSignalInbox(pruneSignalInbox(items.filter(x => signalStatusKey(x) !== 'discarded')));
   renderSignals();
   updateNavAlertBadges?.();
-  toast('Señales descartadas limpiadas.');
+  toast('SeÃ±ales descartadas limpiadas.');
 };
 
 window.clearAllSignalInbox = async () => {
@@ -2263,13 +2074,13 @@ window.openThemePicker = () => {
   openModal('themeModal');
 };
 
-// ── Calc state ─────────────────────────────────────────────────────────────
+// â”€â”€ Calc state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const calcState = { dir:'short', ex:'binance', lev:null, marketSource:'auto', marketType:'', marketKind:'' };
 let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'', signalTime:0, guideRemove:null };
 let calcSignalTargetsState = null;
 let calcTpPercentsManual = false;
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
-const MMR_LBL = {binance:'Binance · MMR 0.5%',bybit:'Bybit · MMR 0.5%',okx:'OKX · MMR 0.4%',mexc:'MEXC · MMR 0.5%',kucoin:'KuCoin · MMR 0.5%'};
+const MMR_LBL = {binance:'Binance Â· MMR 0.5%',bybit:'Bybit Â· MMR 0.5%',okx:'OKX Â· MMR 0.4%',mexc:'MEXC Â· MMR 0.5%',kucoin:'KuCoin Â· MMR 0.5%'};
 
 function estimatedLiquidationPrice(input={}) {
   const dir = String(input.dir || '').toLowerCase();
@@ -2428,7 +2239,7 @@ async function renderCalcSignalChart() {
   const retainedSignalTime = syncCalcChartSignalTime();
   if (!info || !entry) {
     clearCalcSignalChart();
-    if (status) status.textContent = 'Carga ticker y entry para ver la señal.';
+    if (status) status.textContent = 'Carga ticker y entry para ver la seÃ±al.';
     return;
   }
   const key = [
@@ -2491,15 +2302,15 @@ async function renderCalcSignalChart() {
     });
     chart.timeScale().fitContent();
     const calcGuideTime = nearestCandleTimeForGuide(candles, retainedSignalTime || 0);
-    calcChartState.guideRemove = addChartTimeGuide(el, chart, calcGuideTime, 'Señal');
+    calcChartState.guideRemove = addChartTimeGuide(el, chart, calcGuideTime, 'SeÃ±al');
     el.ondblclick = () => chart.timeScale().fitContent();
     calcChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 320 }));
     calcChartState.resize.observe(el);
     const last = candles[candles.length - 1]?.close;
     const gap = last && entry ? ((last - entry) / entry * 100) : null;
     if (status) status.textContent = gap == null
-      ? `${info.raw} · ${mainChartLabel(calcChartState.tf)}`
-      : `${info.raw} · precio ${gap >= 0 ? '+' : ''}${gap.toFixed(2)}% vs entry`;
+      ? `${info.raw} Â· ${mainChartLabel(calcChartState.tf)}`
+      : `${info.raw} Â· precio ${gap >= 0 ? '+' : ''}${gap.toFixed(2)}% vs entry`;
   } catch(e) {
     if (status) status.textContent = `No pude cargar ${info.raw}: ${e.message}`;
     el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${e.message}</div>`;
@@ -2570,9 +2381,9 @@ window.setEx = ex => {
 function legacyCalcTickerSourceLabel() {
   const source = calcState.marketSource || 'auto';
   const type = calcState.marketType || '';
-  if (source === 'binance') return `Fuente: Binance ${type ? '· ' + type.toUpperCase() : ''}`;
-  if (source === 'yahoo') return `Fuente: Yahoo ${type ? '· ' + type.toUpperCase() : ''}`;
-  if (source === 'mexc') return `Fuente: MEXC ${type ? '· ' + type.toUpperCase() : ''}`;
+  if (source === 'binance') return `Fuente: Binance ${type ? 'Â· ' + type.toUpperCase() : ''}`;
+  if (source === 'yahoo') return `Fuente: Yahoo ${type ? 'Â· ' + type.toUpperCase() : ''}`;
+  if (source === 'mexc') return `Fuente: MEXC ${type ? 'Â· ' + type.toUpperCase() : ''}`;
   return 'Fuente: Auto';
 }
 
@@ -2769,8 +2580,8 @@ function renderCalcSignalTargets() {
   panel.innerHTML = `
     <div class="calc-signal-targets-head">
       <div>
-        <div class="calc-signal-targets-title">TP disponibles de la señal</div>
-        <div class="calc-signal-targets-sub">Elegí hasta 3 para calcular el trade.</div>
+        <div class="calc-signal-targets-title">TP disponibles de la seÃ±al</div>
+        <div class="calc-signal-targets-sub">ElegÃ­ hasta 3 para calcular el trade.</div>
       </div>
       <div class="calc-signal-targets-sub">${selected.size}/3 seleccionados</div>
     </div>
@@ -2798,7 +2609,7 @@ window.toggleCalcSignalTarget = index => {
     selected = selected.filter(i => i !== index);
   } else {
     if (selected.length >= 3) {
-      toast('Máximo 3 TP para calcular el trade.', 'error');
+      toast('MÃ¡ximo 3 TP para calcular el trade.', 'error');
       return;
     }
     selected.push(index);
@@ -2850,7 +2661,7 @@ function updateCalcExchangeCapitalButtons(requiredMargin=0) {
     btn.classList.remove('cap-ok','cap-warn','cap-bad');
     if (!small) return;
     if (!Number.isFinite(free)) {
-      small.textContent = '—';
+      small.textContent = 'â€”';
       return;
     }
     small.textContent = '$' + fmt(free);
@@ -2902,7 +2713,7 @@ window.setCustomLev = v => {
   }
 };
 
-// ── Calc compute ───────────────────────────────────────────────────────────
+// â”€â”€ Calc compute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.syncEditFields = (changed) => {
   const entry = parseFloat(document.getElementById('eEntry').value)||0;
   const sl    = parseFloat(document.getElementById('eSL').value)||0;
@@ -2977,10 +2788,10 @@ window.compute = () => {
   const warns=[];
   if(hasSL && sh&&sl<=entry) warns.push('SL debe ser MAYOR al Entry para SHORT');
   if(hasSL && !sh&&!sp&&sl>=entry) warns.push('SL debe ser MENOR al Entry para LONG');
-  if(hasSL && !liqSafe) warns.push('🔴 Liquidación más cercana que el SL — reducí el apalancamiento');
-  const danger=warns.filter(w=>w.includes('🔴')), other=warns.filter(w=>!w.includes('🔴'));
-  a1.style.display=danger.length?'block':'none'; a1.textContent=danger.join(' · ');
-  a2.style.display=other.length?'block':'none';  a2.textContent=other.join(' · ');
+  if(hasSL && !liqSafe) warns.push('ðŸ”´ LiquidaciÃ³n mÃ¡s cercana que el SL â€” reducÃ­ el apalancamiento');
+  const danger=warns.filter(w=>w.includes('ðŸ”´')), other=warns.filter(w=>!w.includes('ðŸ”´'));
+  a1.style.display=danger.length?'block':'none'; a1.textContent=danger.join(' Â· ');
+  a2.style.display=other.length?'block':'none';  a2.textContent=other.join(' Â· ');
 
   // Metrics
   const riskPrice = hasSL ? sl : (!sp && liq ? liq : 0);
@@ -2992,12 +2803,12 @@ window.compute = () => {
   const weightedRR = rrWeight ? rrParts.reduce((s,r) => s + r.rr * r.pct, 0) / rrWeight : null;
   const marginRiskPct = hasSL ? slDist*(sp?1:lev)*100 : (!sp && liqLoss ? 100 : null);
   const metricRows = [
-    {l:'Tamaño posición',v:'$'+fmt(posSize||0)},
+    {l:'TamaÃ±o posiciÃ³n',v:'$'+fmt(posSize||0)},
     {l:sp?'Capital':'Margen isolated',v:'$'+fmt(margin||0)},
     ...(marginRiskPct!=null?[{l:hasSL?'SL % margen':'Liq % margen',v:marginRiskPct.toFixed(1)+'%',cls:marginRiskPct>50?'red':''}]:[]),
     ...(weightedRR!=null?[{l:'R:R ponderado',v:weightedRR.toFixed(2)+':1',cls:weightedRR>=2?'green':weightedRR>=1?'':'red'}]:[]),
-    ...(!sp&&liq?[{l:'Liquidación',v:'$'+fmtPx(liq),cls:liqSafe?'':'red'}]:[]),
-    ...(!hasSL&&!sp&&liqLoss!=null?[{l:'Pérdida en liq.',v:'-$'+fmt(liqLoss),cls:'red'}]:[]),
+    ...(!sp&&liq?[{l:'LiquidaciÃ³n',v:'$'+fmtPx(liq),cls:liqSafe?'':'red'}]:[]),
+    ...(!hasSL&&!sp&&liqLoss!=null?[{l:'PÃ©rdida en liq.',v:'-$'+fmt(liqLoss),cls:'red'}]:[]),
   ];
 
   document.getElementById('calcMetrics').innerHTML= metricRows
@@ -3065,7 +2876,7 @@ window.compute = () => {
   scheduleCalcSignalChart();
 };
 
-// ── Dashboard ──────────────────────────────────────────────────────────────
+// â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let chPnl, chWR, chA;
 let _liquidityCache = null; // cache so we don't re-fetch on every render
 let _liquidityLastFetchAt = 0;
@@ -3329,7 +3140,7 @@ async function fetchAndRenderLiquidity(opts = {}) {
     balances[key].error = String(msg);
   });
 
-  // Totals — pure exchange data, no Firestore crossing
+  // Totals â€” pure exchange data, no Firestore crossing
   let grandTotal = 0, grandFree = 0, grandMargin = 0, grandOrders = 0, grandPnl = 0;
   Object.values(balances).forEach(b => {
     grandTotal  += b.total  || 0;
@@ -3352,21 +3163,21 @@ async function fetchAndRenderLiquidity(opts = {}) {
 
     const pnlStr = pnl !== 0
       ? `<span style="color:${pnl>=0?'var(--accent)':'var(--red)'};">${pnl>=0?'+':''}$${fmt(pnl)}</span>`
-      : '<span style="color:var(--t3);">—</span>';
+      : '<span style="color:var(--t3);">â€”</span>';
 
     return `<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border);">
       <span style="font-size:10px;font-weight:600;color:var(--t1);font-family:var(--mono);">${ex}${errorLine}</span>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">LIBRE</div>
-        <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${free>0?'$'+fmt(free):'—'}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:#3d9cf0;">${free>0?'$'+fmt(free):'â€”'}</div>
       </div>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN MARGEN</div>
-        <div style="font-size:11px;font-family:var(--mono);color:#a78bfa;">${margin>0?'$'+fmt(margin):'—'}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:#a78bfa;">${margin>0?'$'+fmt(margin):'â€”'}</div>
       </div>
       <div>
-        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN ÓRDENES</div>
-        <div style="font-size:11px;font-family:var(--mono);color:var(--amber);">${orders>0?'$'+fmt(orders):'—'}</div>
+        <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">EN Ã“RDENES</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--amber);">${orders>0?'$'+fmt(orders):'â€”'}</div>
       </div>
       <div>
         <div style="font-size:8px;color:var(--t3);font-family:var(--mono);">PNL</div>
@@ -3385,9 +3196,9 @@ async function fetchAndRenderLiquidity(opts = {}) {
   <div class="card" style="padding:16px 20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <span style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;">Capital en exchanges</span>
-      <button onclick="const d=document.getElementById('${detailsId}');const b=document.getElementById('${detailsId}_btn');const open=d.style.display!=='none';d.style.display=open?'none':'block';b.textContent=open?'▼':'▲';"
+      <button onclick="const d=document.getElementById('${detailsId}');const b=document.getElementById('${detailsId}_btn');const open=d.style.display!=='none';d.style.display=open?'none':'block';b.textContent=open?'â–¼':'â–²';"
         id="${detailsId}_btn"
-        style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--t3);font-size:11px;">▼</button>
+        style="background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--t3);font-size:11px;">â–¼</button>
     </div>
 
     <!-- Summary: Total first, then breakdown -->
@@ -3409,7 +3220,7 @@ async function fetchAndRenderLiquidity(opts = {}) {
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">posiciones</div>
       </div>
       <div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En órdenes</div>
+        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px;">En Ã³rdenes</div>
         <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--amber);">$${fmt(grandOrders)}</div>
         <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">limit orders</div>
       </div>
@@ -3423,7 +3234,7 @@ async function fetchAndRenderLiquidity(opts = {}) {
     <!-- Expandable per-exchange details -->
     <div id="${detailsId}" style="display:none;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border2);">
       <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 90px;gap:4px;padding-bottom:4px;margin-bottom:2px;">
-        ${['Exchange','Libre','En margen','En órdenes','PnL','Total'].map((h,i) =>
+        ${['Exchange','Libre','En margen','En Ã³rdenes','PnL','Total'].map((h,i) =>
           `<span style="font-size:8px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;${i===5?'text-align:right;':''}">${h}</span>`
         ).join('')}
       </div>
@@ -3950,11 +3761,11 @@ function renderDashboard() {
   const dashHistMetrics = document.getElementById('dashHistMetrics');
   if (dashHistMetrics) dashHistMetrics.innerHTML=[
     {l:'Trades cerrados',v:String(closed.length),sub:`${active.length} activos`},
-    {l:'Win rate',v:closed.length?Math.round(wins.length/closed.length*100)+'%':'—',cls:closed.length&&wins.length/closed.length>=.5?'green':'red'},
+    {l:'Win rate',v:closed.length?Math.round(wins.length/closed.length*100)+'%':'â€”',cls:closed.length&&wins.length/closed.length>=.5?'green':'red'},
     {l:'PnL total',v:(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl)),cls:totPnl>=0?'green':'red'},
     {l:'PnL este mes',v:(mPnl>=0?'+':'')+'$'+fmt(Math.abs(mPnl)),cls:mPnl>=0?'green':'red'},
-    {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'—',sub:best.ticker||'',cls:'green'},
-    {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'—',sub:worst.ticker||'',cls:'red'},
+    {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'â€”',sub:best.ticker||'',cls:'green'},
+    {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'â€”',sub:worst.ticker||'',cls:'red'},
     {l:'Traders seguidos',v:String([...new Set(all.map(t=>t.traderId).filter(Boolean))].length)},
     {l:'Activos operados',v:String([...new Set(all.map(t=>t.ticker).filter(Boolean))].length)},
   ].map(dashMetricCard).join('');
@@ -3987,9 +3798,9 @@ function renderDashboard() {
     const pnl = p!=null ? Math.round((t.posSize/t.entry)*(t.entry-p)*(t.dir==='short'?1:-1)*100)/100 : null;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);">
       <div class="fx" style="gap:6px;"><span style="font-family:var(--mono);font-weight:600;font-size:12px;">${t.ticker}</span> <span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${t.dir.toUpperCase()}${(t.leverage||1)>1?' x'+(t.leverage||1):''}</span></div>
-      <div class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}" style="font-family:var(--mono);font-size:11px;">${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}</div>
+      <div class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}" style="font-family:var(--mono);font-size:11px;">${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'â€”'}</div>
     </div>`;
-  }).join('')}` : `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Sin posiciones activas</div></div>`;
+  }).join('')}` : `<div class="empty"><div class="empty-icon">â—»</div><div class="empty-text">Sin posiciones activas</div></div>`;
   document.getElementById('dashActivePos').innerHTML = posHtml;
 }
 
@@ -4028,7 +3839,7 @@ function drawAssetsChart(all) {
   chA = new Chart(canvas,{type:'doughnut',data:{labels:sorted.map(([k])=>k),datasets:[{data:sorted.map(([,v])=>v),backgroundColor:colors,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#a8b8cc',font:{size:10},boxWidth:10,padding:8}}}}});
 }
 
-// ── Watchlist ──────────────────────────────────────────────────────────────
+// â”€â”€ Watchlist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function readInvalidationFields(prefix) {
   const note = document.getElementById(prefix+'InvNote')?.value?.trim() || '';
   return [1,2].map(i => {
@@ -4076,7 +3887,7 @@ function invalidationNotesHtml(t) {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <span><strong>${dashSafe(inv.label)} tocada:</strong> ${dashSafe(inv.note || 'Invalidacion')}</span>
         <button onclick="window.clearInvalidationAlertAndRender('${t.id}','${inv.key}')" title="Cancelar invalidacion"
-          style="width:22px;height:22px;border-radius:50%;border:0.5px solid rgba(56,189,248,0.35);background:rgba(56,189,248,0.08);color:#9bdcff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;flex-shrink:0;">×</button>
+          style="width:22px;height:22px;border-radius:50%;border:0.5px solid rgba(56,189,248,0.35);background:rgba(56,189,248,0.08);color:#9bdcff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;flex-shrink:0;">Ã—</button>
       </div>`).join('')}
   </div>`;
 }
@@ -4410,7 +4221,7 @@ function renderIntelligenceDashboard(closed, all) {
 
 function positionUnitsLabel(t, size, entry) {
   const qty = Number(size || 0) && Number(entry || 0) ? Number(size) / Number(entry) : 0;
-  if (!qty) return '—';
+  if (!qty) return 'â€”';
   const ticker = String(t?.ticker || t?.symbol || '')
     .replace(/USDT|BUSD|USD$/,'')
     .toUpperCase() || 'u';
@@ -4454,14 +4265,14 @@ function buildPriceBar(t, currentPrice) {
     ...(cur ? [{v:cur, c:'#e040fb', l:'', w:3, isCur:true}] : []),
   ];
 
-  // ── Color zones ────────────────────────────────────────────────────────────
-  // 1. Red zone: entry ↔ SL (only when SL exists and not breakeven)
+  // â”€â”€ Color zones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // 1. Red zone: entry â†” SL (only when SL exists and not breakeven)
   const hasRedZone = sl && !isBreakeven;
   const redFrom = hasRedZone ? Math.min(entry, sl) : null;
   const redTo   = hasRedZone ? Math.max(entry, sl) : null;
 
-  // 2. Amber zone: SL ↔ Liq (when both SL and Liq exist)
-  //    OR entry ↔ Liq (when no SL — full danger zone)
+  // 2. Amber zone: SL â†” Liq (when both SL and Liq exist)
+  //    OR entry â†” Liq (when no SL â€” full danger zone)
   const hasAmberZone = liq != null;
   const amberFrom = hasAmberZone ? (sl && !isBreakeven ? Math.min(sl, liq) : Math.min(entry, liq)) : null;
   const amberTo   = hasAmberZone ? (sl && !isBreakeven ? Math.max(sl, liq) : Math.max(entry, liq)) : null;
@@ -4469,7 +4280,7 @@ function buildPriceBar(t, currentPrice) {
   const warnNoSL  = !sl && liq;
   const warnMidPct = warnNoSL ? (pctN(amberFrom) + pctN(amberTo)) / 2 : null;
 
-  // 3. Green zones: entry → TPs (progressive opacity, NO clamping)
+  // 3. Green zones: entry â†’ TPs (progressive opacity, NO clamping)
   const greenZones = [];
   if (tp1) greenZones.push({from: entry, to: tp1, op: 0.3});
   if (tp2) greenZones.push({from: tp1||entry, to: tp2, op: 0.5});
@@ -4497,7 +4308,7 @@ function buildPriceBar(t, currentPrice) {
     return `<div style="position:absolute;left:${l}%;width:${w}%;height:100%;background:${color};opacity:${opacity};border-radius:inherit;box-shadow:0 0 10px ${color};"></div>`;
   };
 
-  // ── Collision detection — ALL labels including current price ─────────────
+  // â”€â”€ Collision detection â€” ALL labels including current price â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const BAR_PX  = 500;
   const CHAR_PX = 7;
   const labelW  = (text) => text.length * CHAR_PX / BAR_PX * 100;
@@ -4522,7 +4333,7 @@ function buildPriceBar(t, currentPrice) {
   // Sort by position
   allLabels.sort((a, b) => a.left - b.left);
 
-  // Resolve collisions — alternate top/bottom
+  // Resolve collisions â€” alternate top/bottom
   for (let i = 1; i < allLabels.length; i++) {
     const prev = allLabels[i - 1];
     const curr = allLabels[i];
@@ -4574,30 +4385,30 @@ function buildPriceBar(t, currentPrice) {
     }
   };
 
-  // ── Build dot+gradient meter ─────────────────────────────────────────────
+  // â”€â”€ Build dot+gradient meter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Zones as gradients
   const zones = [];
   const memoryZones = [];
 
-  // Liq → SL: amber gradient
+  // Liq â†’ SL: amber gradient
   if (liq && sl && !isBreakeven) {
     const l = Math.min(pctN(liq), pctN(sl));
     const r = Math.max(pctN(liq), pctN(sl));
     if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(245,158,11,0.08),rgba(245,158,11,0.22));border-radius:inherit;"></div>`);
   }
-  // Liq → Entry: amber (no SL)
+  // Liq â†’ Entry: amber (no SL)
   if (liq && (!sl || isBreakeven)) {
     const l = Math.min(pctN(liq), pctN(entry));
     const r = Math.max(pctN(liq), pctN(entry));
     if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(90deg,rgba(245,158,11,0.07),rgba(245,158,11,0.2));border-radius:inherit;"></div>`);
   }
-  // SL → Entry: red gradient
+  // SL â†’ Entry: red gradient
   if (sl && !isBreakeven) {
     const l = Math.min(pctN(sl), pctN(entry));
     const r = Math.max(pctN(sl), pctN(entry));
     if (r > l) zones.push(`<div style="position:absolute;left:${l}%;width:${r-l}%;height:100%;background:linear-gradient(${dir==='short'?'270deg':'90deg'},rgba(224,82,82,0.08),rgba(224,82,82,0.22));border-radius:inherit;"></div>`);
   }
-  // Entry → TPs: green gradient
+  // Entry â†’ TPs: green gradient
   const lastTp = tp3||tp2||tp1;
   if (lastTp) {
     const l = Math.min(pctN(entry), pctN(lastTp));
@@ -4639,13 +4450,13 @@ function buildPriceBar(t, currentPrice) {
       ${memoryZones.join('')}
       ${dots}
       ${allMarkersHtml}
-      ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-22px;font-size:13px;line-height:1;" title="Sin Stop Loss">⚠️</div>` : ''}
+      ${warnNoSL ? `<div style="position:absolute;left:${warnMidPct}%;transform:translateX(-50%);top:-22px;font-size:13px;line-height:1;" title="Sin Stop Loss">âš ï¸</div>` : ''}
     </div>
   </div>`;
 }
 
 
-// ── Exchange URL helper ────────────────────────────────────────────────────
+// â”€â”€ Exchange URL helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function getExchangeUrl(exchange, ticker, dir) {
   const ex = (exchange||'').toUpperCase();
   const isSpot = dir === 'spot';
@@ -4698,7 +4509,7 @@ function chartsIconButton(id, label='Abrir en Charts') {
   </button>`;
 }
 
-// ── Card minimize/maximize memory ──────────────────────────────────────────
+// â”€â”€ Card minimize/maximize memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function calculatorIconButton(id, label='Recalcular en Calculadora') {
   return `<button title="${label}" aria-label="${label}"
     style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;"
@@ -5022,7 +4833,7 @@ function renderWatchlist() {
   if (!container) return;
   if (!items.length) {
     syncWatchlistBulkUi(items);
-    container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay setups en watchlist</div><div class="empty-sub">Agregá un setup desde la Calculadora</div></div>`;
+    container.innerHTML = `<div class="empty"><div class="empty-icon">â—»</div><div class="empty-text">No hay setups en watchlist</div><div class="empty-sub">AgregÃ¡ un setup desde la Calculadora</div></div>`;
     return;
   }
   if (typeof startLivePrices === 'function') setTimeout(startLivePrices, 100);
@@ -5076,7 +4887,7 @@ function renderWatchlist() {
     };
 
     const collapseBtn = `<button onclick="window.toggleCardMin('${t.id}')"
-      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
+      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'â–¼':'â–²'}</button>`;
 
     const header = `
       <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
@@ -5085,20 +4896,20 @@ function renderWatchlist() {
             <input class="watch-select-box" type="checkbox" ${isSelected?'checked':''}
               onclick="event.stopPropagation();" onchange="window.toggleWatchlistSelection('${t.id}', this.checked)">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;"></div>
-            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'â€”'}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
-            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} â†—</a>`:''}
+            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">Â· ${t.traderName}</span>`:''}
             ${displaySize?`<span style="font-size:10px;color:var(--blue);font-family:var(--mono);padding:2px 7px;border-radius:4px;background:var(--blue-dim);border:0.5px solid rgba(61,156,240,0.2);">Cap $${fmt(displaySize)}</span>`:''}
             ${entryBadge}
             ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
-            ${currentPrice&&distToEntry!=null?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry>=0?'▲':'▼'} ${Math.abs(distToEntry).toFixed(2)}% al entry</span>`:''}
+            ${currentPrice&&distToEntry!=null?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToEntry>=0?'â–²':'â–¼'} ${Math.abs(distToEntry).toFixed(2)}% al entry</span>`:''}
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <div style="text-align:right;">
-            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--t1);" data-watchpx="${sym}" data-watchdir="${t.dir}" data-watchsource="${t.marketSource || ''}" data-watchkind="${t.marketKind || ''}">${currentPrice?'$'+fmtPx(currentPrice):'—'}</div>
+            <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--t1);" data-watchpx="${sym}" data-watchdir="${t.dir}" data-watchsource="${t.marketSource || ''}" data-watchkind="${t.marketKind || ''}">${currentPrice?'$'+fmtPx(currentPrice):'â€”'}</div>
             <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">precio actual</div>
           </div>
           ${collapseBtn}
@@ -5136,7 +4947,7 @@ function renderWatchlist() {
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">TamaÃ±o</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : `
@@ -5144,10 +4955,10 @@ function renderWatchlist() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${t.sl ? `
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">âˆ’$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDist?slDist.toFixed(1)+'% entry':''}</div>
           ` : `
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber);">−$${fmt(margin||0)}</div>
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber);">âˆ’$${fmt(margin||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">margen</div>
           `}
         </div>
@@ -5163,7 +4974,7 @@ function renderWatchlist() {
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">TamaÃ±o</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>`}
@@ -5179,12 +4990,12 @@ function renderWatchlist() {
           const rr = rrFor(tp.v);
           return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%</span>
+              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} Â· ${tp.pct}%</span>
               ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
             </div>
             <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
-              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
+              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`Â· +$${fmt(tpPnlAmt)}`:''}
             </div>
           </div>`;
         }).join('')}
@@ -5196,14 +5007,14 @@ function renderWatchlist() {
       <div style="display:grid;grid-template-columns:2fr repeat(4,1fr);gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
-          <option value="watchlist" selected>👁 Watchlist</option>
-          <option value="pending">⏳ Órdenes</option>
-          <option value="active">🟢 Posición</option>
+          <option value="watchlist" selected>ðŸ‘ Watchlist</option>
+          <option value="pending">â³ Ã“rdenes</option>
+          <option value="active">ðŸŸ¢ PosiciÃ³n</option>
         </select>
         ${chartsIconButton(t.id)}
         ${calculatorIconButton(t.id)}
-        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
-        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
+        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">âœŽ</button>
+        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">âœ•</button>
       </div>
     </div>`;
   }).join('');
@@ -5211,8 +5022,8 @@ function renderWatchlist() {
   syncWatchlistBulkUi(items);
 }
 
-// ── Positions ──────────────────────────────────────────────────────────────
-// ── Alert state (persists in localStorage) ──────────────────────────────────
+// â”€â”€ Positions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Alert state (persists in localStorage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ALERT_KEY = 'mauex_alerts';
 function getAlerts() { try { return JSON.parse(localStorage.getItem(ALERT_KEY)||'{}'); } catch(e) { return {}; } }
 function tradeForAlert(id) { return (window.G?.trades?.()||[]).find(x=>x.id===id); }
@@ -5508,7 +5319,7 @@ function levelClosureOf(t, level, closedParts) {
 }
 function isLevelConfirmed(t, level, closedParts) { return !!levelClosureOf(t, level, closedParts); }
 function cleanAutoCloseNotes(notes) {
-  return String(notes || '').split(' · ').filter(p => !/^TP[123] cerrado [(][^)]* original[)] a [$]?/i.test(p.trim())).join(' · ');
+  return String(notes || '').split(' Â· ').filter(p => !/^TP[123] cerrado [(][^)]* original[)] a [$]?/i.test(p.trim())).join(' Â· ');
 }
 async function syncLocalAlertsToCloud() {
   const local = getAlerts();
@@ -5716,10 +5527,10 @@ function renderPositions() {
   if (!allActive.filter(t=>t.status==='active').length && !showZombies) {
     if (summaryEl) summaryEl.textContent = `${pendingCount} ord - sin posiciones`;
     container.innerHTML = `<div class="empty">
-      <div class="empty-icon">◻</div>
+      <div class="empty-icon">â—»</div>
       <div class="empty-text">No hay posiciones abiertas</div>
-      <div class="empty-sub">Usá la calculadora para abrir una posición</div>
-      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('calc')">📊 Calculadora</button>
+      <div class="empty-sub">UsÃ¡ la calculadora para abrir una posiciÃ³n</div>
+      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('calc')">ðŸ“Š Calculadora</button>
     </div>`;
     return;
   }
@@ -5796,9 +5607,9 @@ function renderPositions() {
     const dirBorder= dirBadge.border;
     const accentColor = t.status==='zombie' ? '#666' : 'var(--accent)';
 
-    // Collapse button — circle
+    // Collapse button â€” circle
     const collapseBtn = `<button onclick="window.toggleCardMin('${t.id}')" title="${isMin?'Expandir':'Colapsar'}"
-      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
+      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'â–¼':'â–²'}</button>`;
 
     // R:R calculator
     const rrFor = (tp) => {
@@ -5809,24 +5620,24 @@ function renderPositions() {
       return (reward/risk).toFixed(1);
     };
 
-    // Header — same for min and expanded
+    // Header â€” same for min and expanded
     const header = `
       <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
         <div style="display:flex;flex-direction:column;gap:4px;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div style="width:8px;height:8px;border-radius:50%;background:${t.status==='zombie'?'#666':'#22c55e'};flex-shrink:0;"></div>
-            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'â€”'}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
-            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} â†—</a>`:''}
+            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">Â· ${t.traderName}</span>`:''}
             ${alert.badges?`<span style="display:inline-flex;gap:4px;">${alert.badges}</span>`:''}
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <div style="font-size:20px;font-weight:700;font-family:var(--mono);" class="${pnl==null?'':pnl>=0?'pnl-pos':'pnl-neg'}"
             data-pnl="${sym}" data-entry="${t.entry}" data-pos="${displaySize}" data-dir="${t.dir}" data-source="${t.marketSource || ''}" data-kind="${t.marketKind || ''}" data-manual="true">
-            ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}
+            ${pnl!=null?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'â€”'}
           </div>
           ${collapseBtn}
         </div>
@@ -5841,7 +5652,7 @@ function renderPositions() {
       </div>`;
     }
 
-    // Expanded — new design
+    // Expanded â€” new design
     return `<div class="pos-card ${alert.cardClass}" style="background:var(--bg2);border-radius:var(--rl);border:0.5px solid var(--border);border-left:3px solid ${accentColor};margin-bottom:8px;overflow:hidden;${t.status==='zombie'?'opacity:0.6;':''}">
       ${header}
 
@@ -5866,7 +5677,7 @@ function renderPositions() {
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">TamaÃ±o</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : ''}
@@ -5876,10 +5687,10 @@ function renderPositions() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${t.sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${t.sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${t.sl ? `
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--red);">âˆ’$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
           ` : `
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber);">−$${fmt(margin||0)}</div>
+            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber);">âˆ’$${fmt(margin||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">margen</div>
           `}
         </div>
@@ -5895,7 +5706,7 @@ function renderPositions() {
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">TamaÃ±o</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : ''}
@@ -5917,7 +5728,7 @@ function renderPositions() {
           const closedPriceLabel = closure?.closePrice ? '$' + fmtPx(closure.closePrice) : '$' + fmtPx(tp.v);
           return `<div style="padding:10px 14px;${i<tps.length-1?'border-right:0.5px solid var(--border2);':''}background:${isClosedTp?'rgba(34,197,94,0.055)':tpBg};${isClosedTp?'border-top:1px solid rgba(34,197,94,0.35);':'cursor:pointer;'}" ${clickAttr}>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px;">
-              <span style="font-size:8px;color:${tpColor};opacity:0.8;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${isClosedTp?'cerrado ':''}${isClosedTp?closedPctLabel:tp.pct+'%'}</span>
+              <span style="font-size:8px;color:${tpColor};opacity:0.8;text-transform:uppercase;letter-spacing:.06em;">${tp.l} Â· ${isClosedTp?'cerrado ':''}${isClosedTp?closedPctLabel:tp.pct+'%'}</span>
               <span style="display:flex;align-items:center;gap:6px;">
                 ${isClosedTp?`<span style="width:18px;height:18px;border-radius:50%;background:#00c47a;color:rgba(0,0,0,0.62);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;box-shadow:0 0 10px rgba(0,196,122,0.35);">&#10003;</span>`:''}
                 ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
@@ -5925,7 +5736,7 @@ function renderPositions() {
             </div>
             <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">${isClosedTp?closedPriceLabel:'$'+fmtPx(tp.v)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
-              ${isClosedTp?'confirmado':(distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:'')} ${!isClosedTp&&tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
+              ${isClosedTp?'confirmado':(distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:'')} ${!isClosedTp&&tpPnlAmt!=null?`Â· +$${fmt(tpPnlAmt)}`:''}
             </div>
           </div>`;
         }).join('')}
@@ -5945,17 +5756,17 @@ function renderPositions() {
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${t.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
-          <option value="watchlist">👁 Watchlist</option>
-          <option value="pending">⏳ Órdenes</option>
-          <option value="active" ${t.status==='active'?'selected':''}>🟢 Posición</option>
+          <option value="watchlist">ðŸ‘ Watchlist</option>
+          <option value="pending">â³ Ã“rdenes</option>
+          <option value="active" ${t.status==='active'?'selected':''}>ðŸŸ¢ PosiciÃ³n</option>
         </select>
         ${t.status!=='zombie'
           ? `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer;" onclick="openCloseTrade('${t.id}')">Cerrar</button>`
-          : `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:11px;cursor:pointer;" onclick="window.toggleZombie('${t.id}',false)">↩ Restaurar</button>`
+          : `<button style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:11px;cursor:pointer;" onclick="window.toggleZombie('${t.id}',false)">â†© Restaurar</button>`
         }
         ${chartsIconButton(t.id)}
-        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">✎</button>
-        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">✕</button>
+        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${t.id}')">âœŽ</button>
+        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="deleteTrade('${t.id}')">âœ•</button>
       </div>
     </div>`;
     } catch(e) {
@@ -5979,7 +5790,7 @@ function renderPositions() {
 }
 
 
-// ── Exposure Map ───────────────────────────────────────────────────────────
+// â”€â”€ Exposure Map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function mapTickerOf(t) {
   return String(t?.ticker || t?.symbol || '').trim().toUpperCase()
     .replace(/[-_]?USDTM$/,'')
@@ -6090,7 +5901,7 @@ function mapRow(item, currentPrice) {
   const invCount = tradeInvalidations(t).length;
   const meta = [
     t.exchange || '',
-    t.traderName ? '· '+t.traderName : '',
+    t.traderName ? 'Â· '+t.traderName : '',
     entry ? 'entry $'+fmtPx(entry) : '',
     t.sl ? 'SL $'+fmtPx(t.sl) : '',
     invCount ? `${invCount} inv.` : ''
@@ -6122,7 +5933,7 @@ function renderMap() {
 
   const source = [];
   G.trades().forEach(t => {
-    if (incPositions && t.status === 'active') source.push({ kind:'position', label:'Posición', color:'var(--accent)', trade:t });
+    if (incPositions && t.status === 'active') source.push({ kind:'position', label:'PosiciÃ³n', color:'var(--accent)', trade:t });
     if (incOrders && t.status === 'pending') source.push({ kind:'order', label:'Orden', color:'var(--amber)', trade:t });
     if (incWatch && t.status === 'watchlist') source.push({ kind:'watch', label:'Watch', color:'var(--red)', trade:t });
   });
@@ -6142,7 +5953,7 @@ function renderMap() {
   });
 
   if (!sorted.length) {
-    container.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">No hay elementos para mostrar</div><div class="empty-sub">Activá Posiciones, Órdenes o Watchlist.</div></div>`;
+    container.innerHTML = `<div class="empty"><div class="empty-icon">â—»</div><div class="empty-text">No hay elementos para mostrar</div><div class="empty-sub">ActivÃ¡ Posiciones, Ã“rdenes o Watchlist.</div></div>`;
     return;
   }
 
@@ -6156,20 +5967,20 @@ function renderMap() {
     const net = positions.reduce((s,t)=>s+mapExposureOf(t),0);
     const hasLong = positions.some(t=>t.dir==='long' || t.dir==='spot');
     const hasShort = positions.some(t=>t.dir==='short');
-    const netTxt = !positions.length ? '—' : `${net>0?'LONG':net<0?'SHORT':'NEUTRAL'} $${fmt(Math.abs(net))}`;
-    const conflict = hasLong && hasShort ? `<div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--amber);">⚠ Long y short simultáneos en ${sym}</div>` : '';
+    const netTxt = !positions.length ? 'â€”' : `${net>0?'LONG':net<0?'SHORT':'NEUTRAL'} $${fmt(Math.abs(net))}`;
+    const conflict = hasLong && hasShort ? `<div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--amber);">âš  Long y short simultÃ¡neos en ${sym}</div>` : '';
     return `<div class="map-group">
       <div class="map-group-head">
         <div>
           <div class="map-group-title">${dashSafe(sym)}</div>
-          <div style="font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:4px;">${positions.length} pos · ${orders} ord · ${watches} watch</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:4px;">${positions.length} pos Â· ${orders} ord Â· ${watches} watch</div>
           ${conflict}
         </div>
         <div class="map-metrics">
-          <div class="map-metric">Precio<strong>${currentPrice?'$'+fmtPx(currentPrice):'—'}</strong></div>
-          <div class="map-metric">PnL<strong class="${pnl>=0?'pnl-pos':'pnl-neg'}">${positions.length?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'—'}</strong></div>
-          <div class="map-metric">Riesgo<strong style="color:var(--red);">${positions.length?'$'+fmt(risk):'—'}</strong></div>
-          <div class="map-metric">Exposición<strong>${netTxt}</strong></div>
+          <div class="map-metric">Precio<strong>${currentPrice?'$'+fmtPx(currentPrice):'â€”'}</strong></div>
+          <div class="map-metric">PnL<strong class="${pnl>=0?'pnl-pos':'pnl-neg'}">${positions.length?(pnl>=0?'+':'-')+'$'+fmt(Math.abs(pnl)):'â€”'}</strong></div>
+          <div class="map-metric">Riesgo<strong style="color:var(--red);">${positions.length?'$'+fmt(risk):'â€”'}</strong></div>
+          <div class="map-metric">ExposiciÃ³n<strong>${netTxt}</strong></div>
         </div>
       </div>
       <div class="map-price-wrap">${mapBuildTickerBar(items, currentPrice)}</div>
@@ -6180,7 +5991,7 @@ function renderMap() {
 
 window.renderMap = renderMap;
 
-// ── History ────────────────────────────────────────────────────────────────
+// â”€â”€ History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function checkPendingReviews() {
   const G = window.G;
   const pending = (G?.trades()||[]).filter(t => t.status === 'pending_review');
@@ -6198,13 +6009,13 @@ function checkPendingReviews() {
     } else {
       badge.textContent = pending.length;
     }
-    // pending review badge shown silently — no toast
+    // pending review badge shown silently â€” no toast
   } else if (badge) {
     badge.remove();
   }
 }
 
-// ── History sort state
+// â”€â”€ History sort state
 let _histSort = { col: 'fcierre', dir: -1 };
 let _dashHistSort = { col: 'fcierre', dir: -1 };
 window.sortHistory = function(col) {
@@ -6219,7 +6030,7 @@ window.sortDashHistory = function(col) {
 };
 
 const historyCloseDateOf = t => t.closeDate || t.closedAt || t.updatedAt || '';
-const historyNotesOf = t => [t.notes, t.closeNotes].filter(Boolean).join(' · ');
+const historyNotesOf = t => [t.notes, t.closeNotes].filter(Boolean).join(' Â· ');
 const historyColValue = (t, col) => {
   const valueMap = {
     ticker: t.ticker,
@@ -6356,7 +6167,7 @@ function renderHistCharts(trades) {
   pnlVals.forEach(v=>{ const i=Math.min(Math.floor((v-pMin)/bucketSize), bucketCount-1); buckets[i]++; });
   const maxBucket = Math.max(...buckets,1);
 
-  // Monthly bars — flex-based, fill available height
+  // Monthly bars â€” flex-based, fill available height
   const bars = mVals.map((v,i)=>{
     const pct = Math.max(2, Math.abs(v)/maxM*50); // % of half-height
     const c = v>=0?'var(--accent)':'var(--red)';
@@ -6430,14 +6241,14 @@ function renderHistCharts(trades) {
     </div>
     <div style="display:grid;grid-template-rows:auto 1fr;gap:12px;">
       <div class="card" style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;">
-        <div style="grid-column:1/-1;font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;">ESTADÍSTICAS ${info('Métricas clave de performance.')}</div>
+        <div style="grid-column:1/-1;font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:2px;">ESTADÃSTICAS ${info('MÃ©tricas clave de performance.')}</div>
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${winRate>=50?'var(--accent)':'var(--red)'};">${winRate}%</div></div>
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">EXPECTANCY</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${expectancy>=0?'var(--accent)':'var(--red)'};">${expectancy>=0?'+':''}$${fmt(Math.abs(expectancy))}</div></div>
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG WIN</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--accent);">+$${fmt(avgWin)}</div></div>
         <div><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">AVG LOSS</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--red);">${fmt(avgLoss)}</div></div>
       </div>
       <div class="card" style="padding:14px;" id="capitalPieCard">
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">CAPITAL ${info('Distribución del capital: libre, en margen de posiciones y reservado en órdenes.')}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">CAPITAL ${info('DistribuciÃ³n del capital: libre, en margen de posiciones y reservado en Ã³rdenes.')}</div>
         <div id="capitalPieDiv" style="width:100%;height:110px;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:11px;font-family:var(--mono);">Cargando...</div>
       </div>
     </div>
@@ -6466,19 +6277,19 @@ function renderHistCharts(trades) {
       </div>
     </div>
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PERFORMANCE POR TRADER ${info('Tabla de rendimiento por trader/analista. # = cantidad de trades. WR = win rate. Avg W/L = ganancia y pérdida promedio por trade. La barra muestra el PnL total proporcional.')}</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">PERFORMANCE POR TRADER ${info('Tabla de rendimiento por trader/analista. # = cantidad de trades. WR = win rate. Avg W/L = ganancia y pÃ©rdida promedio por trade. La barra muestra el PnL total proporcional.')}</div>
       ${trHeader}
       <div style="margin-top:4px;">${trTable}</div>
     </div>
     <div class="card" style="padding:14px;">
-      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">DISTRIBUCIÓN DE PnL ${info('Histograma de resultados. Cada barra muestra cuántos trades cayeron en ese rango de PnL. Verde = rangos positivos, rojo = negativos. Ideal: muchas barras verdes pequeñas y pocas barras rojas.')}</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:8px;">DISTRIBUCIÃ“N DE PnL ${info('Histograma de resultados. Cada barra muestra cuÃ¡ntos trades cayeron en ese rango de PnL. Verde = rangos positivos, rojo = negativos. Ideal: muchas barras verdes pequeÃ±as y pocas barras rojas.')}</div>
       <div style="display:flex;flex-direction:column;gap:5px;">${distBars}</div>
     </div>
   </div>`;
 
   // Draw equity curve on canvas
   setTimeout(() => {
-    // ── Equity curve via Chart.js ────────────────────────────────────────
+    // â”€â”€ Equity curve via Chart.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const canvas = document.getElementById('eqCanvas');
     if (canvas && equityPoints.length >= 2) {
       if (canvas._chartInstance) canvas._chartInstance.destroy();
@@ -6595,7 +6406,7 @@ function renderHistCharts(trades) {
   }, 80);
 }
 
-// ── Capital pie — global, can be called anytime ───────────────────────────
+// â”€â”€ Capital pie â€” global, can be called anytime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window._drawCapitalPie = () => {
   const div = document.getElementById('capitalPieDiv');
   if (!div) return;
@@ -6616,7 +6427,7 @@ window._drawCapitalPie = () => {
   const slices = [
     { val: libre,   color: '#3d9cf0', label: 'Libre' },
     { val: margen,  color: '#a78bfa', label: 'Margen' },
-    { val: ordenes, color: '#f59e0b', label: 'Órdenes' },
+    { val: ordenes, color: '#f59e0b', label: 'Ã“rdenes' },
   ].filter(s => s.val > 0);
 
   const cx = 55, cy = 55, r = 42, ri = 24;
@@ -6661,17 +6472,17 @@ function renderHistory() {
   renderHistCharts(closed);
   const wins = filtered.filter(t=>(t.pnl||0)>0).length;
   const totPnl = filtered.reduce((s,t)=>s+(t.pnl||0),0);
-  document.getElementById('histStats').textContent = filtered.length+' trades · WR: '+(filtered.length?Math.round(wins/filtered.length*100):0)+'% · PnL: '+(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl));
+  document.getElementById('histStats').textContent = filtered.length+' trades Â· WR: '+(filtered.length?Math.round(wins/filtered.length*100):0)+'% Â· PnL: '+(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl));
   const histMetrics = document.getElementById('histMetrics');
   if (histMetrics) {
     const best = filtered.reduce((b,t)=>(t.pnl||0)>(b.pnl||0)?t:b,{pnl:0});
     const worst = filtered.reduce((w,t)=>(t.pnl||0)<(w.pnl||0)?t:w,{pnl:0});
     histMetrics.innerHTML = [
       {l:'Trades filtrados',v:String(filtered.length),sub:`${closed.length} cerrados`},
-      {l:'Win rate',v:filtered.length?Math.round(wins/filtered.length*100)+'%':'—',cls:filtered.length&&wins/filtered.length>=.5?'green':'red'},
+      {l:'Win rate',v:filtered.length?Math.round(wins/filtered.length*100)+'%':'â€”',cls:filtered.length&&wins/filtered.length>=.5?'green':'red'},
       {l:'PnL filtrado',v:(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl)),cls:totPnl>=0?'green':'red'},
-      {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'—',sub:best.ticker||'',cls:'green'},
-      {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'—',sub:worst.ticker||'',cls:'red'},
+      {l:'Mejor trade',v:best.pnl?'+$'+fmt(best.pnl):'â€”',sub:best.ticker||'',cls:'green'},
+      {l:'Peor trade',v:worst.pnl<0?'-$'+fmt(Math.abs(worst.pnl)):'â€”',sub:worst.ticker||'',cls:'red'},
       {l:'Activos',v:String([...new Set(filtered.map(t=>t.ticker).filter(Boolean))].length)},
     ].map(dashMetricCard).join('');
   }
@@ -6682,44 +6493,44 @@ function renderHistory() {
   const tbody = document.getElementById('histTbody');
   if (!filtered.length) { tbody.innerHTML='<tr><td colspan="13"><div class="empty"><div class="empty-text">Sin trades cerrados</div></div></td></tr>'; return; }
   // Sortable headers
-  const si = col => _histSort.col===col?(_histSort.dir===1?'↑':'↓'):'';
+  const si = col => _histSort.col===col?(_histSort.dir===1?'â†‘':'â†“'):'';
   const thead = tbody.closest('table')?.querySelector('thead tr');
   if(thead) thead.innerHTML=[['ticker','Ticker'],['dir','Dir'],['exchange','Exchange'],['trader','Trader'],['entry','Entry px'],['exit','Exit px'],['pnl','PnL'],['pnlpct','PnL%'],['fentrada','F.Entrada'],['fcierre','F.Cierre'],['result','Resultado'],['notes','Notas'],['','']].map(([col,lbl])=>col?`<th style="cursor:pointer;user-select:none;" onclick="sortHistory('${col}')" title="Ordenar por ${lbl}">${lbl} ${si(col)}</th>`:`<th>${lbl}</th>`).join('');
   tbody.innerHTML = filtered.map(t=>{
-    const allNotes=[t.notes,t.closeNotes].filter(Boolean).join(' · ');
+    const allNotes=[t.notes,t.closeNotes].filter(Boolean).join(' Â· ');
     const pnlCls=(t.pnl||0)>=0?'pnl-pos':'pnl-neg';
     const pnlPctCls=(t.pnlPct||0)>=0?'pnl-pos':'pnl-neg';
     const dirBadge=t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp';
     const resBadge=(t.pnl||0)>=0?'bl':'bs';
     const resLabel=(t.pnl||0)>=0?'WIN':'LOSS';
     return `<tr style="cursor:pointer;" onclick="toggleHistNote('note-${t.id}')">
-      <td><strong>${t.ticker||'—'}</strong></td>
+      <td><strong>${t.ticker||'â€”'}</strong></td>
       <td><span class="badge ${dirBadge}">${(t.dir||'').toUpperCase()}</span></td>
-      <td style="color:var(--t2);">${t.exchange?.toUpperCase()||'—'}</td>
-      <td style="color:var(--t2);">${t.traderName||'—'}</td>
+      <td style="color:var(--t2);">${t.exchange?.toUpperCase()||'â€”'}</td>
+      <td style="color:var(--t2);">${t.traderName||'â€”'}</td>
       <td style="font-family:var(--mono);">$${fmtPx(t.entry)}</td>
-      <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'—'}</td>
-      <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'-')+'$'+fmt(Math.abs(t.pnl)):'—'}</td>
-      <td class="${pnlPctCls}">${t.pnlPct!=null?fmtP(t.pnlPct):'—'}</td>
-      <td style="color:var(--t3);font-size:10px;">${t.createdAt?fmtD(t.createdAt):'—'}</td>
+      <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'â€”'}</td>
+      <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'-')+'$'+fmt(Math.abs(t.pnl)):'â€”'}</td>
+      <td class="${pnlPctCls}">${t.pnlPct!=null?fmtP(t.pnlPct):'â€”'}</td>
+      <td style="color:var(--t3);font-size:10px;">${t.createdAt?fmtD(t.createdAt):'â€”'}</td>
       <td style="color:var(--t3);font-size:10px;">${fmtD(t.closeDate)}</td>
       <td><span class="badge ${resBadge}">${resLabel}</span></td>
-      <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'—'}</td>
+      <td style="color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${allNotes||'â€”'}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;">
-        <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
-        <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
+        <button class="btn sm" onclick="openEditTrade('${t.id}')">âœŽ</button>
+        <button class="btn dan sm" onclick="deleteTrade('${t.id}')">âœ•</button>
       </td>
     </tr>${allNotes?`<tr id="note-${t.id}" style="display:none;"><td colspan="13" style="background:var(--bg3);padding:10px 12px;font-size:11px;color:var(--t2);border-left:2px solid var(--border2);">${allNotes}</td></tr>`:''}`;
   }).join('');
 }
-// ── Traders page ───────────────────────────────────────────────────────────
+// â”€â”€ Traders page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderTraders() {
   const G = window.G; if(!G) return;
   const tList  = G.traders();
   const trList = G.trades();
   const c = document.getElementById('traderCards');
   if (!tList.length) {
-    c.innerHTML = `<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Sin traders cargados</div></div>`;
+    c.innerHTML = `<div class="empty"><div class="empty-icon">â—»</div><div class="empty-text">Sin traders cargados</div></div>`;
     return;
   }
   c.innerHTML = tList.map(t => {
@@ -6732,26 +6543,26 @@ function renderTraders() {
         <div><div style="font-family:var(--mono);font-size:15px;font-weight:600;">${t.name}</div>${t.channel?`<div style="font-size:11px;color:var(--t2);margin-top:2px;">${t.channel}</div>`:''}</div>
         <div class="fx" style="gap:6px;">
           <button class="btn sm" onclick="openTraderModal('${t.id}')">Editar</button>
-          <button class="btn dan sm" onclick="deleteTrader('${t.id}')">✕</button>
+          <button class="btn dan sm" onclick="deleteTrader('${t.id}')">âœ•</button>
         </div>
       </div>
       <div class="g3" style="gap:8px;margin-bottom:10px;">
         <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">TRADES</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;">${tt.length}</div></div>
-        <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${cl.length&&wins/cl.length>=.5?'pnl-pos':'pnl-neg'}">${cl.length?Math.round(wins/cl.length*100)+'%':'—'}</div></div>
-        <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">PNL</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${totPnl>=0?'pnl-pos':'pnl-neg'}">${cl.length?(totPnl>=0?'+':'')+fmt(totPnl):'—'}</div></div>
+        <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${cl.length&&wins/cl.length>=.5?'pnl-pos':'pnl-neg'}">${cl.length?Math.round(wins/cl.length*100)+'%':'â€”'}</div></div>
+        <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">PNL</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${totPnl>=0?'pnl-pos':'pnl-neg'}">${cl.length?(totPnl>=0?'+':'')+fmt(totPnl):'â€”'}</div></div>
       </div>
       ${t.notes?`<div style="font-size:11px;color:var(--t2);">${t.notes}</div>`:''}
     </div>`;
   }).join('');
 }
 
-// ── Toggle history note row ────────────────────────────────────────────────
+// â”€â”€ Toggle history note row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.toggleHistNote = id => {
   const el = document.getElementById(id);
   if(el) el.style.display = el.style.display==='none'?'table-row':'none';
 };
 
-// ── Edit trade ─────────────────────────────────────────────────────────────
+// â”€â”€ Edit trade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let editDir = 'long';
 const EDIT_CHANGE_REASONS = [
   'Actualizacion del trader',
@@ -6891,7 +6702,7 @@ window.openEditTrade = id => {
     const G = window.G;
     const sel = document.getElementById('dtTrader');
     if (sel && G) {
-      sel.innerHTML = '<option value="">— ninguno —</option>' +
+      sel.innerHTML = '<option value="">â€” ninguno â€”</option>' +
         G.traders().map(tr=>`<option value="${tr.id}"${tr.id===t.traderId?' selected':''}>${tr.name}</option>`).join('');
     }
     // Pre-fill fields
@@ -6910,10 +6721,10 @@ window.openEditTrade = id => {
     }
     document.getElementById('dtOpenDate').value  = t.createdAt ? t.createdAt.split('T')[0] : '';
     document.getElementById('dtCloseDate').value = t.closeDate||'';
-    document.getElementById('dtNotes').value     = [t.notes, t.closeNotes].filter(Boolean).join(' · ')||'';
+    document.getElementById('dtNotes').value     = [t.notes, t.closeNotes].filter(Boolean).join(' Â· ')||'';
     window.renderDirectTradeReviewTags?.(t);
     // Change title and button to "edit" mode
-    document.querySelector('#directTradeModal .modal-title').textContent = '✎ Editar trade';
+    document.querySelector('#directTradeModal .modal-title').textContent = 'âœŽ Editar trade';
     document.getElementById('dtSaveBtn').textContent = 'Guardar cambios';
     window._directTradeEditId = id;
     window.updateDirectTradeSizeLabel?.();
@@ -6930,14 +6741,14 @@ window.openEditTrade = id => {
   // Trader dropdown always available
   const traders = window.G?.traders()||[];
   document.getElementById('eTrader').innerHTML =
-    '<option value="">— Sin trader —</option>' +
+    '<option value="">â€” Sin trader â€”</option>' +
     traders.map(tr=>`<option value="${tr.id}"${tr.id===t?.traderId?' selected':''}>${tr.name}</option>`).join('');
   document.getElementById('eNotes').value = t?.notes||'';
 
   if(fromExchange) {
     // Exchange trade: only trader, notes and liquidation override editable
     // Show read-only info + editable fields
-    document.getElementById('editTradeModal').querySelector('.modal-title').textContent = '✎ Editar trade (exchange)';
+    document.getElementById('editTradeModal').querySelector('.modal-title').textContent = 'âœŽ Editar trade (exchange)';
     // Disable price fields
     ['eTicker','eExchange','eLev','eEntry','eSL','eRisk','eTP1','eTP1pct','eTP2','eTP2pct','eTP3','eTP3pct'].forEach(id=>{
       const el=document.getElementById(id);
@@ -6957,7 +6768,7 @@ window.openEditTrade = id => {
     document.getElementById('eNotes').placeholder = 'Notas personales del trade...';
   } else {
     // Manual trade: all fields editable
-    document.getElementById('editTradeModal').querySelector('.modal-title').textContent = '✎ Editar trade';
+    document.getElementById('editTradeModal').querySelector('.modal-title').textContent = 'âœŽ Editar trade';
     ['eTicker','eExchange','eLev','eEntry','eSL','eLiquidation','eRisk','eTP1','eTP1pct','eTP2','eTP2pct','eTP3','eTP3pct','eInv1','eInv1Side','eInv2','eInv2Side','eInvNote'].forEach(id=>{
       const el=document.getElementById(id);
       if(el){ el.disabled=false; el.style.opacity=''; }
@@ -7084,7 +6895,7 @@ window.saveEditTrade = async () => {
   const tp3      = parseFloat(document.getElementById('eTP3').value)||0;
   const tp3pct   = parseFloat(document.getElementById('eTP3pct').value)||34;
   const eDate = document.getElementById('eDate').value;
-  if(!ticker||!entry){ toast('Completá ticker y entry como mínimo.','error'); return; }
+  if(!ticker||!entry){ toast('CompletÃ¡ ticker y entry como mÃ­nimo.','error'); return; }
 
   const existingTrade = existingBeforeEdit;
   const sizeEl = document.getElementById('eSize');
@@ -7140,7 +6951,7 @@ window.saveEditTrade = async () => {
   } catch(e){ toast('Error: '+e.message,'error'); console.error(e); }
 };
 
-// ── Manual trade modal ─────────────────────────────────────────────────────
+// â”€â”€ Manual trade modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let manualDir = 'long';
 let entryRowId = 0;
 
@@ -7162,7 +6973,7 @@ window.openManualTrade = () => {
   // Fill traders
   const G=window.G;
   if(G) {
-    document.getElementById('mTrader').innerHTML='<option value="">— ninguno —</option>'+
+    document.getElementById('mTrader').innerHTML='<option value="">â€” ninguno â€”</option>'+
       G.traders().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   }
   addEntryRow();
@@ -7186,7 +6997,7 @@ window.addEntryRow = () => {
   row.innerHTML=`
     <input type="number" data-erow-price="${id}" placeholder="Precio entrada" style="font-size:11px;padding:7px 10px;">
     <input type="number" id="esize${id}" placeholder="Capital USD" style="font-size:11px;padding:7px 10px;">
-    <button onclick="removeEntryRow(${id})" style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">×</button>`;
+    <button onclick="removeEntryRow(${id})" style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--red);background:var(--red-dim);color:var(--red);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">Ã—</button>`;
   document.getElementById('entryRows').appendChild(row);
   setTimeout(()=>row.querySelector('input')?.focus(),50);
 };
@@ -7196,7 +7007,7 @@ window.removeEntryRow = id => {
   if(el && document.getElementById('entryRows').children.length>1) el.remove();
 };
 
-// ── AI Analysis ────────────────────────────────────────────────────────────
+// â”€â”€ AI Analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let lwCharts = {}; // lightweight chart instances
 
 let aiMarketType = 'spot'; // 'spot' | 'futures'
@@ -7332,7 +7143,7 @@ async function fetchOHLCV(symbol, interval, limit=300) {
   if (['bybit','okx','kucoin'].includes(exchangeFetchSource) || (exchangeFetchSource === 'mexc' && exchangeFetchKind === 'spot')) {
     return fetchExchangeOHLCV(exchangeFetchSource, symbol, interval, limit, exchangeFetchKind);
   }
-  // MEXC commodities — use MEXC futures klines
+  // MEXC commodities â€” use MEXC futures klines
   if(window._aiSource === 'mexc') {
     // symbol is already in MEXC format (e.g. GOLD_USDT) set by selectTicker
     const mexcSym = symbol;
@@ -7490,7 +7301,7 @@ function calcOBV(candles) {
   });
 }
 
-// ── Indicator calculations ───────────────────────────────────────────────────
+// â”€â”€ Indicator calculations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function calcEMA(candles, period) {
   const k = 2/(period+1);
   let ema = candles[0].close;
@@ -8051,7 +7862,7 @@ function drawMainTradeTimeGuides(el, chart, candles, trade) {
     const prefix = trades.length > 1 && t.ticker ? `${t.ticker} ` : '';
     const sigTime = nearestCandleTimeForGuide(candles, tradeSignalUnix(t));
     if (sigTime) {
-      const remove = addChartTimeGuide(el, chart, sigTime, `${prefix}Señal`, 'signal');
+      const remove = addChartTimeGuide(el, chart, sigTime, `${prefix}SeÃ±al`, 'signal');
       if (remove) removers.push(remove);
     }
     const execTime = nearestCandleTimeForGuide(candles, tradeExecutionUnix(t));
@@ -8194,7 +8005,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
     const candles = await fetchOHLCV(symbol, interval, limit);
     if(!candles.length) throw new Error('Sin datos');
 
-    // ── Candlestick chart with EMAs ───────────────────────────────────────
+    // â”€â”€ Candlestick chart with EMAs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const csChart = makeChart(csEl, tfKey === '1M' ? 320 : 220);
     lwCharts['cs'+tfKey] = csChart;
 
@@ -8221,7 +8032,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
     });
     csSeries.setData(candles);
 
-    // EMA 20 (yellow) / 50 (blue) / 200 (red) — show last value
+    // EMA 20 (yellow) / 50 (blue) / 200 (red) â€” show last value
     const emaConfigs = [
       {p:20,  color:'rgba(240,200,60,0.9)',  label:'E20'},
       {p:50,  color:'rgba(61,156,240,0.9)',  label:'E50'},
@@ -8243,7 +8054,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
     }
     csChart.timeScale().fitContent();
 
-    // ── Volume chart (no time axis) ────────────────────────────────────────
+    // â”€â”€ Volume chart (no time axis) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const volChart = makeChart(volEl, 80);
     lwCharts['vol'+tfKey] = volChart;
     volChart.applyOptions({timeScale:{visible:false}});
@@ -8266,7 +8077,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
     avgSeries.setData(candles.slice(-20).map(c=>({time:c.time,value:avgVol})));
     volChart.timeScale().fitContent();
 
-    // ── OBV chart (no time axis) ───────────────────────────────────────────
+    // â”€â”€ OBV chart (no time axis) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const obvChart = makeChart(obvEl, 80);
     lwCharts['obv'+tfKey] = obvChart;
     const _obvFmt = v => {
@@ -8287,7 +8098,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
     obvSeries.setData(calcOBV(candles));
     obvChart.timeScale().fitContent();
 
-    // ── RSI chart — show time axis here (bottom panel) ─────────────────────
+    // â”€â”€ RSI chart â€” show time axis here (bottom panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const rsiChart = makeChart(rsiEl, 80);
     lwCharts['rsi'+tfKey] = rsiChart;
     rsiChart.applyOptions({
@@ -8332,7 +8143,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
   }
 }
 
-// ── Fetch market data (Binance + Fear&Greed) ─────────────────────────────
+// â”€â”€ Fetch market data (Binance + Fear&Greed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function fetchMarketData(symbol) {
   const data = {};
   try {
@@ -8449,14 +8260,14 @@ function renderMarketStrip(symbol, md, emaValues={}, mktType='spot') {
   strip.innerHTML=`
     ${typeLabel}
     <span style="color:var(--t1);font-size:13px;font-weight:600;">${symbol}</span>
-    <span style="color:var(--t1);">${md.price?'$'+fmtPx(md.price):'—'}</span>
+    <span style="color:var(--t1);">${md.price?'$'+fmtPx(md.price):'â€”'}</span>
     ${md.change24h!=null?`<span style="color:${chgColor};">${md.change24h>=0?'+':''}${md.change24h.toFixed(2)}%</span>`:''}
-    ${md.high24h?`<span style="color:var(--t3);">H: $${fmtPx(md.high24h)} · L: $${fmtPx(md.low24h)}</span>`:''}
+    ${md.high24h?`<span style="color:var(--t3);">H: $${fmtPx(md.high24h)} Â· L: $${fmtPx(md.low24h)}</span>`:''}
     ${md.vol24h?`<span style="color:var(--t3);">Vol: $${(md.vol24h/1e9).toFixed(2)}B</span>`:''}
     ${emaStr}
     ${md.fundingRate!=null?`<span>FR: <span style="color:${frColor};">${md.fundingRate>=0?'+':''}${md.fundingRate.toFixed(4)}%</span></span>`:''}
     ${md.openInterest?`<span style="color:var(--t3);">OI: $${(md.openInterest/1e9).toFixed(2)}B</span>`:''}
-    ${md.fng!=null?`<span>F&G: <span style="color:${fngColor};">${md.fng} · ${md.fngLabel}</span></span>`:''}
+    ${md.fng!=null?`<span>F&G: <span style="color:${fngColor};">${md.fng} Â· ${md.fngLabel}</span></span>`:''}
   `;
 }
 
@@ -8465,7 +8276,7 @@ window.loadCharts = async () => {
   chartsLoading = true;
   const rawInput = (document.getElementById('aiSymbol')?.value||'BTCUSDT').trim().toUpperCase();
   const btn = document.getElementById('chartsBtn');
-  btn.textContent='↺ Cargando...'; btn.disabled=true;
+  btn.textContent='â†º Cargando...'; btn.disabled=true;
   document.getElementById('copyStatus').style.display='none';
   // Clear trade overlay if user loads manually
   if(!_analysisTradeData) {
@@ -8520,7 +8331,7 @@ window.loadCharts = async () => {
     }
     renderMarketStrip(symbol, md, ema1D, aiMarketType);
   } catch(e){ console.error(e); toast('Error cargando charts: '+e.message,'error'); }
-  btn.textContent='↺ Cargar'; btn.disabled=false;
+  btn.textContent='â†º Cargar'; btn.disabled=false;
   chartsLoading = false;
 
   // Draw trade levels if opened from watchlist
@@ -8569,7 +8380,7 @@ window.loadCharts = async () => {
                 {time: visible.to   + pad, value: lvl.price}
               ]);
             }
-            // Add a price line instead for the label — shows on right but doesn't cover candles
+            // Add a price line instead for the label â€” shows on right but doesn't cover candles
             ls.createPriceLine({
               price: lvl.price,
               color: lvl.color,
@@ -8585,10 +8396,10 @@ window.loadCharts = async () => {
   }
 };
 
-// ── Copy all charts + market data as single image to clipboard ─────────────
+// â”€â”€ Copy all charts + market data as single image to clipboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.copyChartsToClipboard = async () => {
   const btn = document.getElementById('copyBtn');
-  btn.textContent='⟳ Generando...'; btn.disabled=true;
+  btn.textContent='âŸ³ Generando...'; btn.disabled=true;
 
   try {
     const symbol = (document.getElementById('aiSymbol')?.value||'BTCUSDT').toUpperCase().replace(/[^A-Z]/g,'');
@@ -8651,16 +8462,16 @@ window.copyChartsToClipboard = async () => {
     // Add symbol + timestamp watermark
     ctx.fillStyle='rgba(255,255,255,0.2)';
     ctx.font='12px "Fira Code", monospace';
-    ctx.fillText(`${symbol} · ${new Date().toLocaleString('es')} · MAUex`, 10, totalH-8);
+    ctx.fillText(`${symbol} Â· ${new Date().toLocaleString('es')} Â· MAUex`, 10, totalH-8);
 
     // Copy to clipboard
     canvas.toBlob(async blob => {
       try {
         await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
-        btn.textContent='✅ Copiado!';
+        btn.textContent='âœ… Copiado!';
         document.getElementById('copyStatus').style.display='block';
         setTimeout(()=>{
-          btn.textContent='📋 Copiar para Claude';
+          btn.textContent='ðŸ“‹ Copiar para Claude';
           btn.disabled=false;
         },2000);
       } catch(e) {
@@ -8668,24 +8479,24 @@ window.copyChartsToClipboard = async () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href=url; a.download=`${symbol}_analysis_${Date.now()}.png`; a.click();
-        btn.textContent='📋 Copiar para Claude'; btn.disabled=false;
-        toast('Portapapeles no disponible — imagen descargada','error');
+        btn.textContent='ðŸ“‹ Copiar para Claude'; btn.disabled=false;
+        toast('Portapapeles no disponible â€” imagen descargada','error');
       }
     },'image/png');
   } catch(e) {
     toast('Error generando imagen: '+e.message,'error');
-    btn.textContent='📋 Copiar para Claude'; btn.disabled=false;
+    btn.textContent='ðŸ“‹ Copiar para Claude'; btn.disabled=false;
     console.error(e);
   }
 };
 
 
 
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // EXCHANGE INTEGRATION
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-// ── Crypto helpers (AES-GCM via WebCrypto) ────────────────────────────────
+// â”€â”€ Crypto helpers (AES-GCM via WebCrypto) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function bytesToB64(bytes) {
   return btoa(String.fromCharCode(...bytes));
 }
@@ -8731,7 +8542,7 @@ async function decryptData(b64, password) {
   return new TextDecoder().decode(dec);
 }
 
-// ── HMAC-SHA256 for request signing ─────────────────────────────────────────
+// â”€â”€ HMAC-SHA256 for request signing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function hmacSHA256(secret, message) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
@@ -8746,7 +8557,7 @@ async function hmacSHA256Base64(secret, message) {
   return btoa(String.fromCharCode(...new Uint8Array(sig)));
 }
 
-// ── Master password state ─────────────────────────────────────────────────
+// â”€â”€ Master password state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MASTER_PASS_SESSION_KEY = 'mauex_mp';
 let _masterPass = sessionStorage.getItem(MASTER_PASS_SESSION_KEY) || '';
 localStorage.removeItem('mauex_mp_remembered');
@@ -8755,35 +8566,35 @@ window.saveMasterPass = () => {
   const p = document.getElementById('masterPass').value;
   if(p.length < 8) { 
     const st=document.getElementById('masterStatus'); 
-    if(st){st.textContent='❌ Mínimo 8 caracteres'; st.style.display='block'; st.style.color='var(--red)';}
+    if(st){st.textContent='âŒ MÃ­nimo 8 caracteres'; st.style.display='block'; st.style.color='var(--red)';}
     return; 
   }
-  if(p.length < 8){ toast('Mínimo 8 caracteres.','error'); return; }
+  if(p.length < 8){ toast('MÃ­nimo 8 caracteres.','error'); return; }
   _masterPass = p;
   sessionStorage.setItem(MASTER_PASS_SESSION_KEY, p);
   const st = document.getElementById('masterStatus');
   st.style.display='block'; st.style.color='var(--accent)';
-  st.textContent='✅ Contraseña guardada en memoria (sesión actual)';
-  toast('Contraseña maestra lista.');
+  st.textContent='âœ… ContraseÃ±a guardada en memoria (sesiÃ³n actual)';
+  toast('ContraseÃ±a maestra lista.');
 };
 
 window.saveMasterPass2 = () => {
   const p = document.getElementById('masterPass2')?.value || '';
   if(p.length < 8) {
     const st = document.getElementById('masterStatus2');
-    if(st){ st.textContent='Mínimo 8 caracteres'; st.style.display='block'; st.style.color='var(--red)'; }
+    if(st){ st.textContent='MÃ­nimo 8 caracteres'; st.style.display='block'; st.style.color='var(--red)'; }
     return;
   }
   _masterPass = p;
   sessionStorage.setItem(MASTER_PASS_SESSION_KEY, p);
   const st = document.getElementById('masterStatus2');
-  if(st){ st.textContent='Contraseña guardada en memoria'; st.style.display='block'; st.style.color='var(--accent)'; }
-  toast('Contraseña maestra lista.');
+  if(st){ st.textContent='ContraseÃ±a guardada en memoria'; st.style.display='block'; st.style.color='var(--accent)'; }
+  toast('ContraseÃ±a maestra lista.');
 };
 
-// ── Save/load exchange keys (Firestore encrypted) ─────────────────────────
+// â”€â”€ Save/load exchange keys (Firestore encrypted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.saveExchangeKeys = async exchange => {
-  if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
+  if(!_masterPass){ toast('Primero guardÃ¡ tu contraseÃ±a maestra.','error'); return; }
   const keyMap = {
     binance: { key: document.getElementById('bnbKey')?.value.trim(),    secret: document.getElementById('bnbSecret')?.value.trim() },
     bybit:   { key: document.getElementById('bybitKey')?.value.trim(),   secret: document.getElementById('bybitSecret')?.value.trim() },
@@ -8793,7 +8604,7 @@ window.saveExchangeKeys = async exchange => {
   };
   const keys = keyMap[exchange];
   if(!keys){ toast(`Exchange ${exchange} no reconocido.`,'error'); return; }
-  if(!keys.key || !keys.secret || (['okx','kucoin'].includes(exchange) && !keys.passphrase)){ toast('Completá Key, Secret y Passphrase si aplica.','error'); return; }
+  if(!keys.key || !keys.secret || (['okx','kucoin'].includes(exchange) && !keys.passphrase)){ toast('CompletÃ¡ Key, Secret y Passphrase si aplica.','error'); return; }
   try {
     const encrypted = await encryptData(JSON.stringify(keys), _masterPass);
     if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, encrypted);
@@ -8802,9 +8613,9 @@ window.saveExchangeKeys = async exchange => {
   } catch(e){ toast('Error encriptando: '+e.message,'error'); }
 };
 
-// Modal version — reads from modal fields (id suffix '2')
+// Modal version â€” reads from modal fields (id suffix '2')
 window.saveExchangeKeys2 = async exchange => {
-  if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
+  if(!_masterPass){ toast('Primero guardÃ¡ tu contraseÃ±a maestra.','error'); return; }
   const keyMap = {
     binance: { key: document.getElementById('bnbKey2')?.value.trim(),    secret: document.getElementById('bnbSecret2')?.value.trim() },
     bybit:   { key: document.getElementById('bybitKey2')?.value.trim(),   secret: document.getElementById('bybitSecret2')?.value.trim() },
@@ -8814,7 +8625,7 @@ window.saveExchangeKeys2 = async exchange => {
   };
   const keys = keyMap[exchange];
   if(!keys){ toast(`Exchange ${exchange} no reconocido.`,'error'); return; }
-  if(!keys.key || !keys.secret || (['okx','kucoin'].includes(exchange) && !keys.passphrase)){ toast('Completá Key, Secret y Passphrase si aplica.','error'); return; }
+  if(!keys.key || !keys.secret || (['okx','kucoin'].includes(exchange) && !keys.passphrase)){ toast('CompletÃ¡ Key, Secret y Passphrase si aplica.','error'); return; }
   try {
     const encrypted = await encryptData(JSON.stringify(keys), _masterPass);
     if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, encrypted);
@@ -8837,7 +8648,7 @@ window.renderHistFiltersAndTable = (filterId, tableId) => {
   filtersEl.innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
       <input type="text" id="dashFiltTicker" placeholder="Ticker..." style="width:120px;" oninput="renderDashHistory()">
-      <select id="dashFiltDir" onchange="renderDashHistory()"><option value="">Dirección</option><option>long</option><option>short</option><option>spot</option></select>
+      <select id="dashFiltDir" onchange="renderDashHistory()"><option value="">DirecciÃ³n</option><option>long</option><option>short</option><option>spot</option></select>
       <select id="dashFiltTrader" onchange="renderDashHistory()"><option value="">Trader</option>${[...new Set(trades.map(t=>t.traderName).filter(Boolean))].map(n=>`<option>${n}</option>`).join('')}</select>
       <select id="dashFiltResult" onchange="renderDashHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
     </div>`;
@@ -8855,7 +8666,7 @@ window.renderDashHistory = () => {
   if(dashStats) {
     const wins = trades.filter(t=>(t.pnl||0)>0).length;
     const totPnl = trades.reduce((s,t)=>s+(t.pnl||0),0);
-    dashStats.textContent = trades.length+' trades · WR: '+(trades.length?Math.round(wins/trades.length*100):0)+'% · PnL: '+(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl));
+    dashStats.textContent = trades.length+' trades Â· WR: '+(trades.length?Math.round(wins/trades.length*100):0)+'% Â· PnL: '+(totPnl>=0?'+':'')+'$'+fmt(Math.abs(totPnl));
   }
 
   if (!trades.length) {
@@ -8863,7 +8674,7 @@ window.renderDashHistory = () => {
     return;
   }
 
-  const si = col => _dashHistSort.col===col?(_dashHistSort.dir===1?'↑':'↓'):'';
+  const si = col => _dashHistSort.col===col?(_dashHistSort.dir===1?'â†‘':'â†“'):'';
   tableEl.innerHTML = `<div class="card" style="padding:0;overflow:hidden;">
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
     <table class="tbl" style="min-width:720px;">
@@ -8872,18 +8683,18 @@ window.renderDashHistory = () => {
         const pnl = t.pnl || 0;
         const cls = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
         return `<tr>
-          <td style="font-family:var(--mono);font-weight:600;">${t.ticker||'—'}</td>
+          <td style="font-family:var(--mono);font-weight:600;">${t.ticker||'â€”'}</td>
           <td><span class="badge ${t.dir==='long'?'bl':t.dir==='short'?'bs':'bsp'}">${(t.dir||'').toUpperCase()}</span></td>
-          <td style="font-size:11px;color:var(--t2);">${t.exchange||'—'}</td>
-          <td style="font-size:11px;color:var(--t2);">${t.traderName||'—'}</td>
-          <td style="font-family:var(--mono);">$${t.entry||'—'}</td>
-          <td style="font-family:var(--mono);">$${t.closePrice||t.exitPrice||t.exit||'—'}</td>
+          <td style="font-size:11px;color:var(--t2);">${t.exchange||'â€”'}</td>
+          <td style="font-size:11px;color:var(--t2);">${t.traderName||'â€”'}</td>
+          <td style="font-family:var(--mono);">$${t.entry||'â€”'}</td>
+          <td style="font-family:var(--mono);">$${t.closePrice||t.exitPrice||t.exit||'â€”'}</td>
           <td class="${cls}" style="font-family:var(--mono);">${pnl>=0?'+':'-'}$${Math.abs(pnl).toFixed(0)}</td>
-          <td class="${cls}" style="font-family:var(--mono);">${t.pnlPct!=null?(t.pnlPct>=0?'+':'')+t.pnlPct.toFixed(1)+'%':'—'}</td>
+          <td class="${cls}" style="font-family:var(--mono);">${t.pnlPct!=null?(t.pnlPct>=0?'+':'')+t.pnlPct.toFixed(1)+'%':'â€”'}</td>
           <td style="font-size:11px;color:var(--t2);">${fmtD(historyCloseDateOf(t))}</td>
           <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;">
-            <button class="btn sm" onclick="openEditTrade('${t.id}')">✎</button>
-            <button class="btn dan sm" onclick="deleteTrade('${t.id}')">✕</button>
+            <button class="btn sm" onclick="openEditTrade('${t.id}')">âœŽ</button>
+            <button class="btn dan sm" onclick="deleteTrade('${t.id}')">âœ•</button>
           </td>
         </tr>`;
       }).join('')}</tbody>
@@ -8891,7 +8702,7 @@ window.renderDashHistory = () => {
 };
 
 window.clearExchangeKeys = async exchange => {
-  if(!confirm(`¿Eliminar las keys de ${exchange}?`)) return;
+  if(!confirm(`Â¿Eliminar las keys de ${exchange}?`)) return;
   if(window.G?._saveExchangeKey) await window.G._saveExchangeKey(exchange, null);
   updateExchangeStatus(exchange, 'none');
   toast(`Keys de ${exchange} eliminadas.`);
@@ -8901,22 +8712,22 @@ function updateExchangeStatus(exchange, status) {
   const idMap = {binance:'bnbStatus2',bybit:'bybitStatus2',okx:'okxStatus2',mexc:'mexcStatus2',kucoin:'kucoinStatus2'};
   const el = document.getElementById(idMap[exchange]);
   if(!el) return;
-  if(status==='saved')    { el.textContent='✅ Configurado'; el.style.color='var(--accent)'; }
-  else if(status==='ok')  { el.textContent='✅ Conectado';   el.style.color='var(--accent)'; }
-  else if(status==='err') { el.textContent='❌ Error';       el.style.color='var(--red)'; }
+  if(status==='saved')    { el.textContent='âœ… Configurado'; el.style.color='var(--accent)'; }
+  else if(status==='ok')  { el.textContent='âœ… Conectado';   el.style.color='var(--accent)'; }
+  else if(status==='err') { el.textContent='âŒ Error';       el.style.color='var(--red)'; }
   else                    { el.textContent='No configurado'; el.style.color='var(--t3)'; }
 }
 
-// ── Test connection ────────────────────────────────────────────────────────
+// â”€â”€ Test connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.testExchangeKeys = async exchange => {
-  if(!_masterPass){ toast('Primero guardá tu contraseña maestra.','error'); return; }
+  if(!_masterPass){ toast('Primero guardÃ¡ tu contraseÃ±a maestra.','error'); return; }
   toast(`Probando ${exchange}...`);
   try {
     const keys = await getDecryptedKeys(exchange);
     if(!keys){ toast('No hay keys guardadas para '+exchange,'error'); return; }
     const ok = await pingExchange(exchange, keys);
     updateExchangeStatus(exchange, ok?'ok':'err');
-    toast(ok ? `✅ ${exchange} conectado!` : `❌ Error conectando a ${exchange}`, ok?'success':'error');
+    toast(ok ? `âœ… ${exchange} conectado!` : `âŒ Error conectando a ${exchange}`, ok?'success':'error');
   } catch(e){ toast('Error: '+e.message,'error'); }
 };
 
@@ -8931,10 +8742,10 @@ async function getDecryptedKeys(exchange) {
     }
     return keys;
   }
-  catch(e){ toast('Contraseña maestra incorrecta.','error'); return null; }
+  catch(e){ toast('ContraseÃ±a maestra incorrecta.','error'); return null; }
 }
 
-// ── Ping each exchange (test read-only) ───────────────────────────────────
+// â”€â”€ Ping each exchange (test read-only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function pingExchange(exchange, keys) {
   try {
     if(exchange==='binance') {
@@ -9006,7 +8817,7 @@ async function pingExchange(exchange, keys) {
   } catch(e){ return false; }
 }
 
-// ── Fetch open positions from exchange ────────────────────────────────────
+// â”€â”€ Fetch open positions from exchange â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function exchangeJson(url, options={}) {
   const r = await (window.proxyFetch ? window.proxyFetch(url, options) : fetch(url, options));
   const text = await r.text();
@@ -9102,7 +8913,7 @@ async function fetchClientBalanceOKX(keys) {
   let total = 0, free = 0, margin = 0, orders = 0, pnl = 0, USDT = 0, USDC = 0;
   const errs = [];
   const trading = await okxGet('/api/v5/account/balance?ccy=USDT,USDC').catch(() => null);
-  if (!trading) errs.push('trading falló');
+  if (!trading) errs.push('trading fallÃ³');
   if (trading?.code === '0') {
     const account = trading.data?.[0] || {};
     total += Number(account.totalEq ?? 0) || 0;
@@ -9118,7 +8929,7 @@ async function fetchClientBalanceOKX(keys) {
     });
   }
   const funding = await okxGet('/api/v5/asset/balances?ccy=USDT,USDC').catch(() => null);
-  if (!funding) errs.push('funding falló');
+  if (!funding) errs.push('funding fallÃ³');
   if (funding?.code === '0') {
     (funding.data || []).forEach(d => {
       const ccy = String(d.ccy || '').toUpperCase();
@@ -9407,12 +9218,12 @@ async function fetchExchangePositions(exchange, keys) {
   return positions;
 }
 
-// ── Live exchange positions state ─────────────────────────────────────────
+// â”€â”€ Live exchange positions state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let exchangePositions = []; // positions from all exchanges
 window.exchangePositions = exchangePositions;
 let lastSyncTime = null;
 
-// ── Fetch closed trade history from exchanges (from Jan 1 2026) ─────────────
+// â”€â”€ Fetch closed trade history from exchanges (from Jan 1 2026) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const HISTORY_START = Math.floor(new Date('2026-01-01T00:00:00Z').getTime());
 
 async function legacyFetchExchangeHistory(exchange, keys) {
@@ -9587,7 +9398,7 @@ window.syncAllExchanges = async (opts = {}) => {
   const force = opts === true || opts?.force !== false;
   const quiet = opts?.quiet === true;
   const syncBtn = document.getElementById('syncBtn');
-  if(syncBtn && force){ syncBtn.textContent='⟳ Sincronizando...'; syncBtn.disabled=true; }
+  if(syncBtn && force){ syncBtn.textContent='âŸ³ Sincronizando...'; syncBtn.disabled=true; }
 
   // Use Worker backend if proxy URL is configured
   if(PROXY_URL) {
@@ -9627,29 +9438,29 @@ window.syncAllExchanges = async (opts = {}) => {
       try { window.startLivePrices?.(); } catch(e) { console.error('startLivePrices error:', e); }
 
       const errs = Object.entries(data.errors||{}).filter(([,v])=>v);
-      const errTxt = errs.length ? ' · revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/') : '';
+      const errTxt = errs.length ? ' Â· revisar ' + errs.map(([ex])=>ex.toUpperCase()).join('/') : '';
       const totalCapital = Number(data.liquidity?.total ?? data.totals?.total ?? 0) || 0;
-      const msg   = `${force ? '✅' : '✓'} Capital $${fmt(totalCapital)}${errTxt}`;
+      const msg   = `${force ? 'âœ…' : 'âœ“'} Capital $${fmt(totalCapital)}${errTxt}`;
       const syncBtnEl = document.getElementById('syncBtn');
       if(syncBtnEl){ syncBtnEl.textContent = msg; syncBtnEl.disabled = false; }
 
       // Show errors if any
       if(errs.length && !quiet) {
         errs.forEach(([ex, err]) => console.warn(`${ex}: ${err}`));
-        toast('Sincronización parcial: ' + errs.map(([ex, err]) => `${ex.toUpperCase()} (${String(err).slice(0, 80)})`).join(' | '), 'error');
+        toast('SincronizaciÃ³n parcial: ' + errs.map(([ex, err]) => `${ex.toUpperCase()} (${String(err).slice(0, 80)})`).join(' | '), 'error');
       }
       return;
     } catch(e) {
       console.error('Worker sync failed:', e.message);
       if (!quiet) toast('Error al sincronizar: ' + e.message, 'error');
       const syncBtnEl = document.getElementById('syncBtn');
-      if(syncBtnEl){ syncBtnEl.textContent='↻ Sync capital'; syncBtnEl.disabled=false; }
+      if(syncBtnEl){ syncBtnEl.textContent='â†» Sync capital'; syncBtnEl.disabled=false; }
       return;
     }
   }
 
   // Fallback: direct exchange calls (requires master password)
-  if(!_masterPass) { toast('Ingresá tu contraseña maestra primero','error'); return; }
+  if(!_masterPass) { toast('IngresÃ¡ tu contraseÃ±a maestra primero','error'); return; }
   const exchanges = ['binance','bybit','okx','mexc','kucoin'];
   const all = [];
   const statusLines = [];
@@ -9660,13 +9471,13 @@ window.syncAllExchanges = async (opts = {}) => {
       const pos = await fetchExchangePositions(ex, keys);
       all.push(...pos);
       updateExchangeStatus(ex, 'ok');
-      statusLines.push(`✅ ${ex.toUpperCase()}: ${pos.filter(p=>p.type==='futures').length} futuros, ${pos.filter(p=>p.type==='spot').length} spot`);
+      statusLines.push(`âœ… ${ex.toUpperCase()}: ${pos.filter(p=>p.type==='futures').length} futuros, ${pos.filter(p=>p.type==='spot').length} spot`);
     } catch(e){
       updateExchangeStatus(ex, 'err');
-      statusLines.push(`❌ ${ex.toUpperCase()}: ${e.message}`);
+      statusLines.push(`âŒ ${ex.toUpperCase()}: ${e.message}`);
     }
   }
-  // Auto-close detection DISABLED — history comes from exchange import only
+  // Auto-close detection DISABLED â€” history comes from exchange import only
   // (avoids fake entries when sync fluctuates)
   const closedNow = [];
 
@@ -9678,13 +9489,13 @@ window.syncAllExchanges = async (opts = {}) => {
   const sc = document.getElementById('syncCard');
   if(sc&&sc.style.display!=='none'){
     document.getElementById('syncStatus').innerHTML = statusLines.join('<br>') +
-      (closedNow.length?`<br>📋 ${closedNow.length} posición/es cerrada/s y guardada/s en historial`:'');
+      (closedNow.length?`<br>ðŸ“‹ ${closedNow.length} posiciÃ³n/es cerrada/s y guardada/s en historial`:'');
   }
   // Update positions page if visible
   const posPage = document.getElementById('posPage');
   if(posPage&&posPage.style.display!=='none') renderPositions();
   const openCount = all.filter(p=>p.type==='futures').length;
-  const msg = `✅ ${openCount} posición${openCount!==1?'es':''} sincronizada${openCount!==1?'s':''}${closedNow.length?' · '+closedNow.length+' cerradas':''}`;
+  const msg = `âœ… ${openCount} posiciÃ³n${openCount!==1?'es':''} sincronizada${openCount!==1?'s':''}${closedNow.length?' Â· '+closedNow.length+' cerradas':''}`;
   if(all.length || closedNow.length) toast(msg);
   // Update sync button
   const syncBtnEl = document.getElementById('syncBtn');
@@ -9697,9 +9508,9 @@ window.syncAllExchanges = async (opts = {}) => {
 };
 
 window.importAllHistory = async () => {
-  if(!_masterPass){ toast('Ingresá tu contraseña maestra primero.','error'); return; }
+  if(!_masterPass){ toast('IngresÃ¡ tu contraseÃ±a maestra primero.','error'); return; }
   const btn = document.getElementById('importHistBtn');
-  if(btn){ btn.disabled=true; btn.textContent='⟳ Importando...'; }
+  if(btn){ btn.disabled=true; btn.textContent='âŸ³ Importando...'; }
   const exchanges = ['binance','bybit','okx','mexc','kucoin'];
   let totalImported = 0;
   const lines = [];
@@ -9709,9 +9520,9 @@ window.importAllHistory = async () => {
     try {
       const n = await importExchangeHistory(ex, keys);
       totalImported += n;
-      lines.push(`✅ ${ex.toUpperCase()}: ${n} trades importados`);
+      lines.push(`âœ… ${ex.toUpperCase()}: ${n} trades importados`);
     } catch(e){
-      lines.push(`❌ ${ex.toUpperCase()}: ${e.message}`);
+      lines.push(`âŒ ${ex.toUpperCase()}: ${e.message}`);
     }
   }
   if(totalImported>0){
@@ -9722,7 +9533,7 @@ window.importAllHistory = async () => {
   const sc = document.getElementById('syncCard');
   if(sc){ sc.style.display='block'; document.getElementById('syncStatus').innerHTML=lines.join('<br>'); }
   toast(`Historial importado: ${totalImported} trades`);
-  if(btn){ btn.disabled=false; btn.textContent='📥 Importar historial 2026'; }
+  if(btn){ btn.disabled=false; btn.textContent='ðŸ“¥ Importar historial 2026'; }
 };
 
 // Auto-sync every 30s when on positions page
@@ -9735,7 +9546,7 @@ function startAutoSync() {
   startTelegramAutoSync();
 }
 
-// ── AI Analysis autocomplete ───────────────────────────────────────────────
+// â”€â”€ AI Analysis autocomplete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _bnbSymbols = []; // all Binance USDT pairs
 
 const STOCK_LIST = [
@@ -9763,16 +9574,16 @@ const STOCK_LIST = [
   {s:'TLT',n:'Bonds 20Y ETF',t:'etf'},
   {s:'VIX',n:'Volatility Index',t:'index'},{s:'DXY',n:'Dollar Index',t:'index'},
   {s:'GC=F',n:'Oro (Futures)',t:'commodity'},{s:'SI=F',n:'Plata (Futures)',t:'commodity'},
-  {s:'CL=F',n:'Petróleo WTI',t:'commodity'},{s:'BZ=F',n:'Petróleo Brent',t:'commodity'},
+  {s:'CL=F',n:'PetrÃ³leo WTI',t:'commodity'},{s:'BZ=F',n:'PetrÃ³leo Brent',t:'commodity'},
   {s:'NG=F',n:'Gas Natural',t:'commodity'},{s:'HG=F',n:'Cobre',t:'commodity'},
 ];
 
-// MEXC perpetual commodities — verified symbols from contract.mexc.com/api/v1/contract/detail
+// MEXC perpetual commodities â€” verified symbols from contract.mexc.com/api/v1/contract/detail
 const MEXC_COMMODITIES = [
   {s:'XAUT_USDT',  n:'Oro / Gold (PAXG)',    t:'commodity', src:'mexc', sym:'XAUT_USDT'},
   {s:'XAG_USDT',   n:'Plata / Silver',       t:'commodity', src:'mexc', sym:'XAG_USDT'},
-  {s:'USOIL_USDT', n:'Petróleo WTI / Oil',   t:'commodity', src:'mexc', sym:'USOIL_USDT'},
-  {s:'UKOIL_USDT', n:'Petróleo Brent',       t:'commodity', src:'mexc', sym:'UKOIL_USDT'},
+  {s:'USOIL_USDT', n:'PetrÃ³leo WTI / Oil',   t:'commodity', src:'mexc', sym:'USOIL_USDT'},
+  {s:'UKOIL_USDT', n:'PetrÃ³leo Brent',       t:'commodity', src:'mexc', sym:'UKOIL_USDT'},
 ];
 
 async function loadBinanceSymbols() {
@@ -9938,15 +9749,15 @@ window.legacyShowTickerSuggestions = async (val) => {
   const cryptoMatches = _bnbSymbols
     .filter(s=>s.s.startsWith(q)||s.n.startsWith(q))
     .slice(0,6)
-    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
+    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
 
   // Match stocks/etfs/commodities
   const stockMatches = STOCK_LIST
     .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
     .slice(0,4)
-    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
+    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
-  // Match MEXC commodities — search by symbol, name or short keyword
+  // Match MEXC commodities â€” search by symbol, name or short keyword
   const MEXC_KEYWORDS = {
     OIL:'USOIL_USDT',WTI:'USOIL_USDT',PETROLEO:'USOIL_USDT',PETROLEO_WTI:'USOIL_USDT',
     BRENT:'UKOIL_USDT',UKOIL:'UKOIL_USDT',
@@ -9958,7 +9769,7 @@ window.legacyShowTickerSuggestions = async (val) => {
     .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||
                s.sym.toUpperCase().includes(q)||(kwMatch&&s.sym===kwMatch))
     .slice(0,5)
-    .map(s=>({label:`${s.sym} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
+    .map(s=>({label:`${s.sym} â€” ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
   const exactKnown = [...cryptoMatches, ...stockMatches, ...mexcMatches].some(x => x.ticker === q);
   const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
@@ -9968,7 +9779,7 @@ window.legacyShowTickerSuggestions = async (val) => {
   const all = [...cryptoMatches, ...stockMatches, ...genericYahoo, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
 
-  const typeIcon = {crypto:'₿',stock:'📈',etf:'📊',commodity:'🪙',index:'📉'};
+  const typeIcon = {crypto:'â‚¿',stock:'ðŸ“ˆ',etf:'ðŸ“Š',commodity:'ðŸª™',index:'ðŸ“‰'};
   const typeColor = {crypto:'var(--accent)',stock:'var(--blue)',etf:'var(--amber)',commodity:'var(--amber)',index:'var(--t2)'};
   const srcLabel = {binance:'SPOT/FUT',yahoo:'Yahoo',mexc:'MEXC PERP'};
 
@@ -9976,10 +9787,10 @@ window.legacyShowTickerSuggestions = async (val) => {
     <div onclick="selectTicker('${r.ticker}','${r.source}','${r.type}')"
       style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
       onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-      <span style="font-size:12px;">${typeIcon[r.type]||'•'}</span>
+      <span style="font-size:12px;">${typeIcon[r.type]||'â€¢'}</span>
       <div>
         <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
-        <div style="font-size:10px;color:var(--t3);">${r.label.split('—')[1]?.trim()||''} · <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
+        <div style="font-size:10px;color:var(--t3);">${r.label.split('â€”')[1]?.trim()||''} Â· <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
       </div>
       ${srcLabel[r.source]?`<span style="margin-left:auto;font-size:9px;color:var(--t3);">${srcLabel[r.source]}</span>`:''}
     </div>`).join('');
@@ -9997,12 +9808,12 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
   const cryptoMatches = _bnbSymbols
     .filter(s=>s.s.startsWith(q)||s.n.startsWith(q))
     .slice(0,6)
-    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
+    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'binance', type:'crypto'}));
 
   const stockMatches = STOCK_LIST
     .filter(s=>s.s.startsWith(q)||s.n.toUpperCase().includes(q))
     .slice(0,4)
-    .map(s=>({label:`${s.s} — ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
+    .map(s=>({label:`${s.s} â€” ${s.n}`, ticker:s.s, source:'yahoo', type:s.t}));
 
   const MEXC_KEYWORDS = {
     OIL:'USOIL_USDT',WTI:'USOIL_USDT',PETROLEO:'USOIL_USDT',PETROLEO_WTI:'USOIL_USDT',
@@ -10015,7 +9826,7 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
     .filter(s=>s.s.toUpperCase().includes(q)||s.n.toUpperCase().includes(q)||
                s.sym.toUpperCase().includes(q)||(kwMatch&&s.sym===kwMatch))
     .slice(0,5)
-    .map(s=>({label:`${s.sym} — ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
+    .map(s=>({label:`${s.sym} â€” ${s.n}`, ticker:s.sym, source:'mexc', type:s.t}));
 
   const exactKnown = [...cryptoMatches, ...stockMatches, ...mexcMatches].some(x => x.ticker === q);
   const genericYahoo = /^[A-Z0-9.\-=]{2,12}$/.test(q) && !exactKnown
@@ -10025,7 +9836,7 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
   const all = [...cryptoMatches, ...stockMatches, ...genericYahoo, ...mexcMatches];
   if(!all.length){ dd.style.display='none'; return; }
 
-  const typeIcon = {crypto:'₿',stock:'📈',etf:'📊',commodity:'🪙',index:'📉'};
+  const typeIcon = {crypto:'â‚¿',stock:'ðŸ“ˆ',etf:'ðŸ“Š',commodity:'ðŸª™',index:'ðŸ“‰'};
   const typeColor = {crypto:'var(--accent)',stock:'var(--blue)',etf:'var(--amber)',commodity:'var(--amber)',index:'var(--t2)'};
   const srcLabel = {binance:'SPOT/FUT',yahoo:'Yahoo',mexc:'MEXC PERP'};
 
@@ -10033,10 +9844,10 @@ window.legacyShowCalcTickerSuggestions = async (val) => {
     <div onclick="selectCalcTicker('${r.ticker}','${r.source}','${r.type}')"
       style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
       onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-      <span style="font-size:12px;">${typeIcon[r.type]||'•'}</span>
+      <span style="font-size:12px;">${typeIcon[r.type]||'â€¢'}</span>
       <div>
         <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${r.ticker}</div>
-        <div style="font-size:10px;color:var(--t3);">${r.label.split('—')[1]?.trim()||''} · <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
+        <div style="font-size:10px;color:var(--t3);">${r.label.split('â€”')[1]?.trim()||''} Â· <span style="color:${typeColor[r.type]}">${r.type.toUpperCase()}</span></div>
       </div>
       ${srcLabel[r.source]?`<span style="margin-left:auto;font-size:9px;color:var(--t3);">${srcLabel[r.source]}</span>`:''}
     </div>`).join('');
@@ -10121,7 +9932,7 @@ window.fetchOHLCV = async (symbol, interval, limit=300) => {
   return _origFetchOHLCV(symbol, interval, limit);
 };
 
-// ── Master password unlock flow ────────────────────────────────────────────
+// â”€â”€ Master password unlock flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.checkMasterPassNeeded = async function() {
   const G = window.G;
   if(!G?._hasExchangeKeys?.()) return;
@@ -10137,7 +9948,7 @@ window.checkMasterPassNeeded = async function() {
 
   const badges = configured.map(ex=>`
     <span style="background:var(--bg3);border:0.5px solid var(--border2);padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:10px;font-weight:600;">
-      ${ex==='binance'?'⬡ Binance':ex==='bybit'?'◈ Bybit':'OK OKX'}
+      ${ex==='binance'?'â¬¡ Binance':ex==='bybit'?'â—ˆ Bybit':'OK OKX'}
     </span>`).join('');
   document.getElementById('masterPassExchanges').innerHTML = badges;
   openModal('masterPassModal');
@@ -10146,7 +9957,7 @@ window.checkMasterPassNeeded = async function() {
 
 window.doUnlock = async () => {
   const pass = document.getElementById('unlockPass').value;
-  if(!pass){ document.getElementById('unlockError').textContent='Ingresá tu contraseña.'; document.getElementById('unlockError').style.display='block'; return; }
+  if(!pass){ document.getElementById('unlockError').textContent='IngresÃ¡ tu contraseÃ±a.'; document.getElementById('unlockError').style.display='block'; return; }
   // Test decryption with a known exchange
   const G = window.G;
   _masterPass = pass;
@@ -10155,27 +9966,27 @@ window.doUnlock = async () => {
     const configured = ['binance','bybit','okx','mexc','kucoin'].filter(ex=>G?._hasExchangeKey?.(ex));
     if(configured.length){
       const keys = await getDecryptedKeys(configured[0]);
-      if(!keys) throw new Error('Contraseña incorrecta');
+      if(!keys) throw new Error('ContraseÃ±a incorrecta');
     }
     document.getElementById('unlockPass').value='';
     document.getElementById('unlockError').style.display='none';
     closeModal('masterPassModal');
-    toast('Exchanges conectados ✓');
+    toast('Exchanges conectados âœ“');
     syncAllExchanges({ force:false, quiet:true });
     startAutoSync();
   } catch(e){
     _masterPass='';
     sessionStorage.removeItem(MASTER_PASS_SESSION_KEY);
-    document.getElementById('unlockError').textContent='Contraseña incorrecta. Intentá de nuevo.';
+    document.getElementById('unlockError').textContent='ContraseÃ±a incorrecta. IntentÃ¡ de nuevo.';
     document.getElementById('unlockError').style.display='block';
   }
 };
 
-// ── Quick trader assignment from position card ────────────────────────────
+// â”€â”€ Quick trader assignment from position card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.quickAssignTrader = (exchangeId) => {
   const G = window.G;
   const traders = G?.traders()||[];
-  if(!traders.length){ toast('Primero agregá traders en la página Traders.','error'); return; }
+  if(!traders.length){ toast('Primero agregÃ¡ traders en la pÃ¡gina Traders.','error'); return; }
 
   // Build inline dropdown
   const pos = exchangePositions.find(p=>p.exchangeId===exchangeId);
@@ -10200,7 +10011,7 @@ window.quickAssignTrader = (exchangeId) => {
 window.confirmAssignTrader = async (exchangeId, selectId) => {
   const G = window.G;
   const traderId = document.getElementById(selectId)?.value;
-  if(!traderId){ toast('Seleccioná un trader.','error'); return; }
+  if(!traderId){ toast('SeleccionÃ¡ un trader.','error'); return; }
   const traderName = G?.traders().find(t=>t.id===traderId)?.name||'';
 
   // Store trader assignment for this exchangeId in Firestore
@@ -10214,7 +10025,7 @@ window.confirmAssignTrader = async (exchangeId, selectId) => {
   } catch(e){ toast('Error: '+e.message,'error'); }
 };
 
-// ── Trading preferences (save/load) ─────────────────────────────────────
+// â”€â”€ Trading preferences (save/load) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let userPrefs = { capital:0, risk:200, lev:10, exchange:'binance', notif:false };
 
 window.savePrefs = () => {
@@ -10252,7 +10063,7 @@ function loadUserPrefs() {
   if(userPrefs.exchange) setEx(userPrefs.exchange);
 }
 
-// ── Export all data as CSV ───────────────────────────────────────────────
+// â”€â”€ Export all data as CSV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.exportAllData = () => {
   const G = window.G; if(!G) return;
   const all = G.trades();
@@ -10270,7 +10081,7 @@ window.exportAllData = () => {
   toast('CSV descargado.');
 };
 
-// ── Delete exchange-imported trades only ─────────────────────────────────
+// â”€â”€ Delete exchange-imported trades only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.exportHistoryForChatGPT = (context='history') => {
   const rows = getFilteredHistoryRows(context);
   if(!rows.length) { toast('No hay trades para exportar.','error'); return; }
@@ -10689,10 +10500,10 @@ window.exportDashboardPdf = async () => {
 };
 
 window.deleteExchangeTrades = async () => {
-  if(!confirm('¿Borrar todos los trades importados automáticamente del exchange? Los trades manuales y del watchlist se mantienen.')) return;
+  if(!confirm('Â¿Borrar todos los trades importados automÃ¡ticamente del exchange? Los trades manuales y del watchlist se mantienen.')) return;
   const G = window.G; if(!G) return;
   try {
-    const exchangeTrades = G.trades().filter(t=>t.exchangeSource||t.closeNotes?.includes('automáticamente')||t.entry===0);
+    const exchangeTrades = G.trades().filter(t=>t.exchangeSource||t.closeNotes?.includes('automÃ¡ticamente')||t.entry===0);
     if(!exchangeTrades.length){ toast('No hay trades de exchange para borrar.'); return; }
     for(const t of exchangeTrades){
       await window._fb.deleteDoc(window._fb.doc(window._fb.db,'trades',t.id));
@@ -10704,10 +10515,10 @@ window.deleteExchangeTrades = async () => {
   } catch(e){ toast('Error: '+e.message,'error'); }
 };
 
-// ── Delete all trades ────────────────────────────────────────────────────
+// â”€â”€ Delete all trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.deleteAllData = async () => {
-  if(!confirm('¿Borrar TODOS los trades del historial? Esta acción no se puede deshacer.')) return;
-  if(!confirm('¿Estás seguro? Se borrarán todos los trades permanentemente.')) return;
+  if(!confirm('Â¿Borrar TODOS los trades del historial? Esta acciÃ³n no se puede deshacer.')) return;
+  if(!confirm('Â¿EstÃ¡s seguro? Se borrarÃ¡n todos los trades permanentemente.')) return;
   const G = window.G; if(!G) return;
   try {
     const all = G.trades();
@@ -10720,7 +10531,7 @@ window.deleteAllData = async () => {
   } catch(e){ toast('Error: '+e.message,'error'); }
 };
 
-// ── Proxy URL management ────────────────────────────────────────────────────
+// â”€â”€ Proxy URL management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.saveProxyUrl = () => {
   const url = document.getElementById('proxyUrl')?.value?.trim();
   const token = document.getElementById('proxyToken')?.value?.trim() || '';
@@ -10730,7 +10541,7 @@ window.saveProxyUrl = () => {
     else localStorage.removeItem(WORKER_API_TOKEN_KEY);
     // Update PROXY_URL - need to reload to take effect
     const st = document.getElementById('proxyStatus');
-    if(st){ st.textContent='✅ Guardado. Recargá la página para aplicar.'; st.style.display='block'; st.style.color='var(--accent)'; }
+    if(st){ st.textContent='âœ… Guardado. RecargÃ¡ la pÃ¡gina para aplicar.'; st.style.display='block'; st.style.color='var(--accent)'; }
   } else {
     localStorage.removeItem('mauex_proxy');
     localStorage.removeItem(WORKER_API_TOKEN_KEY);
@@ -10742,18 +10553,18 @@ window.saveProxyUrl = () => {
 window.testProxyUrl = async () => {
   const url = document.getElementById('proxyUrl')?.value?.trim() || PROXY_URL;
   const st = document.getElementById('proxyStatus');
-  if(!url){ if(st){ st.textContent='Ingresá una URL primero.'; st.style.display='block'; } return; }
-  if(st){ st.textContent='⟳ Probando...'; st.style.display='block'; st.style.color='var(--t2)'; }
+  if(!url){ if(st){ st.textContent='IngresÃ¡ una URL primero.'; st.style.display='block'; } return; }
+  if(st){ st.textContent='âŸ³ Probando...'; st.style.display='block'; st.style.color='var(--t2)'; }
   try {
     const r = await fetch(`${url}/health`);
     const d = await r.json();
     if(d.status==='ok'){
-      if(st){ st.textContent='✅ Proxy funcionando correctamente.'; st.style.color='var(--accent)'; }
+      if(st){ st.textContent='âœ… Proxy funcionando correctamente.'; st.style.color='var(--accent)'; }
     } else {
-      if(st){ st.textContent='⚠️ Proxy respondió pero con estado inesperado.'; st.style.color='var(--amber)'; }
+      if(st){ st.textContent='âš ï¸ Proxy respondiÃ³ pero con estado inesperado.'; st.style.color='var(--amber)'; }
     }
   } catch(e) {
-    if(st){ st.textContent=`❌ Error: ${e.message}`; st.style.color='var(--red)'; }
+    if(st){ st.textContent=`âŒ Error: ${e.message}`; st.style.color='var(--red)'; }
   }
 };
 
@@ -10818,7 +10629,7 @@ window.testProxyUrl = async () => {
   renderOperationalStatus?.();
 };
 
-// ── Open trade in AI Analysis with levels drawn ─────────────────────────────
+// â”€â”€ Open trade in AI Analysis with levels drawn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _analysisTradeData = null; // trade to draw on charts
 
 window.openTradeInAnalysis = (id) => {
@@ -10858,7 +10669,7 @@ window.openTradeInAnalysis = (id) => {
     // Default to futures for crypto trades
     setMarketType(t.dir==='spot'?'spot':'futures');
   } else {
-    // Stock/ETF/Commodity — use ticker directly for Yahoo
+    // Stock/ETF/Commodity â€” use ticker directly for Yahoo
     if(aiSym) aiSym.value = rawTicker;
     window._aiSource = 'yahoo';
     window._aiType   = 'stock';
@@ -10943,7 +10754,7 @@ function renderTradeInfoPanel(trade) {
   }
 
   const rr = trade.tp1&&trade.entry&&trade.sl ?
-    Math.abs((trade.tp1-trade.entry)/(trade.entry-trade.sl)).toFixed(2) : '—';
+    Math.abs((trade.tp1-trade.entry)/(trade.entry-trade.sl)).toFixed(2) : 'â€”';
 
   panel.style.display='block';
   panel.innerHTML=`
@@ -10951,7 +10762,7 @@ function renderTradeInfoPanel(trade) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
         <span style="font-family:var(--mono);font-size:14px;font-weight:600;">${trade.ticker}</span>
         <span class="badge ${trade.dir==='long'?'bl':trade.dir==='short'?'bs':'bsp'}">${(trade.dir||'').toUpperCase()}${(trade.leverage||1)>1?' x'+(trade.leverage||1):''}</span>
-        ${trade.traderName?`<span style="font-size:11px;color:var(--t2);">· ${trade.traderName}</span>`:''}
+        ${trade.traderName?`<span style="font-size:11px;color:var(--t2);">Â· ${trade.traderName}</span>`:''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-family:var(--mono);font-size:11px;">
         <div><div style="color:var(--t3);font-size:9px;">ENTRY</div><div>$${fmtPx(trade.entry)}</div></div>
@@ -10961,13 +10772,13 @@ function renderTradeInfoPanel(trade) {
         ${trade.tp2?`<div><div style="color:var(--t3);font-size:9px;">TP2</div><div style="color:var(--accent);">$${fmtPx(trade.tp2)}</div></div>`:''}
         ${trade.tp3?`<div><div style="color:var(--t3);font-size:9px;">TP3</div><div style="color:var(--accent);">$${fmtPx(trade.tp3)}</div></div>`:''}
         <div><div style="color:var(--t3);font-size:9px;">R:R</div><div style="color:${rr>=2?'var(--accent)':'var(--red)'};">${rr}:1</div></div>
-        <div><div style="color:var(--t3);font-size:9px;">POSICIÓN</div><div>$${fmt(trade.posSize)}</div></div>
+        <div><div style="color:var(--t3);font-size:9px;">POSICIÃ“N</div><div>$${fmt(trade.posSize)}</div></div>
       </div>
       ${trade.notes?`<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);font-size:10px;color:var(--t2);">${trade.notes}</div>`:''}
     </div>`;
 }
 
-// ── Status bar update ────────────────────────────────────────────────────────
+// â”€â”€ Status bar update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function updateStatusBar() {
   const G = window.G; if(!G) return;
   const bar = document.getElementById('statusBar');
@@ -11001,10 +10812,10 @@ function updateStatusBar() {
   const sbBtc = document.getElementById('sbBtc');
 
   if(dot) dot.className = 'status-dot' + (totalPos>0?'':' amber');
-  if(sbPos) sbPos.textContent = `${totalPos} posición${totalPos!==1?'es':''}`;
+  if(sbPos) sbPos.textContent = `${totalPos} posiciÃ³n${totalPos!==1?'es':''}`;
   if(sbPnl) {
     const missing = missingPrices ? ` (${missingPrices} sin precio)` : '';
-    sbPnl.textContent = totalPos>0 ? `PnL ${totalPnl>=0?'+':'-'}$${Math.abs(totalPnl).toFixed(0)}${missing}` : 'PnL —';
+    sbPnl.textContent = totalPos>0 ? `PnL ${totalPnl>=0?'+':'-'}$${Math.abs(totalPnl).toFixed(0)}${missing}` : 'PnL â€”';
     sbPnl.style.color = totalPnl>=0?'var(--accent)':'var(--red)';
   }
   if(sbOrd) sbOrd.textContent = `${totalOrders} orden${totalOrders!==1?'es':''}`;
@@ -11021,7 +10832,7 @@ function updateStatusBar() {
 // Update status bar every 2s
 setInterval(updateStatusBar, 2000);
 
-// ── Favorite pairs ────────────────────────────────────────────────────────────
+// â”€â”€ Favorite pairs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function loadFavPairs() {
   try {
     const stored = localStorage.getItem('mauex_favpairs');
@@ -11069,13 +10880,13 @@ window.toggleFavPair = () => {
   } else {
     pairs.unshift(sym);
     if(pairs.length>10) pairs.pop();
-    toast(`${sym} guardado como favorito ★`);
+    toast(`${sym} guardado como favorito â˜…`);
   }
   saveFavPairs(pairs);
   renderFavPairsBar();
 };
 
-// ── Open import history modal ─────────────────────────────────────────────────
+// â”€â”€ Open import history modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.openImportHistoryModal = () => {
   const today = new Date().toISOString().split('T')[0];
   const fromEl = document.getElementById('importFrom');
@@ -11090,11 +10901,11 @@ window.openImportHistoryModal = () => {
 window.runImportHistory = async () => {
   const fromDate = document.getElementById('importFrom')?.value;
   const toDate   = document.getElementById('importTo')?.value;
-  if(!fromDate){ toast('Seleccioná fecha desde.','error'); return; }
+  if(!fromDate){ toast('SeleccionÃ¡ fecha desde.','error'); return; }
 
   const prog = document.getElementById('importHistProgress');
   prog.style.display='block';
-  prog.innerHTML = '⟳ Importando desde los exchanges...';
+  prog.innerHTML = 'âŸ³ Importando desde los exchanges...';
 
   try {
     // Call Worker to fetch history (Worker has the keys, no CORS issues)
@@ -11126,18 +10937,18 @@ window.runImportHistory = async () => {
     }
 
     const lines = data.summary || [];
-    prog.innerHTML = lines.join('<br>') + `<br><strong>✅ ${saved} trades guardados en historial</strong>`;
-    toast(`Importación completa: ${saved} trades`);
+    prog.innerHTML = lines.join('<br>') + `<br><strong>âœ… ${saved} trades guardados en historial</strong>`;
+    toast(`ImportaciÃ³n completa: ${saved} trades`);
   } catch(e) {
-    prog.innerHTML = `❌ Error: ${e.message}`;
+    prog.innerHTML = `âŒ Error: ${e.message}`;
     toast('Error al importar: ' + e.message, 'error');
   }
 };
 
-// ── Orders rendering ─────────────────────────────────────────────────────────
+// â”€â”€ Orders rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let exchangeOrders = [];
 
-// ── Order selection and grouping ─────────────────────────────────────────────
+// â”€â”€ Order selection and grouping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _selectedOrders = new Set();
 
 window.toggleOrderSelect = (id) => {
@@ -11148,7 +10959,7 @@ window.toggleOrderSelect = (id) => {
 };
 
 window.groupSelectedOrders = () => {
-  if(_selectedOrders.size < 2) { toast('Seleccioná al menos 2 órdenes','error'); return; }
+  if(_selectedOrders.size < 2) { toast('SeleccionÃ¡ al menos 2 Ã³rdenes','error'); return; }
   const selected = exchangeOrders.filter(o => _selectedOrders.has(o.exchangeId));
   if(!selected.length) return;
 
@@ -11199,7 +11010,7 @@ window.groupSelectedOrders = () => {
   if(btn) btn.style.display = 'none';
 
   renderOrders();
-  toast(`✅ ${selected.length} órdenes agrupadas como un trade`);
+  toast(`âœ… ${selected.length} Ã³rdenes agrupadas como un trade`);
 };
 
 // Persist and restore grouped orders
@@ -11234,9 +11045,9 @@ function renderOrders() {
 
   if(!_masterPass || !window.G?._hasExchangeKeys?.()) {
     container.innerHTML = `<div class="empty">
-      <div class="empty-icon">◻</div>
-      <div class="empty-text">Conectá tus exchanges para ver órdenes</div>
-      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>
+      <div class="empty-icon">â—»</div>
+      <div class="empty-text">ConectÃ¡ tus exchanges para ver Ã³rdenes</div>
+      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">âš™ Configurar</button>
     </div>`;
     return;
   }
@@ -11262,9 +11073,9 @@ function renderOrders() {
 
   if(!allOrders.length) {
     container.innerHTML = `<div class="empty">
-      <div class="empty-icon">◻</div>
-      <div class="empty-text">No hay órdenes pendientes</div>
-      <div class="empty-sub">Usá la calculadora para enviar órdenes aquí</div>
+      <div class="empty-icon">â—»</div>
+      <div class="empty-text">No hay Ã³rdenes pendientes</div>
+      <div class="empty-sub">UsÃ¡ la calculadora para enviar Ã³rdenes aquÃ­</div>
     </div>`;
     return;
   }
@@ -11304,7 +11115,7 @@ function renderOrders() {
     const tp2 = o.tp2 || null;
     const tp3 = o.tp3 || null;
     const fakeT = { entry:entryPrice, sl, tp1, tp2, tp3, dir:o.dir, liquidation: liqApprox, invalidations:o.invalidations };
-    const distToOrder = currentPrice&&entryPrice ? fmtP((entryPrice-currentPrice)/currentPrice*100) : '—';
+    const distToOrder = currentPrice&&entryPrice ? fmtP((entryPrice-currentPrice)/currentPrice*100) : 'â€”';
     const slDistPct = sl&&entryPrice ? Math.abs(sl-entryPrice)/entryPrice*100 : null;
     const riskUsd = totalSize&&slDistPct ? totalSize*slDistPct/100 : null;
     const tpList = [{l:'TP1',v:tp1,pct:o.tp1pct||33},{l:'TP2',v:tp2,pct:o.tp2pct||33},{l:'TP3',v:tp3,pct:o.tp3pct||34}].filter(x=>x.v);
@@ -11327,7 +11138,7 @@ function renderOrders() {
     };
 
     const collapseBtn = `<button onclick="window.toggleCardMin('${cardId}')"
-      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'▼':'▲'}</button>`;
+      style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.35);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${isMin?'â–¼':'â–²'}</button>`;
 
     const header = `
       <div style="padding:13px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;">
@@ -11337,9 +11148,9 @@ function renderOrders() {
             <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${o.ticker}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(o)}</span>
             <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} ↗</a>
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} â†—</a>
             <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);">PENDIENTE</span>
-            ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${o.traderName}</span>`:''}
+            ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">Â· ${o.traderName}</span>`:''}
             ${entryBadge}
             ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
             ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}
@@ -11348,7 +11159,7 @@ function renderOrders() {
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <div style="text-align:right;">
             <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--t1);">$${fmtPx(entryPrice)}</div>
-            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">$${fmt(totalSize)}${lev&&o.leverage?` · x${lev}`:''}</div>
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">$${fmt(totalSize)}${lev&&o.leverage?` Â· x${lev}`:''}</div>
           </div>
           ${collapseBtn}
         </div>
@@ -11390,7 +11201,7 @@ function renderOrders() {
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">TamaÃ±o</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : ''}
@@ -11400,10 +11211,10 @@ function renderOrders() {
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:${sl ? 'rgba(224,82,82,0.6)' : 'var(--amber)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">${sl ? 'SL Riesgo' : 'Riesgo en liq.'}</div>
           ${sl ? `
-            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">−$${fmt(riskUsd||0)}</div>
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--red);">âˆ’$${fmt(riskUsd||0)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">${slDistPct?slDistPct.toFixed(1)+'% entry':''}</div>
           ` : `
-            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">−$${fmt(o.dir==='spot'?totalSize:(totalSize/(lev||1)))}</div>
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--amber);">âˆ’$${fmt(o.dir==='spot'?totalSize:(totalSize/(lev||1)))}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:1px;">margen</div>
           `}
         </div>
@@ -11415,11 +11226,11 @@ function renderOrders() {
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
           <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Margen aprox.</div>
-          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${lev>1?'$'+fmt(totalSize/lev):'—'}</div>
+          <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t3);">${lev>1?'$'+fmt(totalSize/lev):'â€”'}</div>
         </div>
         <div style="background:var(--border2);"></div>
         <div style="padding:8px 14px;">
-          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Tamaño</div>
+          <div style="font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">TamaÃ±o</div>
           <div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--t2);">${unitsLabel}</div>
         </div>
       </div>` : ''}
@@ -11435,12 +11246,12 @@ function renderOrders() {
           const rr = rrFor(tp.v);
           return `<div style="padding:10px 14px;${i<tpList.length-1?'border-right:0.5px solid var(--border2);':''}background:${tpBg};">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} · ${tp.pct}%</span>
+              <span style="font-size:8px;color:${tpColor};opacity:0.6;text-transform:uppercase;letter-spacing:.06em;">${tp.l} Â· ${tp.pct}%</span>
               ${rr?`<span style="font-size:9px;font-family:var(--mono);color:#22c55e;">${rr}:1</span>`:''}
             </div>
             <div style="font-size:14px;font-weight:600;font-family:var(--mono);color:${tpColor};">$${fmtPx(tp.v)}</div>
             <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:2px;">
-              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`· +$${fmt(tpPnlAmt)}`:''}
+              ${distFromEntry!=null?`+${distFromEntry.toFixed(1)}%`:''} ${tpPnlAmt!=null?`Â· +$${fmt(tpPnlAmt)}`:''}
             </div>
           </div>`;
         }).join('')}
@@ -11452,20 +11263,20 @@ function renderOrders() {
       <div style="display:grid;grid-template-columns:2fr repeat(4,1fr);gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
         <select onchange="window.moveCardToStatus('${o.id}', this.value)"
           style="background:var(--bg3);color:var(--t2);border:0.5px solid var(--border2);border-radius:8px;padding:7px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;">
-          <option value="watchlist">👁 Watchlist</option>
-          <option value="pending" selected>⏳ Órdenes</option>
-          <option value="active">🟢 Posición</option>
+          <option value="watchlist">ðŸ‘ Watchlist</option>
+          <option value="pending" selected>â³ Ã“rdenes</option>
+          <option value="active">ðŸŸ¢ PosiciÃ³n</option>
         </select>
         ${chartsIconButton(o.id)}
         ${calculatorIconButton(o.id)}
-        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${o.id}')">✎</button>
-        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="window.deletePendingOrder('${o.id}')">✕</button>
+        <button style="background:var(--bg3);color:var(--t3);border:0.5px solid var(--border2);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="openEditTrade('${o.id}')">âœŽ</button>
+        <button style="background:rgba(224,82,82,0.08);color:var(--red);border:0.5px solid rgba(224,82,82,0.15);border-radius:8px;padding:7px;font-size:13px;cursor:pointer;" onclick="window.deletePendingOrder('${o.id}')">âœ•</button>
       </div>` : ''}
     </div>`;
   }).join('');
 }
 
-// ── Manual order actions ─────────────────────────────────────────────────────
+// â”€â”€ Manual order actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 window.toggleZombie = async (id, makeZombie) => {
   const {updateDoc, doc, db} = window._fb;
@@ -11477,7 +11288,7 @@ window.toggleZombie = async (id, makeZombie) => {
     await window._loadTrades();
     renderPositions();
     renderMap();
-    toast(makeZombie ? '🧟 Archivado como zombie' : '↩ Restaurado a posiciones');
+    toast(makeZombie ? 'ðŸ§Ÿ Archivado como zombie' : 'â†© Restaurado a posiciones');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
@@ -11493,7 +11304,7 @@ window.moveCardToStatus = async (id, newStatus) => {
     });
     await window._loadTrades();
     renderWatchlist(); renderOrders(); renderPositions(); renderMap();
-    const labels = {watchlist:'Watchlist', pending:'Órdenes', active:'Posiciones'};
+    const labels = {watchlist:'Watchlist', pending:'Ã“rdenes', active:'Posiciones'};
     toast('Movido a ' + (labels[newStatus]||newStatus));
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
@@ -11517,12 +11328,12 @@ window.moveWatchlistToPending = async id => {
     renderOrders();
     renderWatchlist();
     renderMap();
-    toast('Movido a Órdenes abiertas.');
+    toast('Movido a Ã“rdenes abiertas.');
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
 window.deletePendingOrder = async id => {
-  if(!confirm('¿Eliminar esta orden?')) return;
+  if(!confirm('Â¿Eliminar esta orden?')) return;
   try {
     const {deleteDoc, doc, db} = window._fb;
     await deleteDoc(doc(db,'trades',id));
@@ -11533,7 +11344,7 @@ window.deletePendingOrder = async id => {
   } catch(e) { toast('Error: '+e.message,'error'); }
 };
 
-// ── Fetch open orders from exchanges ─────────────────────────────────────────
+// â”€â”€ Fetch open orders from exchanges â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function fetchAllOrders() {
   const orders = [];
   const exchanges = ['binance','bybit','okx','mexc','kucoin'];
@@ -11588,7 +11399,7 @@ async function fetchAllOrders() {
 
 window.syncAllOrders = async () => {
   const btn = document.getElementById('syncOrdersBtn');
-  if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
+  if(btn){ btn.textContent='âŸ³ Cargando...'; btn.disabled=true; }
   try {
     if(PROXY_URL) {
       const r = await window.workerFetch('/orders');
@@ -11600,20 +11411,20 @@ window.syncAllOrders = async () => {
       const filtered = freshOrders.filter(o => !groupedFromIds.has(o.exchangeId));
       exchangeOrders = [...grouped, ...filtered];
     } else {
-      if(!_masterPass) { if(btn){btn.disabled=false;btn.textContent='↻ Sync órdenes';} return; }
+      if(!_masterPass) { if(btn){btn.disabled=false;btn.textContent='â†» Sync Ã³rdenes';} return; }
       exchangeOrders = await fetchAllOrders();
     }
     window.exchangeOrders = exchangeOrders;
     renderOrders();
     updateStatusBar();
-    if(btn){ btn.textContent=`↻ ${exchangeOrders.length} órdenes`; btn.disabled=false; }
+    if(btn){ btn.textContent=`â†» ${exchangeOrders.length} Ã³rdenes`; btn.disabled=false; }
   } catch(e) {
     console.error('syncAllOrders:', e);
-    if(btn){ btn.textContent='↻ Sync órdenes'; btn.disabled=false; }
+    if(btn){ btn.textContent='â†» Sync Ã³rdenes'; btn.disabled=false; }
   }
 };
 
-// ── Update fetchExchangeHistory to accept date range ──────────────────────────
+// â”€â”€ Update fetchExchangeHistory to accept date range â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Wrap existing function with date params
 const _origFetchHistory = typeof legacyFetchExchangeHistory !== 'undefined' ? legacyFetchExchangeHistory : null;
 // Override to add MEXC support and date range
@@ -11753,7 +11564,7 @@ async function fetchExchangeHistory(exchange, keys, startTs, endTs) {
   return trades;
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────
+// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 buildLevGrid();
 installGlobalTooltips();
 loadUserPrefs();

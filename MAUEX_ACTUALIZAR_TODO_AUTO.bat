@@ -21,6 +21,9 @@ echo Cloudflare queda manual: el Worker se copia al portapapeles para pegarlo y 
 echo.
 
 echo Revisando app y Worker...
+node --check frontend\helpers.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
 node --check frontend\app.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
