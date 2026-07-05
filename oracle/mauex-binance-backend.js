@@ -1,0 +1,1206 @@
+const http = require('http');
+const https = require('https');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const PORT = Number(process.env.PORT || 8080);
+const BINANCE_KEY = (process.env.BINANCE_KEY || '').trim();
+const BINANCE_SECRET = (process.env.BINANCE_SECRET || '').trim();
+const KUCOIN_KEY = (process.env.KUCOIN_KEY || '').trim();
+const KUCOIN_SECRET = (process.env.KUCOIN_SECRET || '').trim();
+const KUCOIN_PASSPHRASE = (process.env.KUCOIN_PASSPHRASE || '').trim();
+const KUCOIN_KEY_VERSION = (process.env.KUCOIN_KEY_VERSION || '2').trim();
+const IBKR_GATEWAY_URL = (process.env.IBKR_GATEWAY_URL || 'https://127.0.0.1:5000').replace(/\/+$/, '');
+const IBKR_ACCOUNT_ID = (process.env.IBKR_ACCOUNT_ID || '').trim();
+const IBKR_FLEX_TOKEN = (process.env.IBKR_FLEX_TOKEN || '').trim();
+const IBKR_FLEX_QUERY_ID = (process.env.IBKR_FLEX_QUERY_ID || '').trim();
+const IBKR_FLEX_BASE_URL = (process.env.IBKR_FLEX_BASE_URL || 'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService').replace(/\/+$/, '');
+const IBKR_FLEX_CACHE_HOURS = Number(process.env.IBKR_FLEX_CACHE_HOURS || 20);
+const IBKR_FLEX_CACHE_FILE = process.env.IBKR_FLEX_CACHE_FILE || path.join(__dirname, 'ibkr-flex-cache.json');
+const SIGNAL_AI_PROVIDER = (process.env.SIGNAL_AI_PROVIDER || 'ollama').trim().toLowerCase();
+const SIGNAL_AI_MODEL = (process.env.SIGNAL_AI_MODEL || 'moondream').trim();
+const SIGNAL_AI_BASE_URL = (process.env.SIGNAL_AI_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+
+const DEFAULT_ALLOWED_ORIGIN = 'https://mauex.vercel.app';
+const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || DEFAULT_ALLOWED_ORIGIN).trim();
+const IBKR_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: process.env.IBKR_ALLOW_SELF_SIGNED === '0' });
+
+function requestOriginAllowed(origin) {
+  if (!origin) return true;
+  if (origin === ALLOWED_ORIGIN) return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+function corsHeaders(req) {
+  const origin = req.headers.origin || '';
+  return {
+    'Access-Control-Allow-Origin': requestOriginAllowed(origin) ? (origin || ALLOWED_ORIGIN) : ALLOWED_ORIGIN,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Vary': 'Origin',
+  };
+}
+
+function timingSafeEqualText(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function apiTokenOk(req) {
+  const expected = (process.env.MAUEX_API_TOKEN || '').trim();
+  const got = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  return Boolean(expected) && timingSafeEqualText(got, expected);
+}
+
+function hmac256(secret, message) {
+  return crypto.createHmac('sha256', secret).update(message).digest('hex');
+}
+
+function hmac256Base64(secret, message) {
+  return crypto.createHmac('sha256', secret).update(message).digest('base64');
+}
+
+async function safeFetch(url, options = {}) {
+  if (options.agent) return safeHttpsFetch(url, options);
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeout);
+    const text = await response.text();
+
+    try {
+      return { ok: response.ok, status: response.status, data: JSON.parse(text) };
+    } catch {
+      return { ok: false, status: response.status, data: null, raw: text.slice(0, 300) };
+    }
+  } catch (error) {
+    return { ok: false, status: 0, data: null, raw: error.message };
+  }
+}
+
+function safeHttpsFetch(url, options = {}) {
+  return new Promise(resolve => {
+    const target = new URL(url);
+    const req = https.request(target, {
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      agent: options.agent,
+      timeout: 15000,
+    }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        try {
+          resolve({ ok: response.statusCode >= 200 && response.statusCode < 300, status: response.statusCode, data: JSON.parse(text) });
+        } catch {
+          resolve({ ok: false, status: response.statusCode, data: null, raw: text.slice(0, 300) });
+        }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Timeout')));
+    req.on('error', error => resolve({ ok: false, status: 0, data: null, raw: error.message }));
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
+function round(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+async function getPublicIp() {
+  const r = await safeFetch('https://api4.ipify.org?format=json');
+  if (r.ok && r.data?.ip) return r.data.ip;
+
+  const r2 = await fetch('https://ipv4.icanhazip.com');
+  return (await r2.text()).trim();
+}
+
+async function getBinanceBalance() {
+  if (!BINANCE_KEY || !BINANCE_SECRET) {
+    return { error: 'BINANCE_KEY/BINANCE_SECRET not set' };
+  }
+
+  const futuresQuery = `recvWindow=10000&timestamp=${Date.now()}`;
+  const futuresSignature = hmac256(BINANCE_SECRET, futuresQuery);
+  const response = await safeFetch(
+    `https://fapi.binance.com/fapi/v2/account?${futuresQuery}&signature=${futuresSignature}`,
+    { headers: { 'X-MBX-APIKEY': BINANCE_KEY } }
+  );
+
+  if (!response.ok || !response.data) {
+    return { error: `${response.status} ${response.raw || 'no data'}` };
+  }
+
+  if (response.data.code) {
+    return { error: `${response.data.code}: ${response.data.msg || 'Binance error'}` };
+  }
+
+  const assets = response.data.assets || [];
+  let total = 0;
+  let wallet = 0;
+  let free = 0;
+  let margin = 0;
+  let orders = 0;
+  let pnl = 0;
+  let USDT = 0;
+  let USDC = 0;
+
+  if (assets.length) {
+    for (const asset of assets) {
+      const walletBalance = Number(asset.walletBalance || 0);
+      const marginBalance = Number(asset.marginBalance || 0);
+      if (walletBalance === 0 && marginBalance === 0) continue;
+
+      const available = Number(asset.availableBalance || 0);
+      const positionMargin = Number(asset.positionInitialMargin || 0);
+      const orderMargin = Number(asset.openOrderInitialMargin || 0);
+      const unrealizedPnl = Number(asset.unrealizedProfit || 0);
+
+      total += marginBalance;
+      wallet += walletBalance;
+      free += available;
+      margin += positionMargin;
+      orders += orderMargin;
+      pnl += unrealizedPnl;
+
+      if (asset.asset === 'USDT') USDT += marginBalance || walletBalance;
+      if (asset.asset === 'USDC') USDC += marginBalance || walletBalance;
+    }
+  } else {
+    total = Number(response.data.totalMarginBalance || 0);
+    wallet = Number(response.data.totalWalletBalance || 0);
+    free = Number(response.data.availableBalance || 0);
+    margin = Number(response.data.totalInitialMargin || 0);
+    pnl = Number(response.data.totalUnrealizedProfit || 0);
+    USDT = total;
+  }
+
+  const spotQuery = `recvWindow=10000&timestamp=${Date.now()}`;
+  const spotSignature = hmac256(BINANCE_SECRET, spotQuery);
+  const spotResponse = await safeFetch(
+    `https://api.binance.com/api/v3/account?${spotQuery}&signature=${spotSignature}`,
+    { headers: { 'X-MBX-APIKEY': BINANCE_KEY } }
+  );
+
+  if (spotResponse.ok && spotResponse.data?.balances) {
+    for (const asset of spotResponse.data.balances) {
+      if (asset.asset !== 'USDT' && asset.asset !== 'USDC') continue;
+      const freeSpot = Number(asset.free || 0);
+      const lockedSpot = Number(asset.locked || 0);
+      const spotTotal = freeSpot + lockedSpot;
+      if (spotTotal <= 0) continue;
+
+      total += spotTotal;
+      wallet += spotTotal;
+      free += freeSpot;
+      orders += lockedSpot;
+      if (asset.asset === 'USDT') USDT += spotTotal;
+      if (asset.asset === 'USDC') USDC += spotTotal;
+    }
+  }
+
+  return {
+    exchange: 'BINANCE',
+    total: round(total),
+    wallet: round(wallet),
+    free: round(free),
+    margin: round(margin),
+    orders: round(orders),
+    pnl: round(pnl),
+    USDT: round(USDT),
+    USDC: round(USDC),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function kucoinGet(baseUrl, path) {
+  const timestamp = Date.now().toString();
+  const signature = hmac256Base64(KUCOIN_SECRET, timestamp + 'GET' + path);
+  const passphrase = KUCOIN_KEY_VERSION === '2'
+    ? hmac256Base64(KUCOIN_SECRET, KUCOIN_PASSPHRASE)
+    : KUCOIN_PASSPHRASE;
+
+  return safeFetch(`${baseUrl}${path}`, {
+    headers: {
+      'KC-API-KEY': KUCOIN_KEY,
+      'KC-API-SIGN': signature,
+      'KC-API-TIMESTAMP': timestamp,
+      'KC-API-PASSPHRASE': passphrase,
+      'KC-API-KEY-VERSION': KUCOIN_KEY_VERSION,
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+async function getKucoinUsdPrice(currency) {
+  if (currency === 'USDT' || currency === 'USDC') return 1;
+
+  for (const quote of ['USDT', 'USDC']) {
+    const response = await safeFetch(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${currency}-${quote}`);
+    if (response.ok && response.data?.code === '200000') {
+      const price = Number(response.data.data?.price || 0);
+      if (price > 0) return price;
+    }
+  }
+
+  return 0;
+}
+
+async function getKucoinBalance() {
+  if (!KUCOIN_KEY || !KUCOIN_SECRET || !KUCOIN_PASSPHRASE) {
+    return { error: 'KUCOIN_KEY/KUCOIN_SECRET/KUCOIN_PASSPHRASE not set' };
+  }
+
+  let total = 0;
+  let free = 0;
+  let margin = 0;
+  let orders = 0;
+  let pnl = 0;
+  let USDT = 0;
+  let USDC = 0;
+  let positionEquity = 0;
+  let positionUsdt = 0;
+  let positionUsdc = 0;
+  const requestErrors = [];
+
+  const addStable = (currency, equity, available = 0, hold = 0) => {
+    const value = Number(equity || 0);
+    const freeValue = Number(available || 0);
+    const holdValue = Number(hold || 0);
+    total += value;
+    free += freeValue;
+    orders += holdValue;
+    if (currency === 'USDT') USDT += value;
+    if (currency === 'USDC') USDC += value;
+  };
+
+  for (const currency of ['USDT', 'USDC']) {
+    const path = `/api/v1/account-overview?currency=${currency}`;
+    const response = await kucoinGet('https://api-futures.kucoin.com', path);
+
+    if (response.ok && response.data?.code === '200000' && response.data?.data) {
+      const data = response.data.data;
+      const equity = Number(data.accountEquity || data.marginBalance || 0);
+      const available = Number(data.availableBalance || data.availableMargin || 0);
+      const positionMargin = Number(data.positionMargin || 0);
+      const orderMargin = Number(data.orderMargin || data.frozenFunds || 0);
+      const unrealizedPnl = Number(data.unrealisedPNL || data.unrealizedPNL || 0);
+
+      total += equity;
+      free += available;
+      margin += positionMargin;
+      orders += orderMargin;
+      pnl += unrealizedPnl;
+      if (currency === 'USDT') USDT += equity;
+      if (currency === 'USDC') USDC += equity;
+    } else {
+      requestErrors.push(`futures ${currency}: ${response.data?.msg || response.raw || response.status}`);
+    }
+  }
+
+  const spotResponse = await kucoinGet('https://api.kucoin.com', '/api/v1/accounts');
+  if (spotResponse.ok && spotResponse.data?.code === '200000' && Array.isArray(spotResponse.data.data)) {
+    for (const account of spotResponse.data.data) {
+      const balance = Number(account.balance || 0);
+      const available = Number(account.available || 0);
+      const holds = Number(account.holds || 0);
+      if (balance === 0 && available === 0 && holds === 0) continue;
+
+      if (account.currency === 'USDT' || account.currency === 'USDC') {
+        addStable(account.currency, balance, available, holds);
+      } else {
+        const usdPrice = await getKucoinUsdPrice(account.currency);
+        if (usdPrice > 0) {
+          const usdBalance = balance * usdPrice;
+          total += usdBalance;
+          free += available * usdPrice;
+          orders += holds * usdPrice;
+          USDT += usdBalance;
+        } else {
+          requestErrors.push(`spot ${account.currency}: no USD price`);
+        }
+      }
+    }
+  } else {
+    requestErrors.push(`spot: ${spotResponse.data?.msg || spotResponse.raw || spotResponse.status}`);
+  }
+
+  const positionsResponse = await kucoinGet('https://api-futures.kucoin.com', '/api/v1/positions');
+  if (positionsResponse.ok && positionsResponse.data?.code === '200000' && Array.isArray(positionsResponse.data.data)) {
+    for (const position of positionsResponse.data.data) {
+      if (position.isOpen === false || Number(position.currentQty || 0) === 0) continue;
+      const settle = position.settleCurrency || 'USDT';
+      const markValue = Math.abs(Number(position.markValue || position.currentCost || position.posCost || 0));
+      const positionMargin = Math.abs(Number(position.posMargin || position.posInit || 0));
+      const unrealizedPnl = Number(position.unrealisedPnl || position.unrealizedPnl || 0);
+      const equityValue = positionMargin + unrealizedPnl;
+
+      margin += positionMargin;
+      pnl += unrealizedPnl;
+
+      positionEquity += equityValue || markValue;
+      if (settle === 'USDT') positionUsdt += equityValue || markValue;
+      if (settle === 'USDC') positionUsdc += equityValue || markValue;
+    }
+  } else {
+    requestErrors.push(`positions: ${positionsResponse.data?.msg || positionsResponse.raw || positionsResponse.status}`);
+  }
+
+  const utaOverview = await kucoinGet('https://api.kucoin.com', '/api/ua/v1/unified/account/overview');
+  const utaBalance = await kucoinGet('https://api.kucoin.com', '/api/ua/v1/unified/account/balance');
+  const utaPositions = await kucoinGet('https://api.kucoin.com', '/api/ua/v1/unified/position/open-list?pageNumber=1&pageSize=200');
+  let utaUsdt = 0;
+  let utaUsdc = 0;
+  let utaFree = 0;
+  let utaHolds = 0;
+
+  if (utaBalance.ok && utaBalance.data?.code === '200000') {
+    const accounts = utaBalance.data.data?.accounts || [];
+    for (const account of accounts) {
+      for (const currency of (account.currencies || [])) {
+        if (currency.currency !== 'USDT' && currency.currency !== 'USDC') continue;
+        const equity = Number(currency.equity || currency.balance || 0);
+        const available = Number(currency.available || 0);
+        const hold = Number(currency.hold || 0);
+        if (currency.currency === 'USDT') utaUsdt += equity;
+        if (currency.currency === 'USDC') utaUsdc += equity;
+        utaFree += available;
+        utaHolds += hold;
+      }
+    }
+  } else {
+    requestErrors.push(`uta balance: ${utaBalance.data?.msg || utaBalance.raw || utaBalance.status}`);
+  }
+
+  if (utaPositions.ok && utaPositions.data?.code === '200000' && Array.isArray(utaPositions.data.data)) {
+    for (const position of utaPositions.data.data) {
+      if (Number(position.size || 0) === 0) continue;
+      const positionMargin = Math.abs(Number(position.initialMargin || 0));
+      const unrealizedPnl = Number(position.unrealizedPnL || position.unrealisedPnl || 0);
+      const positionValue = Math.abs(Number(position.positionValue || 0));
+      const equityValue = positionMargin + unrealizedPnl;
+
+      margin += positionMargin;
+      pnl += unrealizedPnl;
+      positionEquity += equityValue || positionValue;
+      positionUsdt += equityValue || positionValue;
+    }
+  } else {
+    requestErrors.push(`uta positions: ${utaPositions.data?.msg || utaPositions.raw || utaPositions.status}`);
+  }
+
+  if (utaOverview.ok && utaOverview.data?.code === '200000' && utaOverview.data?.data) {
+    const data = utaOverview.data.data;
+    const utaTotal = Number(data.equity || data.adjustedEquity || 0);
+    const utaAvailable = Number(data.availableMargin || 0);
+    const utaMargin = Number(data.im || 0);
+    total += utaTotal || (utaUsdt + utaUsdc);
+    free += utaAvailable || utaFree;
+    margin += utaMargin;
+    orders += utaHolds;
+    USDT += utaUsdt || (utaTotal && !utaUsdc ? utaTotal : 0);
+    USDC += utaUsdc;
+  } else if (utaUsdt || utaUsdc) {
+    total += utaUsdt + utaUsdc;
+    free += utaFree;
+    orders += utaHolds;
+    USDT += utaUsdt;
+    USDC += utaUsdc;
+  } else {
+    requestErrors.push(`uta overview: ${utaOverview.data?.msg || utaOverview.raw || utaOverview.status}`);
+  }
+
+  const positionAlreadyCovered = Math.max(0, total - free);
+  const positionShortfall = Math.max(0, positionEquity - positionAlreadyCovered);
+  if (positionShortfall > 0) {
+    total += positionShortfall;
+    if (positionUsdt >= positionUsdc) USDT += positionShortfall;
+    else USDC += positionShortfall;
+  }
+
+  if (total === 0 && USDT === 0 && USDC === 0 && requestErrors.length) {
+    return { error: requestErrors.join('; ') };
+  }
+
+  return {
+    exchange: 'KUCOIN',
+    total: round(total || USDT + USDC),
+    free: round(free),
+    margin: round(margin),
+    orders: round(orders),
+    pnl: round(pnl),
+    USDT: round(USDT),
+    USDC: round(USDC),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function getKucoinDebug() {
+  if (!KUCOIN_KEY || !KUCOIN_SECRET || !KUCOIN_PASSPHRASE) {
+    return { error: 'KUCOIN_KEY/KUCOIN_SECRET/KUCOIN_PASSPHRASE not set' };
+  }
+
+  const summarize = (response, pick = x => x) => ({
+    ok: response.ok,
+    status: response.status,
+    code: response.data?.code,
+    msg: response.data?.msg || response.raw || null,
+    data: pick(response.data?.data),
+  });
+
+  const classicPositions = await kucoinGet('https://api-futures.kucoin.com', '/api/v1/positions');
+  const utaPositions = await kucoinGet('https://api.kucoin.com', '/api/ua/v1/unified/position/open-list?pageNumber=1&pageSize=200');
+  const utaOverview = await kucoinGet('https://api.kucoin.com', '/api/ua/v1/unified/account/overview');
+  const utaBalance = await kucoinGet('https://api.kucoin.com', '/api/ua/v1/unified/account/balance');
+  const spotAccounts = await kucoinGet('https://api.kucoin.com', '/api/v1/accounts');
+
+  return {
+    classicPositions: summarize(classicPositions, data => Array.isArray(data) ? data.map(p => ({
+      symbol: p.symbol,
+      isOpen: p.isOpen,
+      currentQty: p.currentQty,
+      settleCurrency: p.settleCurrency,
+      posMargin: p.posMargin,
+      posInit: p.posInit,
+      markValue: p.markValue,
+      unrealisedPnl: p.unrealisedPnl,
+    })) : data),
+    utaPositions: summarize(utaPositions, data => Array.isArray(data) ? data.map(p => ({
+      symbol: p.symbol,
+      size: p.size,
+      positionValue: p.positionValue,
+      initialMargin: p.initialMargin,
+      unrealizedPnL: p.unrealizedPnL,
+      leverage: p.leverage,
+    })) : data),
+    utaOverview: summarize(utaOverview, data => data),
+    utaBalance: summarize(utaBalance, data => data?.accounts?.map(account => ({
+      currencies: (account.currencies || []).filter(c => ['USDT', 'USDC', 'XMR'].includes(c.currency)),
+    })) || data),
+    spotAccounts: summarize(spotAccounts, data => Array.isArray(data) ? data
+      .filter(account => Number(account.balance || 0) !== 0 || Number(account.available || 0) !== 0 || Number(account.holds || 0) !== 0)
+      .map(account => ({
+        type: account.type,
+        currency: account.currency,
+        balance: account.balance,
+        available: account.available,
+        holds: account.holds,
+      })) : data),
+  };
+}
+
+function parseMoney(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const cleaned = String(value).replace(/,/g, '').replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function metricAmount(value) {
+  if (value == null) return 0;
+  if (typeof value !== 'object') return parseMoney(value);
+
+  const direct = parseMoney(value.amount ?? value.value ?? value.val ?? value.current ?? value.balance);
+  if (direct) return direct;
+
+  for (const nested of Object.values(value)) {
+    const n = metricAmount(nested);
+    if (n) return n;
+  }
+  return 0;
+}
+
+function pickMetric(source, names) {
+  if (!source) return 0;
+  const keys = Object.keys(source);
+  for (const name of names) {
+    const key = keys.find(k => k.toLowerCase() === name.toLowerCase());
+    if (!key) continue;
+    return metricAmount(source[key]);
+  }
+  return 0;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function readJsonFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonFile(file, value) {
+  try {
+    fs.writeFileSync(file, JSON.stringify(value, null, 2), { mode: 0o600 });
+  } catch {
+    // Cache is an optimization; a write failure should not break the API.
+  }
+}
+
+function readRequestJson(req, maxBytes = 4 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(new Error('Request demasiado grande para AI visual'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        const text = Buffer.concat(chunks).toString('utf8') || '{}';
+        resolve(JSON.parse(text));
+      } catch (error) {
+        reject(new Error('JSON invalido'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function textSignalFallback(raw = '', sourceName = '') {
+  const text = String(raw || '');
+  const ticker = (text.match(/(?:COIN|SYMBOL|PAIR)\s*[:=]?\s*[$#]?([A-Z0-9]{2,15})/i)
+    || text.match(/[$#]([A-Z0-9]{2,15})\s*(?:\/|-)?\s*(?:USDT|USDC|USD|PERP)?/i)
+    || [])[1] || '';
+  const direction = (text.match(/\b(LONG|SHORT)\b/i) || [])[1] || '';
+  const numsFrom = label => {
+    const m = text.match(new RegExp(`(?:${label})\\s*[:=]?\\s*([^\\n]+)`, 'i'));
+    return ((m?.[1] || '').match(/(?:\d+\.\d+|\.\d+|\d+)/g) || [])
+      .map(x => Number(x.startsWith('.') ? '0' + x : x))
+      .filter(Number.isFinite);
+  };
+  const entry = numsFrom('ENTRY|ENTRADA|CMP|CURRENT MARKET');
+  const sl = numsFrom('STOP LOSS|STOPLOSS|SL');
+  const targets = numsFrom('TARGETS?|TAKE PROFIT|TP');
+  return {
+    ticker,
+    direction: direction.toLowerCase(),
+    exchange: /kucoin/i.test(text) ? 'KUCOIN' : 'BINANCE',
+    leverage: Number((text.match(/(?:\d+\s*-\s*)?(\d{1,3})\s*x/i) || [])[1] || 0) || undefined,
+    entryRange: entry.slice(0, 2),
+    entry: entry[0] || undefined,
+    sl: sl[0] || undefined,
+    targets,
+    providerSignalId: (text.match(/(?:signal\s*id|signal)\s*[:#]?\s*#?([A-Z]?\d{2,8})/i) || [])[1] || '',
+    confidence: 35,
+    warnings: ['AI visual local no disponible; lectura de texto basica'],
+    notes: `Fallback sin vision para ${sourceName || 'Telegram'}.`,
+  };
+}
+
+function extractJsonObject(text) {
+  const raw = String(text || '').trim();
+  try { return JSON.parse(raw); } catch {}
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(raw.slice(start, end + 1)); } catch {}
+  }
+  return null;
+}
+
+async function callOllamaVision({ raw, sourceName, imageBase64 }) {
+  const prompt = `
+Sos el lector visual de Signal Desk. Tu tarea es extraer una senal de trading desde texto de Telegram y, si hay imagen, desde captura de TradingView.
+
+Reglas:
+- Devolve SOLO JSON valido.
+- No inventes datos. Si algo no esta claro, usa null o [] y agregalo en warnings.
+- Si texto e imagen se contradicen, conserva ambos en notes y baja confidence.
+- direction debe ser "long", "short" o "".
+- entryRange debe tener 1 o 2 numeros.
+- targets debe tener todos los TP visibles o escritos.
+- Si Entry dice CMP/current market, pon entryIsCurrentMarket true.
+- El campo confidence mide confianza de lectura, no probabilidad de ganar.
+
+Fuente: ${sourceName || 'Telegram'}
+Texto:
+${raw || '(sin texto)'}
+
+Formato esperado:
+{
+  "ticker": "BTC",
+  "direction": "long",
+  "exchange": "BINANCE",
+  "leverage": 5,
+  "entry": 72000,
+  "entryRange": [71000,72000],
+  "entryIsCurrentMarket": false,
+  "sl": 69000,
+  "targets": [73000,75000],
+  "providerSignalId": "B326",
+  "confidence": 70,
+  "warnings": [],
+  "notes": "resumen breve"
+}`.trim();
+
+  const response = await fetch(`${SIGNAL_AI_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: SIGNAL_AI_MODEL,
+      prompt,
+      stream: false,
+      format: 'json',
+      images: imageBase64 ? [imageBase64] : undefined,
+      options: {
+        temperature: 0.1,
+        num_predict: 700,
+      },
+    }),
+  });
+  const text = await response.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  if (!response.ok) throw new Error(data?.error || text.slice(0, 300) || `Ollama HTTP ${response.status}`);
+  const parsed = extractJsonObject(data?.response || text);
+  if (!parsed) throw new Error('Ollama no devolvio JSON interpretable');
+  return parsed;
+}
+
+async function interpretSignalVision(payload = {}) {
+  const raw = String(payload.raw || '');
+  const sourceName = String(payload.sourceName || '');
+  const imageBase64 = String(payload.imageBase64 || '').replace(/^data:image\/[a-z0-9.+-]+;base64,/i, '');
+  if (SIGNAL_AI_PROVIDER !== 'ollama') {
+    return {
+      model: 'fallback',
+      usedImage: false,
+      interpretation: textSignalFallback(raw, sourceName),
+      warning: `Proveedor AI no soportado: ${SIGNAL_AI_PROVIDER}`,
+    };
+  }
+
+  try {
+    const interpretation = await callOllamaVision({ raw, sourceName, imageBase64 });
+    return {
+      model: SIGNAL_AI_MODEL,
+      provider: 'ollama',
+      usedImage: !!imageBase64,
+      interpretation,
+    };
+  } catch (error) {
+    return {
+      model: SIGNAL_AI_MODEL,
+      provider: 'ollama',
+      usedImage: false,
+      interpretation: textSignalFallback(raw, sourceName),
+      warning: error.message,
+    };
+  }
+}
+
+function htmlDecode(value) {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function attrsFromXml(fragment) {
+  const attrs = {};
+  const pattern = /([\w:-]+)\s*=\s*"([^"]*)"/g;
+  let match;
+  while ((match = pattern.exec(fragment))) {
+    attrs[match[1]] = htmlDecode(match[2]);
+  }
+  return attrs;
+}
+
+function xmlText(xml, tag) {
+  const match = String(xml || '').match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return match ? htmlDecode(match[1].trim()) : '';
+}
+
+function xmlElements(xml, tag) {
+  const result = [];
+  const text = String(xml || '');
+  const pattern = new RegExp(`<${tag}\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/${tag}>)`, 'gi');
+  let match;
+  while ((match = pattern.exec(text))) {
+    result.push({ attrs: attrsFromXml(match[1] || ''), inner: match[2] || '' });
+  }
+  return result;
+}
+
+function sumXmlAttr(xml, tags, names) {
+  let total = 0;
+  for (const tag of tags) {
+    for (const element of xmlElements(xml, tag)) {
+      total += pickMetric(element.attrs, names);
+    }
+  }
+  return total;
+}
+
+async function flexFetch(pathname, params) {
+  const url = new URL(`${IBKR_FLEX_BASE_URL}${pathname}`);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/xml,text/xml,*/*',
+        'User-Agent': 'Java',
+      },
+    });
+    clearTimeout(timeout);
+    const text = await response.text();
+    return { ok: response.ok, status: response.status, text };
+  } catch (error) {
+    return { ok: false, status: 0, text: error.message };
+  }
+}
+
+function flexFailure(xml, fallback) {
+  const status = xmlText(xml, 'Status');
+  if (status && status.toLowerCase() !== 'success') {
+    const code = xmlText(xml, 'ErrorCode');
+    const message = xmlText(xml, 'ErrorMessage');
+    return `${code ? `${code}: ` : ''}${message || status}`;
+  }
+  return fallback || '';
+}
+
+function parseIbkrFlexStatement(xml) {
+  const accountInfo = xmlElements(xml, 'AccountInformation')[0]?.attrs || {};
+  const statement = xmlElements(xml, 'FlexStatement')[0]?.attrs || {};
+  const accountId = accountInfo.accountId || accountInfo.accountID || accountInfo.clientAccountID || statement.accountId || statement.accountID || IBKR_ACCOUNT_ID || '';
+  const currency = accountInfo.currency || accountInfo.baseCurrency || accountInfo.Currency || 'USD';
+
+  const navTotal = sumXmlAttr(xml, [
+    'ChangeInNAV',
+    'NetAssetValue',
+    'NetAssetValueInBase',
+    'NetAssetValueSummaryInBase',
+    'NetAssetValueNAVInBase',
+    'EquitySummaryInBase',
+    'EquitySummaryByReportDate',
+    'StatementOfFunds',
+    'NAV',
+  ], [
+    'total',
+    'totalInBase',
+    'currentTotal',
+    'endingTotal',
+    'endingValue',
+    'endingNAV',
+    'endingNav',
+    'currentNAV',
+    'currentNav',
+    'value',
+  ]);
+  const marginTotal = sumXmlAttr(xml, ['MarginSummary'], [
+    'currentInitialMargin',
+    'initialMargin',
+    'initMarginReq',
+    'initialMarginRequirement',
+    'totalInitialMargin',
+  ]);
+  const freeTotal = sumXmlAttr(xml, ['MarginSummary'], [
+    'availableFunds',
+    'excessLiquidity',
+    'totalAvailableFunds',
+  ]);
+  const cashTotal = sumXmlAttr(xml, ['CashReportCurrency', 'CashReport', 'StatementOfFunds'], [
+    'endingCash',
+    'endingSettledCash',
+    'settledCash',
+    'cash',
+    'endingBalance',
+    'total',
+    'balance',
+  ]);
+  const openPositionValue = Math.abs(sumXmlAttr(xml, ['OpenPosition'], [
+    'positionValue',
+    'marketValue',
+    'value',
+  ]));
+  const openPnl = sumXmlAttr(xml, ['OpenPosition'], [
+    'fifoPnlUnrealized',
+    'mtmPnl',
+    'unrealizedPNL',
+    'unrealizedPnl',
+  ]);
+
+  const total = navTotal || pickMetric(accountInfo, [
+    'netLiquidationValue',
+    'netLiquidation',
+    'currentNAV',
+    'currentNav',
+    'endingNAV',
+    'endingNav',
+    'equityWithLoanValue',
+  ]);
+  const margin = marginTotal || pickMetric(accountInfo, [
+    'initialMarginRequirement',
+    'currentInitialMargin',
+    'initMarginReq',
+  ]);
+  const free = freeTotal || cashTotal || pickMetric(accountInfo, [
+    'availableFunds',
+    'excessLiquidity',
+    'settledCash',
+    'cash',
+  ]);
+  const workingCapital = total && free <= total ? Math.max(0, total - free) : 0;
+  const effectiveMargin = margin || workingCapital;
+  const orders = margin && total && free + margin <= total ? Math.max(0, total - free - margin) : 0;
+  const pnl = openPnl || pickMetric(accountInfo, ['unrealizedPnl', 'unrealizedPNL']);
+  const safeTotal = total || Math.max(0, free + margin + orders) || cashTotal + openPositionValue;
+
+  if (!safeTotal) {
+    return {
+      error: 'IBKR Flex no trajo NAV/capital. Revisa que la Flex Query incluya Account Information, Net Asset Value, Margin Summary, Cash Report y Open Positions.',
+      accountId,
+      currency,
+    };
+  }
+
+  return {
+    exchange: 'IBKR',
+    source: 'IBKR Flex Web Service',
+    accountId,
+    currency,
+    total: round(safeTotal),
+    wallet: round(safeTotal),
+    free: round(free || Math.max(0, safeTotal - effectiveMargin - orders)),
+    margin: round(effectiveMargin),
+    orders: round(orders),
+    pnl: round(pnl),
+    USDT: round(safeTotal),
+    USDC: 0,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function getIbkrFlexBalance(options = {}) {
+  if (!IBKR_FLEX_TOKEN || !IBKR_FLEX_QUERY_ID) {
+    return { error: 'IBKR_FLEX_TOKEN/IBKR_FLEX_QUERY_ID not set' };
+  }
+
+  const cache = readJsonFile(IBKR_FLEX_CACHE_FILE);
+  const cacheAgeMs = cache?.updatedAt ? Date.now() - new Date(cache.updatedAt).getTime() : Infinity;
+  const cacheFresh = cache?.data && cacheAgeMs < IBKR_FLEX_CACHE_HOURS * 60 * 60 * 1000;
+  if (cacheFresh && !options.live) {
+    return { ...cache.data, cached: true, cacheUpdatedAt: cache.updatedAt };
+  }
+
+  const send = await flexFetch('/SendRequest', { t: IBKR_FLEX_TOKEN, q: IBKR_FLEX_QUERY_ID, v: '3' });
+  if (!send.ok) {
+    if (cache?.data) return { ...cache.data, cached: true, stale: true, warning: `IBKR Flex SendRequest: ${send.status} ${send.text}` };
+    return { error: `IBKR Flex SendRequest: ${send.status} ${send.text}` };
+  }
+
+  const sendFailure = flexFailure(send.text);
+  if (sendFailure) {
+    if (cache?.data) return { ...cache.data, cached: true, stale: true, warning: `IBKR Flex: ${sendFailure}` };
+    return { error: `IBKR Flex: ${sendFailure}` };
+  }
+
+  const referenceCode = xmlText(send.text, 'ReferenceCode');
+  if (!referenceCode) {
+    return { error: 'IBKR Flex no devolvio ReferenceCode', raw: send.text.slice(0, 300) };
+  }
+
+  let report = null;
+  for (const delay of [2500, 5000, 8000]) {
+    await sleep(delay);
+    report = await flexFetch('/GetStatement', { t: IBKR_FLEX_TOKEN, q: referenceCode, v: '3' });
+    const pending = flexFailure(report.text);
+    if (report.ok && !pending) break;
+    if (!/1003|1004|1019|incomplete|progress|not available/i.test(pending || report.text)) break;
+  }
+
+  if (!report?.ok) {
+    if (cache?.data) return { ...cache.data, cached: true, stale: true, warning: `IBKR Flex GetStatement: ${report?.status || 0} ${report?.text || ''}` };
+    return { error: `IBKR Flex GetStatement: ${report?.status || 0} ${report?.text || ''}` };
+  }
+
+  const reportFailure = flexFailure(report.text);
+  if (reportFailure) {
+    if (cache?.data) return { ...cache.data, cached: true, stale: true, warning: `IBKR Flex: ${reportFailure}` };
+    return { error: `IBKR Flex: ${reportFailure}` };
+  }
+
+  const parsed = parseIbkrFlexStatement(report.text);
+  if (!parsed.error) writeJsonFile(IBKR_FLEX_CACHE_FILE, { updatedAt: new Date().toISOString(), data: parsed });
+  return parsed;
+}
+
+function pickAccountId(accounts) {
+  const list = Array.isArray(accounts)
+    ? accounts
+    : Array.isArray(accounts?.accounts)
+      ? accounts.accounts
+      : Array.isArray(accounts?.data)
+        ? accounts.data
+        : [];
+
+  if (!list.length) return '';
+  if (IBKR_ACCOUNT_ID) {
+    const configured = list.find(account => {
+      const id = account.id || account.accountId || account.account || account.acctId || account.accountVan;
+      return String(id || '').trim() === IBKR_ACCOUNT_ID;
+    });
+    if (configured) return IBKR_ACCOUNT_ID;
+  }
+
+  const first = list[0];
+  return String(first.id || first.accountId || first.account || first.acctId || first.accountVan || '').trim();
+}
+
+async function ibkrGet(path) {
+  return safeFetch(`${IBKR_GATEWAY_URL}${path}`, {
+    agent: IBKR_HTTPS_AGENT,
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'MAUex/1.0',
+    },
+  });
+}
+
+async function getIbkrStatus() {
+  const tickle = await ibkrGet('/v1/api/tickle');
+  const auth = await ibkrGet('/v1/api/iserver/auth/status');
+  return {
+    gatewayUrl: IBKR_GATEWAY_URL,
+    accountId: IBKR_ACCOUNT_ID || null,
+    tickle: tickle.data || tickle.raw || tickle.status,
+    auth: auth.data || auth.raw || auth.status,
+  };
+}
+
+async function getIbkrBalance() {
+  if (IBKR_FLEX_TOKEN && IBKR_FLEX_QUERY_ID) {
+    const flex = await getIbkrFlexBalance();
+    if (!flex.error) return flex;
+
+    const gateway = await getIbkrGatewayBalance();
+    if (!gateway.error) return gateway;
+    return { ...flex, gatewayError: gateway.error };
+  }
+
+  return getIbkrGatewayBalance();
+}
+
+async function getIbkrGatewayBalance() {
+  const status = await getIbkrStatus();
+  const authData = status.auth || {};
+  const authenticated = authData.authenticated !== false && authData.connected !== false;
+  if (!authenticated) {
+    return {
+      error: 'IBKR Gateway no esta autenticado. Hay que iniciar sesion en Client Portal Gateway y volver a probar.',
+      status,
+    };
+  }
+
+  const accountsResponse = await ibkrGet('/v1/api/portfolio/accounts');
+  if (!accountsResponse.ok || !accountsResponse.data) {
+    return { error: `IBKR accounts: ${accountsResponse.raw || accountsResponse.status}`, status };
+  }
+
+  const accountId = pickAccountId(accountsResponse.data);
+  if (!accountId) {
+    return { error: 'IBKR no devolvio ningun accountId', accounts: accountsResponse.data, status };
+  }
+
+  const encodedAccount = encodeURIComponent(accountId);
+  const summaryResponse = await ibkrGet(`/v1/api/portfolio/${encodedAccount}/summary`);
+  const ledgerResponse = await ibkrGet(`/v1/api/portfolio/${encodedAccount}/ledger`);
+  const pnlResponse = await ibkrGet('/v1/api/iserver/account/pnl/partitioned');
+
+  const summary = summaryResponse.data || {};
+  const ledger = ledgerResponse.data || {};
+
+  const ledgerUsd = ledger.USD || ledger.usd || {};
+  const total = pickMetric(summary, [
+    'netliquidation',
+    'netliquidation-c',
+    'equitywithloanvalue',
+    'totalcashvalue',
+  ]) || pickMetric(ledgerUsd, [
+    'netliquidationvalue',
+    'cashbalance',
+    'stockmarketvalue',
+  ]);
+
+  const free = pickMetric(summary, [
+    'availablefunds',
+    'excessliquidity',
+    'totalcashvalue',
+    'settledcash',
+  ]) || pickMetric(ledgerUsd, [
+    'cashbalance',
+    'settledcash',
+  ]);
+
+  const margin = pickMetric(summary, [
+    'initmarginreq',
+    'maintmarginreq',
+    'fullinitmarginreq',
+    'fullmaintmarginreq',
+  ]);
+
+  let pnl = pickMetric(summary, ['unrealizedpnl', 'realizedpnl']);
+  if (!pnl && pnlResponse.ok && pnlResponse.data) {
+    const partition = pnlResponse.data.upnl || pnlResponse.data.pnl || pnlResponse.data;
+    const accountPnl = partition[accountId] || Object.values(partition).find(v => v && typeof v === 'object');
+    pnl = parseMoney(accountPnl?.uPnl ?? accountPnl?.unrealizedPnL ?? accountPnl?.dailyPnL ?? accountPnl?.dpl);
+  }
+
+  const safeTotal = total || Math.max(0, free + margin);
+  return {
+    exchange: 'IBKR',
+    accountId,
+    total: round(safeTotal),
+    wallet: round(safeTotal),
+    free: round(free || Math.max(0, safeTotal - margin)),
+    margin: round(margin),
+    orders: 0,
+    pnl: round(pnl),
+    USDT: round(safeTotal),
+    USDC: 0,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function getIbkrDebug() {
+  const flexCache = readJsonFile(IBKR_FLEX_CACHE_FILE);
+  const flex = IBKR_FLEX_TOKEN && IBKR_FLEX_QUERY_ID
+    ? await getIbkrFlexBalance({ live: true })
+    : { error: 'IBKR_FLEX_TOKEN/IBKR_FLEX_QUERY_ID not set' };
+  const status = await getIbkrStatus();
+  const accountsResponse = await ibkrGet('/v1/api/portfolio/accounts');
+  const accountId = pickAccountId(accountsResponse.data || {});
+  const encodedAccount = accountId ? encodeURIComponent(accountId) : '';
+  const summaryResponse = encodedAccount ? await ibkrGet(`/v1/api/portfolio/${encodedAccount}/summary`) : null;
+  const ledgerResponse = encodedAccount ? await ibkrGet(`/v1/api/portfolio/${encodedAccount}/ledger`) : null;
+  const pnlResponse = await ibkrGet('/v1/api/iserver/account/pnl/partitioned');
+
+  return {
+    flex: {
+      configured: Boolean(IBKR_FLEX_TOKEN && IBKR_FLEX_QUERY_ID),
+      queryId: IBKR_FLEX_QUERY_ID || null,
+      cacheUpdatedAt: flexCache?.updatedAt || null,
+      result: flex,
+    },
+    status,
+    accountId,
+    accounts: accountsResponse?.data || accountsResponse?.raw || accountsResponse?.status,
+    summary: summaryResponse?.data || summaryResponse?.raw || summaryResponse?.status,
+    ledger: ledgerResponse?.data || ledgerResponse?.raw || ledgerResponse?.status,
+    pnl: pnlResponse?.data || pnlResponse?.raw || pnlResponse?.status,
+  };
+}
+
+function sendJson(req, res, data, status = 200) {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...corsHeaders(req) });
+  res.end(JSON.stringify(data));
+}
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, corsHeaders(req));
+    res.end();
+    return;
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (!apiTokenOk(req)) {
+    sendJson(req, res, { error: 'unauthorized' }, 401);
+    return;
+  }
+
+  try {
+    if (url.pathname === '/health') {
+      sendJson(req, res, {
+        status: 'ok',
+        service: 'mauex-binance-backend',
+        hasBinanceKey: Boolean(BINANCE_KEY),
+        hasKucoinKey: Boolean(KUCOIN_KEY),
+        hasIbkrGateway: Boolean(IBKR_GATEWAY_URL),
+        hasIbkrFlex: Boolean(IBKR_FLEX_TOKEN && IBKR_FLEX_QUERY_ID),
+        ibkrMode: IBKR_FLEX_TOKEN && IBKR_FLEX_QUERY_ID ? 'flex' : 'gateway',
+        signalAiProvider: SIGNAL_AI_PROVIDER,
+        signalAiModel: SIGNAL_AI_MODEL,
+      });
+      return;
+    }
+
+    if (url.pathname === '/myip') {
+      sendJson(req, res, { ip: await getPublicIp() });
+      return;
+    }
+
+    if (url.pathname === '/binance-balance') {
+      sendJson(req, res, await getBinanceBalance());
+      return;
+    }
+
+    if (url.pathname === '/kucoin-balance') {
+      sendJson(req, res, await getKucoinBalance());
+      return;
+    }
+
+    if (url.pathname === '/kucoin-debug') {
+      sendJson(req, res, await getKucoinDebug());
+      return;
+    }
+
+    if (url.pathname === '/ibkr-health') {
+      sendJson(req, res, await getIbkrStatus());
+      return;
+    }
+
+    if (url.pathname === '/ibkr-balance') {
+      sendJson(req, res, await getIbkrBalance());
+      return;
+    }
+
+    if (url.pathname === '/ibkr-flex-balance') {
+      sendJson(req, res, await getIbkrFlexBalance({ live: url.searchParams.get('live') === '1' }));
+      return;
+    }
+
+    if (url.pathname === '/ibkr-debug') {
+      sendJson(req, res, await getIbkrDebug());
+      return;
+    }
+
+    if (url.pathname === '/signal-vision-ai' && req.method === 'POST') {
+      const payload = await readRequestJson(req);
+      sendJson(req, res, await interpretSignalVision(payload));
+      return;
+    }
+
+    sendJson(req, res, { error: 'Not found' }, 404);
+  } catch (error) {
+    sendJson(req, res, { error: error.message }, 500);
+  }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`MAUex Binance backend listening on port ${PORT}`);
+});

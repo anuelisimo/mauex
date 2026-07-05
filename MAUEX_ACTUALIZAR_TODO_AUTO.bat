@@ -21,13 +21,19 @@ echo Cloudflare queda manual: el Worker se copia al portapapeles para pegarlo y 
 echo.
 
 echo Revisando app y Worker...
-node --check app.js
+node --check frontend\app.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
-node --check worker.js
+node --check frontend\firebase.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
-node --check oracle-binance-backend\mauex-binance-backend.js
+node --check worker\worker.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check server\server.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check oracle\mauex-binance-backend.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
 echo.

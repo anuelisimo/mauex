@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "cd server && npm install --omit=dev && node server.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

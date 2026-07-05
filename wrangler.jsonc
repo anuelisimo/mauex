@@ -1,0 +1,17 @@
+{
+  "name": "mauex-proxy",
+  "main": "worker/worker.js",
+  "compatibility_date": "2026-06-24",
+  "account_id": "a4a273b7ed1040a90daf7a4b523e23f3",
+  "kv_namespaces": [
+    {
+      "binding": "MAUEX_CACHE",
+      "id": "33fbc5e2ff6d40f9aaaf374edbec3b81"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  }
+}

@@ -9,18 +9,18 @@ echo   MAUex - subir fix Dashboard / Worker
 echo ============================================
 echo.
 echo Este archivo hace solo lo necesario para este arreglo:
-echo   1. Revisa app.js y worker.js
+echo   1. Revisa frontend/app.js y worker/worker.js
 echo   2. Sube frontend a GitHub / Vercel
 echo   3. Sube backend/Worker al repo backend
 echo   4. Copia el Worker actualizado para pegarlo en Cloudflare
 echo.
 
-echo Usando worker.js actual. No copio archivos historicos encima.
+echo Usando worker/worker.js actual. No copio archivos historicos encima.
 
-node --check app.js
+node --check frontend\app.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
-node --check worker.js
+node --check worker\worker.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
 call "%~dp0SUBIR_MAUEX_A_GITHUB.bat"

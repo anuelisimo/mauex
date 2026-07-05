@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set "WORKER_FILE=C:\Users\mauap\Downloads\MauEX\worker.js"
+set "WORKER_FILE=C:\Users\mauap\Downloads\MauEX\worker\worker.js"
 
 echo.
 echo ============================================

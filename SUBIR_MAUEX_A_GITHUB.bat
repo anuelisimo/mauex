@@ -12,11 +12,27 @@ git status
 echo.
 
 echo Preparando archivos del frontend...
-git add index.html
-if exist styles.css git add styles.css
-if exist firebase.js git add firebase.js
-if exist app.js git add app.js
+if exist frontend\index.html git add frontend\index.html
+if exist frontend\styles.css git add frontend\styles.css
+if exist frontend\firebase.js git add frontend\firebase.js
+if exist frontend\app.js git add frontend\app.js
+if exist vercel.json git add vercel.json
+if exist wrangler.jsonc git add wrangler.jsonc
+if exist firebase.json git add firebase.json
+if exist firestore.rules git add firestore.rules
+if exist package.json git add package.json
+if exist railway.toml git add railway.toml
+if exist worker\worker.js git add worker\worker.js
+if exist server\server.js git add server\server.js
+if exist server\package.json git add server\package.json
+if exist server\railway.toml git add server\railway.toml
+if exist oracle\mauex-binance-backend.js git add oracle\mauex-binance-backend.js
+if exist oracle\instalar-en-oracle.sh git add oracle\instalar-en-oracle.sh
+if exist .github\workflows\deploy-worker.yml git add .github\workflows\deploy-worker.yml
 if exist README_MAUEX_ESTRUCTURA.txt git add README_MAUEX_ESTRUCTURA.txt
+if exist OPERACION_MAUEX_FASE1.md git add OPERACION_MAUEX_FASE1.md
+if exist PROBAR_SALUD_MAUEX.bat git add PROBAR_SALUD_MAUEX.bat
+if exist PROBAR_SALUD_MAUEX.ps1 git add PROBAR_SALUD_MAUEX.ps1
 if exist SUBIR_MAUEX_A_GITHUB.bat git add SUBIR_MAUEX_A_GITHUB.bat
 if exist SUBIR_BACKEND_MAUEX_A_GITHUB.bat git add SUBIR_BACKEND_MAUEX_A_GITHUB.bat
 if exist MAUEX_ACTUALIZAR_TODO.bat git add MAUEX_ACTUALIZAR_TODO.bat
@@ -42,7 +58,7 @@ if exist DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.bat git add DESACTIVAR_BACKFI
 if exist DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.ps1 git add DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.ps1
 if exist ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.bat git add ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.bat
 if exist ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.ps1 git add ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.ps1
-if exist telegram-reader git add telegram-reader
+if exist oracle\telegram-reader git add oracle\telegram-reader
 
 echo Guardando cambios locales...
 git commit -m "Improve signal desk Telegram automation"
@@ -57,7 +73,7 @@ set "STASHED=0"
 git diff --quiet
 if %ERRORLEVEL% NEQ 0 (
   echo Hay cambios locales fuera del frontend. Los guardo temporalmente para poder traer GitHub...
-  git stash push -m "mauex-temp-non-frontend" -- worker.js
+  git stash push -m "mauex-temp-non-frontend" -- worker\worker.js
   if %ERRORLEVEL% EQU 0 set "STASHED=1"
 )
 

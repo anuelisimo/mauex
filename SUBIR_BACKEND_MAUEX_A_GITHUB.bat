@@ -13,8 +13,8 @@ echo.
 echo Repo destino: anuelisimo/mauex-backend
 echo.
 
-if not exist "%SOURCE_DIR%\worker.js" (
-  echo No encontre "%SOURCE_DIR%\worker.js"
+if not exist "%SOURCE_DIR%\worker\worker.js" (
+  echo No encontre "%SOURCE_DIR%\worker\worker.js"
   if not "%MAUEX_AUTO%"=="1" pause
   exit /b 1
 )
@@ -44,12 +44,15 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Copiando Worker y backend Oracle corregidos al repo backend...
-copy /Y "%SOURCE_DIR%\worker.js" "%BACKEND_DIR%\worker.js" >nul
+copy /Y "%SOURCE_DIR%\worker\worker.js" "%BACKEND_DIR%\worker.js" >nul
+copy /Y "%SOURCE_DIR%\server\server.js" "%BACKEND_DIR%\server.js" >nul
+copy /Y "%SOURCE_DIR%\server\package.json" "%BACKEND_DIR%\package.json" >nul
 if not exist "%BACKEND_DIR%\oracle-binance-backend" mkdir "%BACKEND_DIR%\oracle-binance-backend"
-copy /Y "%SOURCE_DIR%\oracle-binance-backend\mauex-binance-backend.js" "%BACKEND_DIR%\oracle-binance-backend\mauex-binance-backend.js" >nul
-copy /Y "%SOURCE_DIR%\oracle-binance-backend\instalar-en-oracle.sh" "%BACKEND_DIR%\oracle-binance-backend\instalar-en-oracle.sh" >nul
+copy /Y "%SOURCE_DIR%\oracle\mauex-binance-backend.js" "%BACKEND_DIR%\oracle-binance-backend\mauex-binance-backend.js" >nul
+copy /Y "%SOURCE_DIR%\oracle\instalar-en-oracle.sh" "%BACKEND_DIR%\oracle-binance-backend\instalar-en-oracle.sh" >nul
 
 git add worker.js
+git add server.js package.json
 git add oracle-binance-backend
 git diff --cached --quiet
 if %ERRORLEVEL% EQU 0 (
