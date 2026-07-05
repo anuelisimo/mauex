@@ -32,5 +32,7 @@ WORKER_CLOUDFLARE_MAUEX_*.js
 .npm-cache/
 .wrangler/
 node_modules/
+frontend/node_modules/
+frontend/dist/
 scripts/legacy/
 colony/

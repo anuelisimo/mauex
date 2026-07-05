@@ -1,52 +1,6 @@
 // ── Proxy config ──────────────────────────────────────────────────────────
 // Set this to your Cloudflare Worker URL after deploying worker.js
 // Example: 'https://mauex-proxy.tuusuario.workers.dev'
-const PROXY_URL = localStorage.getItem('mauex_proxy') || 'https://mauex-proxy.mauaparo.workers.dev';
-const WORKER_API_TOKEN_KEY = 'mauex_api_token';
-
-function getWorkerApiToken() {
-  return localStorage.getItem(WORKER_API_TOKEN_KEY) || '';
-}
-
-window.workerFetch = function workerFetch(path, options={}) {
-  if (!PROXY_URL) return fetch(path, options);
-  const token = getWorkerApiToken();
-  const headers = new Headers(options.headers || {});
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const url = path.startsWith('http') ? path : `${PROXY_URL}${path.startsWith('/') ? path : '/' + path}`;
-  return fetch(url, { ...options, headers });
-};
-
-// Wrap fetch to go through proxy for exchange private APIs
-window.proxyFetch = function proxyFetch(url, options={}) {
-  if (!PROXY_URL) {
-    // No proxy configured - try direct (will fail for private APIs due to CORS)
-    return fetch(url, options);
-  }
-  return window.workerFetch(`/proxy?url=${encodeURIComponent(url)}`, options);
-}
-
-window.publicFetch = async function publicFetch(url, options={}) {
-  let directResult = null;
-  try {
-    const direct = await fetch(url, options);
-    if (direct.ok || !window.proxyFetch) return direct;
-    directResult = direct;
-  } catch(e) {
-    directResult = e;
-  }
-  if (window.proxyFetch) {
-    try {
-      return await window.proxyFetch(url, options);
-    } catch(e) {
-      if (directResult instanceof Response) return directResult;
-      throw e;
-    }
-  }
-  if (directResult instanceof Response) return directResult;
-  throw directResult;
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt  = (n,d=0) => isNaN(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 // Smart price format: adapts decimals based on magnitude

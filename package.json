@@ -2,7 +2,8 @@
   "name": "mauex",
   "private": true,
   "scripts": {
-    "check": "node --check frontend/app.js && node --check frontend/firebase.js && node --check worker/worker.js && node --check server/server.js && node --check oracle/mauex-binance-backend.js",
+    "check": "node --check frontend/proxy.js && node --check frontend/app.js && node --check frontend/firebase.js && node --check worker/worker.js && node --check server/server.js && node --check oracle/mauex-binance-backend.js",
+    "frontend:check": "cd frontend && npm.cmd run check",
     "worker:deploy": "wrangler deploy --config wrangler.jsonc --keep-vars",
     "server:start": "cd server && node server.js"
   }

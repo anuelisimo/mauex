@@ -58,6 +58,13 @@ if exist PROBAR_SALUD_MAUEX.ps1 git add PROBAR_SALUD_MAUEX.ps1
 if exist MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat git add MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat
 if exist MAUEX_FASE2_DIAGNOSTICO_LOCAL.ps1 git add MAUEX_FASE2_DIAGNOSTICO_LOCAL.ps1
 if exist MAUEX_FASE2_ROADMAP.md git add MAUEX_FASE2_ROADMAP.md
+if exist MAUEX_FASE3_FRONTEND_PLAN.md git add MAUEX_FASE3_FRONTEND_PLAN.md
+if exist MAUEX_FASE3_DIAGNOSTICO_FRONTEND.bat git add MAUEX_FASE3_DIAGNOSTICO_FRONTEND.bat
+if exist MAUEX_FASE3_DIAGNOSTICO_FRONTEND.ps1 git add MAUEX_FASE3_DIAGNOSTICO_FRONTEND.ps1
+if exist frontend\package.json git add frontend\package.json
+if exist frontend\vite.config.js git add frontend\vite.config.js
+if exist frontend\proxy.js git add frontend\proxy.js
+if exist frontend\src\README.md git add frontend\src\README.md
 if exist MAUEX_API_KEYS.example.txt git add MAUEX_API_KEYS.example.txt
 if exist GUIA_IBKR_FLEX_MAUEX.txt git add GUIA_IBKR_FLEX_MAUEX.txt
 if exist REVISION_FABEL_MAUEX.md git add REVISION_FABEL_MAUEX.md
