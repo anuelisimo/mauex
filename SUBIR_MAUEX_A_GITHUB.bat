@@ -51,31 +51,18 @@ if exist README_MAUEX_ESTRUCTURA.txt git add README_MAUEX_ESTRUCTURA.txt
 if exist OPERACION_MAUEX_FASE1.md git add OPERACION_MAUEX_FASE1.md
 if exist PROBAR_SALUD_MAUEX.bat git add PROBAR_SALUD_MAUEX.bat
 if exist PROBAR_SALUD_MAUEX.ps1 git add PROBAR_SALUD_MAUEX.ps1
+if exist MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat git add MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat
+if exist MAUEX_FASE2_DIAGNOSTICO_LOCAL.ps1 git add MAUEX_FASE2_DIAGNOSTICO_LOCAL.ps1
+if exist MAUEX_FASE2_ROADMAP.md git add MAUEX_FASE2_ROADMAP.md
 if exist SUBIR_MAUEX_A_GITHUB.bat git add SUBIR_MAUEX_A_GITHUB.bat
-if exist SUBIR_BACKEND_MAUEX_A_GITHUB.bat git add SUBIR_BACKEND_MAUEX_A_GITHUB.bat
+if exist scripts\deploy\SUBIR_BACKEND_MAUEX_A_GITHUB.bat git add scripts\deploy\SUBIR_BACKEND_MAUEX_A_GITHUB.bat
 if exist MAUEX_ACTUALIZAR_TODO.bat git add MAUEX_ACTUALIZAR_TODO.bat
 if exist MAUEX_ACTUALIZAR_TODO_AUTO.bat git add MAUEX_ACTUALIZAR_TODO_AUTO.bat
-if exist MAUEX_SUBIR_FIX_DASH_WORKER.bat git add MAUEX_SUBIR_FIX_DASH_WORKER.bat
-if exist COPIAR_WORKER_CLOUDFLARE.bat git add COPIAR_WORKER_CLOUDFLARE.bat
-if exist INSTALAR_IBKR_ORACLE_MAUEX.bat git add INSTALAR_IBKR_ORACLE_MAUEX.bat
-if exist INSTALAR_IBKR_ORACLE_MAUEX.ps1 git add INSTALAR_IBKR_ORACLE_MAUEX.ps1
-if exist PROBAR_IBKR_MAUEX.bat git add PROBAR_IBKR_MAUEX.bat
-if exist PROBAR_IBKR_MAUEX.ps1 git add PROBAR_IBKR_MAUEX.ps1
-if exist PROBAR_CONEXIONES_DASH_MAUEX.bat git add PROBAR_CONEXIONES_DASH_MAUEX.bat
-if exist PROBAR_CONEXIONES_DASH_MAUEX.ps1 git add PROBAR_CONEXIONES_DASH_MAUEX.ps1
-if exist CONFIGURAR_TELEGRAM_MAUEX.bat git add CONFIGURAR_TELEGRAM_MAUEX.bat
-if exist INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.bat git add INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.bat
-if exist INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add INSTALAR_TELEGRAM_READER_ORACLE_MAUEX.ps1
-if exist PROBAR_TELEGRAM_READER_ORACLE_MAUEX.bat git add PROBAR_TELEGRAM_READER_ORACLE_MAUEX.bat
-if exist PROBAR_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add PROBAR_TELEGRAM_READER_ORACLE_MAUEX.ps1
-if exist REINICIAR_TELEGRAM_READER_ORACLE_MAUEX.bat git add REINICIAR_TELEGRAM_READER_ORACLE_MAUEX.bat
-if exist REINICIAR_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add REINICIAR_TELEGRAM_READER_ORACLE_MAUEX.ps1
-if exist PROBAR_WORKER_TELEGRAM_MAUEX.bat git add PROBAR_WORKER_TELEGRAM_MAUEX.bat
-if exist PROBAR_WORKER_TELEGRAM_MAUEX.ps1 git add PROBAR_WORKER_TELEGRAM_MAUEX.ps1
-if exist DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.bat git add DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.bat
-if exist DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.ps1 git add DESACTIVAR_BACKFILL_TELEGRAM_READER_MAUEX.ps1
-if exist ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.bat git add ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.bat
-if exist ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.ps1 git add ACTUALIZAR_CANALES_TELEGRAM_READER_MAUEX.ps1
+if exist scripts\deploy\COPIAR_WORKER_CLOUDFLARE.bat git add scripts\deploy\COPIAR_WORKER_CLOUDFLARE.bat
+if exist scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.bat git add scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.bat
+if exist scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.ps1 git add scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.ps1
+if exist scripts\diagnostics\PROBAR_IBKR_MAUEX.bat git add scripts\diagnostics\PROBAR_IBKR_MAUEX.bat
+if exist scripts\diagnostics\PROBAR_IBKR_MAUEX.ps1 git add scripts\diagnostics\PROBAR_IBKR_MAUEX.ps1
 if exist oracle\telegram-reader git add oracle\telegram-reader
 if exist scripts git add -A scripts
 if exist .github git add -A .github
@@ -84,7 +71,7 @@ echo Registrando mudanzas de Fase 1...
 git add -A -- app.js firebase.js index.html styles.css worker.js telegram-reader
 git add -A -- frontend worker server oracle
 git add -A -- .gitignore package.json railway.toml vercel.json firebase.json firestore.rules wrangler.jsonc wrangler.mauex.restore.jsonc
-git add -A -- README_MAUEX_ESTRUCTURA.txt OPERACION_MAUEX_FASE1.md scripts\README.md
+git add -A -- README_MAUEX_ESTRUCTURA.txt OPERACION_MAUEX_FASE1.md MAUEX_FASE2_ROADMAP.md scripts\README.md
 
 echo Guardando cambios locales...
 git diff --cached --quiet

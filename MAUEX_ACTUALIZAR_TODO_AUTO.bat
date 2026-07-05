@@ -47,7 +47,7 @@ echo.
 echo ============================================
 echo   Paso 2/5 - Backend repo GitHub
 echo ============================================
-call "%~dp0SUBIR_BACKEND_MAUEX_A_GITHUB.bat"
+call "%~dp0scripts\deploy\SUBIR_BACKEND_MAUEX_A_GITHUB.bat"
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
 echo.
@@ -56,21 +56,21 @@ echo   Paso 3/5 - Worker Cloudflare
 echo ============================================
 echo Para evitar que Wrangler bloquee la actualizacion, no intento login automatico.
 echo Copio el Worker al portapapeles para que lo pegues en Cloudflare.
-call "%~dp0COPIAR_WORKER_CLOUDFLARE.bat"
+call "%~dp0scripts\deploy\COPIAR_WORKER_CLOUDFLARE.bat"
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
 echo.
 echo ============================================
 echo   Paso 4/5 - Oracle / IBKR
 echo ============================================
-call "%~dp0INSTALAR_IBKR_ORACLE_MAUEX.bat"
+call "%~dp0scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.bat"
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
 echo.
 echo ============================================
 echo   Paso 5/5 - Prueba final
 echo ============================================
-call "%~dp0PROBAR_IBKR_MAUEX.bat"
+call "%~dp0scripts\diagnostics\PROBAR_IBKR_MAUEX.bat"
 
 echo.
 echo ============================================

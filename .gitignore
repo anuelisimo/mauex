@@ -11,11 +11,22 @@ MAUEX_SECRET_KEYS.txt
 MAUEX_API_KEYS.txt
 !MAUEX_API_KEYS.example.txt
 BACKUP_VARIABLES_CLOUDFLARE_MAUEX_SECRET*.txt
+BACKUP_VARIABLES_CLOUDFLARE_MAUEX.txt
+RESTAURAR_VARIABLES_CLOUDFLARE_MAUEX.txt
 .mauex_restore_secrets*.json
 mauex-*-firebase-adminsdk-*.json
 *-firebase-adminsdk-*.json
 *.session
 seen.json
+MAUEX_FASE2_DIAGNOSTICO_LOCAL.txt
+MauEX_para_Fabel_*/
+*.zip
+indexBackUp.html
+index_FINAL_*.html
+index_STABLE_*.html
+worker_BACKUP_*.js
+worker_FINAL_*.js
+WORKER_CLOUDFLARE_MAUEX_*.js
 
 # Local tool/cache folders.
 .npm-cache/

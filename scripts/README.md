@@ -3,9 +3,9 @@
 Carpetas:
 
 - `legacy/`: scripts viejos de arreglos puntuales. Se conservan como referencia.
-- `setup/`: reservado para instaladores y preparacion inicial.
-- `deploy/`: reservado para despliegues automatizados.
-- `diagnostics/`: reservado para pruebas y diagnosticos.
+- `setup/`: instaladores y preparacion inicial.
+- `deploy/`: despliegues, Worker, GitHub y Cloudflare.
+- `diagnostics/`: pruebas puntuales y diagnosticos especificos.
 
 Los accesos principales siguen en la raiz para que sean faciles de ejecutar:
 
@@ -13,3 +13,4 @@ Los accesos principales siguen en la raiz para que sean faciles de ejecutar:
 - `MAUEX_ACTUALIZAR_TODO.bat`
 - `SUBIR_MAUEX_A_GITHUB.bat`
 - `PROBAR_SALUD_MAUEX.bat`
+- `MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat`

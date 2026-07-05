@@ -7,6 +7,9 @@ Estructura principal:
 - oracle/: backend Oracle y telegram-reader.
 - colony/: investigacion/backtesting.
 - scripts/legacy/: scripts viejos de fixes puntuales, conservados solo como referencia.
+- scripts/deploy/: scripts de despliegue, Worker, Cloudflare y GitHub.
+- scripts/setup/: instaladores y configuracion inicial.
+- scripts/diagnostics/: pruebas especificas y diagnosticos.
 - firestore.rules: reglas de Firestore.
 
 Archivos que usa Vercel para la app:
@@ -19,6 +22,13 @@ Archivos que usa Vercel para la app:
 Para subir cambios del frontend:
 1. Ejecutar SUBIR_MAUEX_A_GITHUB.bat
 2. Esperar que Vercel haga el deploy automatico.
+
+Scripts oficiales en la raiz:
+- MAUEX_ACTUALIZAR_TODO.bat: panel principal.
+- SUBIR_MAUEX_A_GITHUB.bat: publicar cambios.
+- PROBAR_SALUD_MAUEX.bat: prueba online de salud.
+- MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat: diagnostico local sin Cloudflare.
+- ABRIR_MAUEX_LOCAL.bat: abrir la app en local.
 
 Para actualizar Cloudflare Worker:
 1. Preferido: GitHub Actions con .github/workflows/deploy-worker.yml.

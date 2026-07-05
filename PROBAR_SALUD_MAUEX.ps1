@@ -60,7 +60,8 @@ const checks = payload.checks || [];
 
 async function runCheck(check) {
   const url = check.url + (check.url.includes('?') ? '&' : '?') + 't=' + Date.now();
-  const headers = check.auth ? { Authorization: 'Bearer ' + token } : {};
+  const headers = { 'User-Agent': 'MAUex-health-check/1.0' };
+  if (check.auth) headers.Authorization = 'Bearer ' + token;
   try {
     const response = await fetch(url, { headers });
     const text = await response.text();
@@ -73,22 +74,41 @@ async function runCheck(check) {
       ? Object.keys(json).slice(0, 8).join(', ')
       : text.slice(0, 120).replace(/\s+/g, ' ');
     console.log(`${ok ? 'OK' : 'ERROR'} ${check.name}: HTTP ${response.status} ${preview}`);
-    return ok;
+    return { ok, status: response.status };
   } catch (error) {
     console.log(`ERROR ${check.name}: ${error.message}`);
-    return false;
+    return { ok: false, status: 0 };
   }
 }
 
 (async () => {
   let allOk = true;
+  let sawCloudflare429 = false;
+  let skipWorker = false;
   for (const check of checks) {
-    const ok = await runCheck(check);
-    if (!ok) allOk = false;
+    const isWorkerCheck = check.name.startsWith('Worker ');
+    if (skipWorker && isWorkerCheck) {
+      console.log(`SKIP ${check.name}: Cloudflare ya devolvio 429; no hago mas pedidos al Worker ahora`);
+      continue;
+    }
+    const result = await runCheck(check);
+    if (!result.ok) allOk = false;
+    if (isWorkerCheck && result.status === 429) {
+      sawCloudflare429 = true;
+      skipWorker = true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 800));
   }
-  process.exit(allOk ? 0 : 1);
+  process.exit(allOk ? 0 : (sawCloudflare429 ? 2 : 1));
 })();
 '@
+
+if ($LASTEXITCODE -eq 2) {
+  Write-Host ""
+  Write-Host "Diagnostico no concluyente: Cloudflare esta devolviendo HTTP 429 antes de entrar al Worker."
+  Write-Host "No es una prueba de que MAUex este roto. Espera unos minutos y volve a correr este BAT."
+  exit 2
+}
 
 if ($LASTEXITCODE -ne 0) {
   throw "Alguna prueba de salud fallo."
