@@ -1,0 +1,25 @@
+MAUex API keys - plantilla
+
+Este archivo es una plantilla. No pongas secretos reales aca.
+Copia este formato en MAUEX_API_KEYS.txt y completa ese archivo local.
+MAUEX_API_KEYS.txt esta ignorado por Git.
+
+MAUEX_API_TOKEN=
+ALLOWED_ORIGIN=https://mauex.vercel.app
+
+BYBIT_KEY=
+BYBIT_SECRET=
+
+OKX_KEY=
+OKX_SECRET=
+OKX_PASSPHRASE=
+
+MEXC_KEY=
+MEXC_SECRET=
+
+BINANCE_KEY=
+BINANCE_SECRET=
+
+KUCOIN_KEY=
+KUCOIN_SECRET=
+KUCOIN_PASSPHRASE=

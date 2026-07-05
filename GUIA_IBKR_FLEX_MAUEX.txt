@@ -1,0 +1,56 @@
+MAUex - IBKR Flex Web Service
+
+Objetivo:
+Que MAUex lea una vez por dia el capital de IBKR para completar el Dashboard, sin guardar tu usuario ni password de IBKR en Oracle.
+
+Que necesitas crear en IBKR:
+
+1. Activar Flex Web Service
+   En Client Portal / Portal de IBKR:
+   Performance & Reports > Flex Queries > Flex Web Service Configuration.
+
+   Activa Flex Web Service.
+   Genera un Current Token.
+   Si queres restringirlo por IP, usa la IP publica de Oracle:
+   146.235.243.105
+
+2. Crear una Activity Flex Query
+   Tiene que ser formato XML.
+
+   Nombre sugerido:
+   MAUex Dashboard Balance
+
+   Secciones recomendadas:
+   - Account Information
+   - Net Asset Value
+   - Statement of Funds
+   - Margin Summary
+   - Cash Report
+   - Open Positions
+
+   Si no existe Margin Summary, no pasa nada.
+
+   Cuando termines, copia el Query ID.
+
+3. Ejecutar el archivo:
+   INSTALAR_IBKR_FLEX_ORACLE_MAUEX.bat
+
+   Te va a pedir:
+   - IP de Oracle: Enter
+   - Private key de Oracle: C:\Users\mauap\.ssh\mauex_oracle
+   - Current Token de IBKR Flex
+   - Query ID
+   - Horas de cache: Enter
+
+4. Verificacion
+   El BAT prueba:
+   - /health
+   - /ibkr-flex-balance?live=1
+   - /ibkr-balance
+
+   Si /ibkr-balance devuelve exchange IBKR con total/free/margin/pnl, MAUex ya puede tomarlo en el Dashboard.
+
+Notas:
+- Flex Web Service no es tiempo real. Para MAUex alcanza porque solo queremos capital diario de IBKR.
+- No se importan posiciones ni ordenes de IBKR. Eso sigue cargandose manualmente.
+- Si el token vence, hay que generar uno nuevo en IBKR y volver a ejecutar el BAT.
