@@ -284,6 +284,67 @@ window.syncApiModalStatus = () => {
   }
 };
 
+function operationalStatusEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
+
+function operationalStatusItem(title, state, detail) {
+  return `
+    <div class="ops-status-item ${operationalStatusEscape(state)}">
+      <div class="ops-status-top">
+        <span class="ops-dot"></span>
+        <span class="ops-status-title">${operationalStatusEscape(title)}</span>
+      </div>
+      <div class="ops-status-detail">${operationalStatusEscape(detail)}</div>
+    </div>`;
+}
+
+window.renderOperationalStatus = () => {
+  const grid = document.getElementById('operationalStatusGrid');
+  if (!grid) return;
+  const user = window._getCU?.();
+  const workerUrl = localStorage.getItem('mauex_proxy') || PROXY_URL || '';
+  const workerToken = getWorkerApiToken();
+  const telegramSecret = localStorage.getItem(SIGNAL_TELEGRAM_SECRET_KEY) || '';
+  const exchangeKeys = ['binance','bybit','okx','mexc','kucoin']
+    .filter(ex => window.G?._hasExchangeKey?.(ex));
+  const hasMaster = !!_masterPass;
+  const lastProbe = window._lastWorkerProbe || null;
+
+  const workerState = lastProbe?.status === 200 ? 'ok'
+    : lastProbe?.status === 429 ? 'warn'
+    : workerUrl && workerToken ? 'ok'
+    : workerUrl ? 'warn'
+    : 'bad';
+  const workerDetail = lastProbe?.status === 429
+    ? 'Cloudflare devolvio 429. La config local existe, falta validar online.'
+    : lastProbe?.ok
+    ? 'Worker respondio OK en la ultima prueba.'
+    : workerUrl && workerToken
+    ? 'URL y API token guardados localmente.'
+    : workerUrl
+    ? 'URL guardada, falta MAUEX_API_TOKEN.'
+    : 'Falta configurar la URL del Worker.';
+
+  const items = [
+    operationalStatusItem('Sesion', user?.uid ? 'ok' : 'bad', user?.email || user?.uid ? 'Firebase conectado.' : 'No hay usuario activo.'),
+    operationalStatusItem('Worker', workerState, workerDetail),
+    operationalStatusItem('API token', workerToken ? 'ok' : 'bad', workerToken ? 'MAUEX_API_TOKEN guardado en este navegador.' : 'Falta pegar el token del Worker.'),
+    operationalStatusItem('Master pass', hasMaster ? 'ok' : 'warn', hasMaster ? 'Activa solo en esta sesion.' : 'Necesaria para abrir keys de exchanges.'),
+    operationalStatusItem('Exchange keys', exchangeKeys.length ? 'ok' : 'warn', exchangeKeys.length ? `${exchangeKeys.length} exchange(s) con key guardada.` : 'No hay keys de exchange cargadas.'),
+    operationalStatusItem('Telegram', telegramSecret ? 'ok' : 'warn', telegramSecret ? 'Secreto local configurado para Signal Desk.' : 'Opcional: falta secreto de Telegram inbox.')
+  ];
+  grid.innerHTML = items.join('');
+  const hint = document.getElementById('operationalStatusHint');
+  if (hint) {
+    hint.textContent = lastProbe?.status === 429
+      ? 'Cloudflare esta bloqueando la prueba online. Podes seguir usando el diagnostico local y reintentar mas tarde.'
+      : 'Este estado es local. Para validar Cloudflare, usa Probar Worker cuando baje el 429.';
+  }
+};
+
 window.showPage = page => {
   // Update bottom nav active state
   document.querySelectorAll('.bnav-btn').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
@@ -314,7 +375,7 @@ window.showPage = page => {
     setTimeout(() => window.syncTelegramSignals?.(true), 250);
   }
   markNavAlertsSeen(page);
-  if (page === 'settings') { loadProxyUrlField(); }
+  if (page === 'settings') { loadProxyUrlField(); renderOperationalStatus(); }
 
   // Sync orders when entering orders page
   if (page === 'orders' && _masterPass && window.G?._hasExchangeKeys?.()) {
@@ -10749,6 +10810,59 @@ function loadProxyUrlField() {
   const tokenEl = document.getElementById('proxyToken');
   if(tokenEl) tokenEl.value = getWorkerApiToken();
 }
+
+window.saveProxyUrl = () => {
+  const url = document.getElementById('proxyUrl')?.value?.trim();
+  const token = document.getElementById('proxyToken')?.value?.trim() || '';
+  const st = document.getElementById('proxyStatus');
+  if (url) {
+    localStorage.setItem('mauex_proxy', url);
+    if (token) localStorage.setItem(WORKER_API_TOKEN_KEY, token);
+    else localStorage.removeItem(WORKER_API_TOKEN_KEY);
+    if (st) {
+      st.textContent = 'Guardado. Recarga la pagina para aplicar la URL si la cambiaste.';
+      st.style.display = 'block';
+      st.style.color = 'var(--accent)';
+    }
+  } else {
+    localStorage.removeItem('mauex_proxy');
+    localStorage.removeItem(WORKER_API_TOKEN_KEY);
+    if (st) {
+      st.textContent = 'Proxy eliminado.';
+      st.style.display = 'block';
+      st.style.color = 'var(--t2)';
+    }
+  }
+  renderOperationalStatus?.();
+};
+
+window.testProxyUrl = async () => {
+  const url = document.getElementById('proxyUrl')?.value?.trim() || PROXY_URL;
+  const st = document.getElementById('proxyStatus');
+  if (!url) {
+    if (st) { st.textContent = 'Ingresa una URL primero.'; st.style.display = 'block'; }
+    return;
+  }
+  if (st) { st.textContent = 'Probando Worker...'; st.style.display = 'block'; st.style.color = 'var(--t2)'; }
+  try {
+    const r = await fetch(`${url}/health?t=${Date.now()}`, { cache:'no-store', headers:{ Accept:'application/json' } });
+    const text = await r.text();
+    let d = {};
+    try { d = JSON.parse(text); } catch(e) {}
+    window._lastWorkerProbe = { ok:r.ok, status:r.status, at:Date.now() };
+    if (d.status === 'ok') {
+      if (st) { st.textContent = 'Worker funcionando correctamente.'; st.style.color = 'var(--accent)'; }
+    } else if (r.status === 429) {
+      if (st) { st.textContent = 'Cloudflare devolvio 429 antes del Worker. Reintenta mas tarde.'; st.style.color = 'var(--amber)'; }
+    } else {
+      if (st) { st.textContent = `Worker respondio HTTP ${r.status}.`; st.style.color = 'var(--amber)'; }
+    }
+  } catch(e) {
+    window._lastWorkerProbe = { ok:false, status:0, at:Date.now(), error:e.message };
+    if (st) { st.textContent = `Error: ${e.message}`; st.style.color = 'var(--red)'; }
+  }
+  renderOperationalStatus?.();
+};
 
 // ── Open trade in AI Analysis with levels drawn ─────────────────────────────
 let _analysisTradeData = null; // trade to draw on charts

@@ -93,6 +93,20 @@
 .status-dot.red{background:var(--red);}
 .status-dot.amber{background:var(--amber);}
 .status-sep{color:var(--border2);}
+.ops-status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+.ops-status-item{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:10px 12px;min-height:62px;}
+.ops-status-item.ok{border-color:rgba(0,196,122,.35);}
+.ops-status-item.warn{border-color:rgba(240,160,48,.35);}
+.ops-status-item.bad{border-color:rgba(240,61,61,.35);}
+.ops-status-top{display:flex;align-items:center;gap:7px;margin-bottom:5px;}
+.ops-dot{width:8px;height:8px;border-radius:50%;background:var(--t3);flex-shrink:0;}
+.ops-status-item.ok .ops-dot{background:var(--accent);box-shadow:0 0 8px rgba(0,196,122,.55);}
+.ops-status-item.warn .ops-dot{background:var(--amber);box-shadow:0 0 8px rgba(240,160,48,.45);}
+.ops-status-item.bad .ops-dot{background:var(--red);box-shadow:0 0 8px rgba(240,61,61,.45);}
+.ops-status-title{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--t1);text-transform:uppercase;}
+.ops-status-detail{font-size:11px;color:var(--t2);line-height:1.35;}
+.ops-status-hint{font-size:11px;color:var(--t3);margin-top:10px;line-height:1.5;}
+@media(max-width:768px){.ops-status-grid{grid-template-columns:1fr;}}
 
 /* ── POSITION CARD COMPACT ───────────────────────────────────────────────── */
 .pos-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:14px 16px;margin-bottom:8px;}

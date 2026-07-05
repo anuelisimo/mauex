@@ -643,6 +643,22 @@
         </div>
       </div>
 
+      <!-- Operational status -->
+      <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div class="sec-label">Estado operativo</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:-6px;">Chequeo local de configuracion. La prueba online del Worker se ejecuta solo cuando la pedis.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn sm" onclick="renderOperationalStatus()">Actualizar</button>
+            <button class="btn sm" onclick="testProxyUrl()">Probar Worker</button>
+          </div>
+        </div>
+        <div id="operationalStatusGrid" class="ops-status-grid"></div>
+        <div id="operationalStatusHint" class="ops-status-hint"></div>
+      </div>
+
       <!-- API Keys -->
       <div class="card" style="margin-bottom:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -675,17 +691,19 @@
       <!-- Master password -->
       <div class="card" style="margin-bottom:12px;">
         <div class="sec-label">Contraseña maestra</div>
+        <div style="font-size:11px;color:var(--t3);margin:-6px 0 10px;">Sirve para abrir y re-encriptar las API Keys de exchanges. No es el token del Worker y no queda recordada al cerrar la sesion.</div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
           <div style="flex:1;"><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
           <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
         </div>
         <div id="masterStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
-        <div style="font-size:11px;color:var(--t3);margin-top:6px;">⚠️ Protege tus API Keys. Si la olvidás, regenerá las keys en el exchange.</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px;">Protege tus API Keys. Si la olvidas, regenera las keys en el exchange.</div>
       </div>
 
       <!-- Proxy URL -->
       <div class="card" style="margin-bottom:12px;">
         <div class="sec-label">Proxy URL (Cloudflare Worker)</div>
+        <div style="font-size:11px;color:var(--t3);margin:-6px 0 10px;">El API token autoriza al frontend contra el Worker. Es distinto de la contraseña maestra.</div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
           <div style="flex:1;"><input type="text" id="proxyUrl" placeholder="https://mauex-proxy.tuusuario.workers.dev"></div>
           <button class="btn acc sm" onclick="saveProxyUrl()">Guardar</button>

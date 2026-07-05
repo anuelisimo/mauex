@@ -18,6 +18,8 @@ Primer entregable aplicado:
 
 - `MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat`
 - `MAUEX_FASE2_DIAGNOSTICO_LOCAL.ps1`
+- Estado operativo dentro de Settings.
+- Test de Worker con lectura clara de HTTP 429 de Cloudflare.
 
 ## 2.2 Usabilidad de herramienta personal
 
@@ -53,7 +55,20 @@ Lo que habria que validar con usuarios:
 
 ## 2.5 Proxima tanda recomendada
 
-1. Pantalla de estado dentro de MAUex.
-2. Diagnostico post-deploy online cuando baje el 429.
-3. Limpieza de Settings: separar token API, master password y secretos de Telegram.
-4. Inventario de features actuales para decidir que seria "producto minimo".
+1. Diagnostico post-deploy online cuando baje el 429.
+2. Inventario de features actuales para decidir que seria "producto minimo".
+3. Normalizacion de errores visibles para usuario final.
+4. Primer diseno de onboarding si se evalua producto.
+
+## Estado de cierre
+
+La Fase 2 local queda cerrada cuando:
+
+- `MAUEX_FASE2_DIAGNOSTICO_LOCAL.bat` da OK.
+- Settings muestra Estado operativo.
+- Settings diferencia master password, MAUEX_API_TOKEN y Telegram.
+- El test online del Worker informa 429 como bloqueo de Cloudflare, no como error generico.
+
+Pendiente externo:
+
+- Validar Worker online cuando Cloudflare deje de responder HTTP 429.
