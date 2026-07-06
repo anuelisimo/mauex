@@ -452,12 +452,19 @@ function renderDashboardHealthCard(data) {
 async function renderDashboardHealth() {
   const el = document.getElementById('dashHealth');
   if (!el || !window.workerFetch) return;
+  if (!getWorkerApiToken?.()) {
+    el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--amber);font-family:var(--mono);font-size:11px;">
+      Falta MAUEX_API_TOKEN en Settings para cargar Salud.
+    </div>`;
+    return;
+  }
   renderDashboardHealthLoading();
   try {
     const r = await window.workerFetch(`/ops-health?t=${Date.now()}`, { cache: 'no-store' });
     const text = await r.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch(e) {}
+    if (r.status === 401) throw new Error('MAUEX_API_TOKEN ausente o incorrecto en Settings');
     if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
     renderDashboardHealthCard(data);
   } catch(e) {

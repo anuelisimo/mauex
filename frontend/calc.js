@@ -180,6 +180,7 @@ async function renderCalcSignalChart() {
   const prevType = window._aiType;
   const prevMarketType = aiMarketType;
   try {
+    await window.ensureLightweightCharts?.();
     window._aiSource = info.source;
     window._aiType = info.type;
     if (info.type === 'crypto') aiMarketType = info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures');

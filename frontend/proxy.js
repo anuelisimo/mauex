@@ -7,12 +7,18 @@ function getWorkerApiToken() {
   const token = localStorage.getItem(WORKER_API_TOKEN_KEY)
     || localStorage.getItem('MAUEX_API_TOKEN')
     || localStorage.getItem('mauexApiToken')
+    || document.getElementById('proxyToken')?.value?.trim()
     || '';
   if (token && !localStorage.getItem(WORKER_API_TOKEN_KEY)) {
     localStorage.setItem(WORKER_API_TOKEN_KEY, token);
   }
   return token;
 }
+window.getWorkerApiToken = getWorkerApiToken;
+window.mauexWorkerTokenStatus = () => ({
+  hasToken: !!getWorkerApiToken(),
+  proxyUrl: PROXY_URL || '',
+});
 
 window.workerFetch = function workerFetch(path, options = {}) {
   if (!PROXY_URL) return fetch(path, options);

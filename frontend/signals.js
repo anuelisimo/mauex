@@ -1644,6 +1644,7 @@ async function renderSignalInlineChart(sig, opts={}) {
   const prevType = window._aiType;
   const prevMarketType = aiMarketType;
   try {
+    await window.ensureLightweightCharts?.();
     window._aiSource = info.source;
     window._aiType = info.type;
     if (info.type === 'crypto') aiMarketType = p.dir === 'spot' ? 'spot' : 'futures';

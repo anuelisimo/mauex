@@ -877,6 +877,7 @@ async function loadMainChart(symbol = mainChartState.symbol) {
   clearMainChart();
   el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:12px;">Cargando grafico...</div>`;
   try {
+    await window.ensureLightweightCharts?.();
     const candles = await fetchOHLCV(symbol, mainChartState.tf, mainChartLimit(mainChartState.tf));
     if (!candles.length) throw new Error('Sin datos');
     el.innerHTML = '';
@@ -991,6 +992,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
   });
 
   try {
+    await window.ensureLightweightCharts?.();
     // More candles so EMA200 always renders
     const limit = tfKey==='1M'?48:tfKey==='1W'?150:tfKey==='1D'?300:250;
     const candles = await fetchOHLCV(symbol, interval, limit);

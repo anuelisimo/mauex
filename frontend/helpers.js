@@ -15,6 +15,28 @@ function jsArg(value) {
   })[ch]);
 }
 window.jsArg = jsArg;
+const SCRIPT_LOADS = {};
+function loadScriptOnce(src) {
+  if (document.querySelector(`script[src="${src}"]`)) return Promise.resolve();
+  if (!SCRIPT_LOADS[src]) {
+    SCRIPT_LOADS[src] = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`No pude cargar ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+  return SCRIPT_LOADS[src];
+}
+async function ensureLightweightCharts() {
+  if (window.LightweightCharts?.createChart) return window.LightweightCharts;
+  await loadScriptOnce('https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js');
+  if (!window.LightweightCharts?.createChart) throw new Error('LightweightCharts no esta disponible');
+  return window.LightweightCharts;
+}
+window.ensureLightweightCharts = ensureLightweightCharts;
 // Smart price format: adapts decimals based on magnitude
 const fmtPx = n => {
   if(isNaN(n)||n==null) return '—';
