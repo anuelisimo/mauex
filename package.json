@@ -2,6 +2,7 @@
   "name": "mauex",
   "private": true,
   "scripts": {
+    "build": "node -e \"console.log('MAUex static frontend: Vercel serves frontend/ via vercel.json rewrites')\"",
     "check": "node --check frontend/proxy.js && node --check frontend/helpers.js && node --check frontend/nav.js && node --check frontend/themes.js && node --check frontend/signals.js && node --check frontend/calc.js && node --check frontend/dashboard.js && node --check frontend/watchlist.js && node --check frontend/positions.js && node --check frontend/history.js && node --check frontend/analysis.js && node --check frontend/exchange-keys.js && node --check frontend/orders.js && node --check frontend/init.js && node --check frontend/app.js && node --check frontend/firebase.js && node --check worker/worker.js && node --check server/server.js && node --check oracle/mauex-binance-backend.js",
     "frontend:check": "cd frontend && npm.cmd run check",
     "worker:deploy": "wrangler deploy --config wrangler.jsonc --keep-vars",
