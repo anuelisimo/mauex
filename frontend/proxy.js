@@ -4,7 +4,14 @@ var PROXY_URL = localStorage.getItem('mauex_proxy') || 'https://mauex-proxy.maua
 var WORKER_API_TOKEN_KEY = 'mauex_api_token';
 
 function getWorkerApiToken() {
-  return localStorage.getItem(WORKER_API_TOKEN_KEY) || '';
+  const token = localStorage.getItem(WORKER_API_TOKEN_KEY)
+    || localStorage.getItem('MAUEX_API_TOKEN')
+    || localStorage.getItem('mauexApiToken')
+    || '';
+  if (token && !localStorage.getItem(WORKER_API_TOKEN_KEY)) {
+    localStorage.setItem(WORKER_API_TOKEN_KEY, token);
+  }
+  return token;
 }
 
 window.workerFetch = function workerFetch(path, options = {}) {

@@ -455,7 +455,8 @@ window.syncAllOrders = async () => {
   if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
   try {
     if(PROXY_URL) {
-      const r = await window.workerFetch('/orders');
+      const r = await window.workerFetch(`/orders?live=1&t=${Date.now()}`, { cache:'no-store' });
+      if (!r.ok) throw new Error(`Worker /orders HTTP ${r.status}`);
       const d = await r.json();
       const freshOrders = d.orders || [];
       // Restore grouped orders (remove any that are now individual)

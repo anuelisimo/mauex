@@ -1522,6 +1522,9 @@ async function fetchBalances(env) {
 // ═════════════════════════════════════════════════════════════════════════════
 async function syncAll(env) {
   let balanceData = { balances: {}, totals: { USDT: 0, USDC: 0, total: 0 }, errors: {} };
+  let positions = [];
+  let orders = [];
+  const syncErrors = {};
   try {
     balanceData = await fetchBalancesV2(env);
   } catch(e) {
@@ -1531,15 +1534,34 @@ async function syncAll(env) {
     await logBalanceErrors(env, balanceData.errors, 'syncAll');
   }
 
+  const exchangeSyncs = await Promise.all([
+    syncBinance(env).then(data => ['BINANCE', data]).catch(error => ['BINANCE', { positions: [], orders: [], error: error.message }]),
+    syncBybit(env).then(data => ['BYBIT', data]).catch(error => ['BYBIT', { positions: [], orders: [], error: error.message }]),
+    syncOKX(env).then(data => ['OKX', data]).catch(error => ['OKX', { positions: [], orders: [], error: error.message }]),
+    syncMEXC(env).then(data => ['MEXC', data]).catch(error => ['MEXC', { positions: [], orders: [], error: error.message }]),
+  ]);
+
+  for (const [exchange, data] of exchangeSyncs) {
+    positions.push(...(Array.isArray(data.positions) ? data.positions : []));
+    orders.push(...(Array.isArray(data.orders) ? data.orders : []));
+    if (data.error && data.error !== 'No keys') {
+      syncErrors[exchange] = data.error;
+      await appendErrorLog(env, { exchange, phase: 'syncAll-orders', message: data.error });
+    }
+  }
+
+  const totalPnl = Math.round(positions.reduce((sum, p) => sum + (Number(p.pnl) || 0), 0) * 100) / 100;
+  const marginInUse = Math.round(positions.reduce((sum, p) => sum + (Number(p.margin) || 0), 0) * 100) / 100;
+
   const payload = {
-    positions: [],
-    orders: [],
-    errors: balanceData.errors,
-    totalPnl: 0,
-    marginInUse: 0,
+    positions,
+    orders,
+    errors: { ...balanceData.errors, ...syncErrors },
+    totalPnl,
+    marginInUse,
     lastSync:     new Date().toISOString(),
     cacheSavedAt: null,
-    count: { positions: 0, orders: 0 },
+    count: { positions: positions.length, orders: orders.length },
     balances:     balanceData.balances,
     liquidity:    balanceData.totals,
     totals:       balanceData.totals,
@@ -1757,8 +1779,9 @@ export default {
 
     // ── /summary, /positions, /orders — read from KV ─────────────────────────
     if (['/summary', '/positions', '/orders'].includes(url.pathname)) {
+      const forceLive = url.searchParams.has('live') || url.searchParams.has('t');
       let data = null;
-      if (env.MAUEX_CACHE) {
+      if (!forceLive && env.MAUEX_CACHE) {
         const raw = await env.MAUEX_CACHE.get('summary');
         if (raw) data = JSON.parse(raw);
       }
