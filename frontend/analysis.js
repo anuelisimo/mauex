@@ -970,7 +970,7 @@ async function loadMainChart(symbol = mainChartState.symbol) {
     }
     return chart;
   } catch(e) {
-    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:12px;">No pude cargar el grafico: ${e.message}</div>`;
+    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:12px;">No pude cargar el grafico: ${esc(e.message)}</div>`;
     return null;
   }
 }
@@ -1128,7 +1128,7 @@ async function renderTFCharts(tfKey, symbol, interval) {
 
     return {candles, emaValues};
   } catch(e) {
-    csEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:150px;color:var(--t3);font-family:var(--mono);font-size:11px;">Error: ${e.message}</div>`;
+    csEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:150px;color:var(--t3);font-family:var(--mono);font-size:11px;">Error: ${esc(e.message)}</div>`;
     console.error(tfKey, e);
     return null;
   }
@@ -1250,7 +1250,7 @@ function renderMarketStrip(symbol, md, emaValues={}, mktType='spot') {
   strip.style.display='flex';
   strip.innerHTML=`
     ${typeLabel}
-    <span style="color:var(--t1);font-size:13px;font-weight:600;">${symbol}</span>
+    <span style="color:var(--t1);font-size:13px;font-weight:600;">${esc(symbol)}</span>
     <span style="color:var(--t1);">${md.price?'$'+fmtPx(md.price):'—'}</span>
     ${md.change24h!=null?`<span style="color:${chgColor};">${md.change24h>=0?'+':''}${md.change24h.toFixed(2)}%</span>`:''}
     ${md.high24h?`<span style="color:var(--t3);">H: $${fmtPx(md.high24h)} · L: $${fmtPx(md.low24h)}</span>`:''}

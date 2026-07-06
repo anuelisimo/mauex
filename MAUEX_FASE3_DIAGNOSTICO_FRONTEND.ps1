@@ -71,6 +71,7 @@ Check "carga orders.js antes de app" ($html.IndexOf('orders.js') -ge 0 -and $htm
 Check "carga init.js antes de app" ($html.IndexOf('init.js') -ge 0 -and $html.IndexOf('init.js') -lt $html.IndexOf('app.js'))
 Check "carga app.js" ($html -match 'app\.js')
 Check "mantiene HTML actual" ($html -match '<div id="app"')
+Check "index.html sin estilos inline" (-not ($html -match '\sstyle="'))
 
 Write-Host ""
 Write-Host "Mapa de split"
@@ -94,6 +95,8 @@ Check "proxy.js contiene workerFetch" ($proxy.Contains('window.workerFetch'))
 Check "app.js sin workerFetch propio" (-not $app.Contains('window.workerFetch = function workerFetch'))
 Check "helpers.js contiene toast" ($helpers.Contains('window.toast'))
 Check "helpers.js contiene modales" ($helpers.Contains('window.openModal') -and $helpers.Contains('showOrderExecutedModal'))
+Check "helpers.js contiene esc unico" ($helpers.Contains('window.esc = esc'))
+Check "helpers.js contiene jsArg para onclick" ($helpers.Contains('window.jsArg = jsArg'))
 Check "app.js sin helpers iniciales" (-not $app.Contains('window.toast ='))
 Check "nav.js contiene showPage" ($nav.Contains('window.showPage'))
 Check "nav.js contiene estado operativo" ($nav.Contains('window.renderOperationalStatus'))

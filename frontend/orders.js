@@ -198,12 +198,12 @@ function renderOrders() {
         <div style="display:flex;flex-direction:column;gap:4px;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;"></div>
-            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${o.ticker}</span>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${dashSafe(o.ticker)}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(o)}</span>
             <a href="${getExchangeUrl(o.exchange, o.ticker, o.dir)||'#'}" target="_blank" rel="noopener"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${o.exchange} ↗</a>
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${dashSafe(o.exchange)} ↗</a>
             <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--amber-dim);color:var(--amber);font-family:var(--mono);">PENDIENTE</span>
-            ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${o.traderName}</span>`:''}
+            ${o.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${dashSafe(o.traderName)}</span>`:''}
             ${entryBadge}
             ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
             ${currentPrice?`<span style="font-size:10px;color:${distColor};font-family:var(--mono);">${distToOrder} al entry</span>`:''}

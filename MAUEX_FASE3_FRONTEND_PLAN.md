@@ -71,13 +71,11 @@ Orden recomendado:
 
 ## 3.2 Styles inline
 
-Pendiente. Requiere screenshots antes/despues.
+Hecho para `index.html`.
 
-Prioridad:
-
-1. Mover estilos inline repetidos de cards, botones chicos y labels.
-2. Dejar estilos de layout unico para una segunda pasada.
-3. Comparar visualmente Dashboard, Settings, Signal Desk, Calculadora y Positions.
+- `index.html` quedo sin `style="..."`.
+- Se generaron clases `.ixs-*` en `frontend/styles.css` para conservar paridad visual sin tocar layout.
+- Pendiente visual recomendado: comparar screenshots logueado despues del deploy.
 
 ## 3.3 Higiene XSS
 
@@ -86,8 +84,9 @@ En progreso.
 Hecho:
 
 - `esc()` unico creado en `frontend/helpers.js` y expuesto como `window.esc`.
+- `jsArg()` creado en `frontend/helpers.js` para argumentos de `onclick` generados por templates.
 - `signalEsc`, `operationalStatusEscape`, `dashSafe` y el escape local de `firebase.js` conectados al helper unico.
-- Se mantiene la regla de no cambiar visual ni comportamiento mientras se auditan templates.
+- Tickers, traders, notas, exchanges, mensajes de error y dropdowns principales pasan por `esc()`/`dashSafe()`/`signalEsc()` en las zonas auditadas.
 
 Regla:
 

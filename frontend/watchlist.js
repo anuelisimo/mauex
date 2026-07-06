@@ -1055,11 +1055,11 @@ function renderWatchlist() {
             <input class="watch-select-box" type="checkbox" ${isSelected?'checked':''}
               onclick="event.stopPropagation();" onchange="window.toggleWatchlistSelection('${t.id}', this.checked)">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;"></div>
-            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${dashSafe(t.ticker||'—')}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange,t.ticker,t.dir)||'#'}" target="_blank" rel="noopener"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
-            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${dashSafe(t.exchange)} ↗</a>`:''}
+            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${dashSafe(t.traderName)}</span>`:''}
             ${displaySize?`<span style="font-size:10px;color:var(--blue);font-family:var(--mono);padding:2px 7px;border-radius:4px;background:var(--blue-dim);border:0.5px solid rgba(61,156,240,0.2);">Cap $${fmt(displaySize)}</span>`:''}
             ${entryBadge}
             ${invalidAlert.badges?`<span style="display:inline-flex;gap:4px;">${invalidAlert.badges}</span>`:''}
@@ -1160,7 +1160,7 @@ function renderWatchlist() {
         }).join('')}
       </div>` : ''}
 
-      ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
+      ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${dashSafe(cleanAutoCloseNotes(t.notes))}</div>`:''}
       ${invalidationNotesHtml(t)}
 
       <div style="display:grid;grid-template-columns:2fr repeat(4,1fr);gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">

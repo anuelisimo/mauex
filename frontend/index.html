@@ -110,70 +110,70 @@
   </nav>
 
   <!-- STATUS BAR -->
-  <div class="status-bar" id="statusBar" style="display:none;">
+  <div class="status-bar ixs-1" id="statusBar">
     <div class="status-item">
       <div class="status-dot" id="sbDot"></div>
       <span id="sbPositions">0 posiciones</span>
     </div>
     <div class="status-sep">·</div>
     <div class="status-item">
-      <span id="sbPnl" style="color:var(--accent);">PnL —</span>
+      <span id="sbPnl" class="ixs-2">PnL —</span>
     </div>
     <div class="status-sep">·</div>
     <div class="status-item">
-      <span id="sbOrders" style="color:var(--t3);">0 órdenes</span>
+      <span id="sbOrders" class="ixs-3">0 órdenes</span>
     </div>
     <div class="status-sep">·</div>
     <div class="status-item">
-      <span id="sbRisk" style="color:var(--red);">riesgo —</span>
+      <span id="sbRisk" class="ixs-4">riesgo —</span>
     </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:16px;">
-      <span id="sbBtc" style="color:var(--t2);">BTC —</span>
-      <span id="sbFng" style="color:var(--t3);">F&G —</span>
+    <div class="ixs-5">
+      <span id="sbBtc" class="ixs-6">BTC —</span>
+      <span id="sbFng" class="ixs-3">F&G —</span>
     </div>
   </div>
 
   <div class="page-wrap">
 
     <!-- DASHBOARD -->
-    <div id="dashPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:16px;">
-        <div><div style="font-family:var(--mono);font-size:18px;font-weight:600;">Dashboard</div><div style="font-size:12px;color:var(--t2);margin-top:2px;" id="dashDate"></div></div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+    <div id="dashPage" class="ixs-1">
+      <div class="fxb ixs-7">
+        <div><div class="ixs-8">Dashboard</div><div class="ixs-9" id="dashDate"></div></div>
+        <div class="ixs-10">
           <button class="btn sm" onclick="window.exportDashboardPdf()">Exportar dashboard</button>
           <button class="btn acc sm" onclick="window.showPage('calc')">+ Nuevo trade</button>
         </div>
       </div>
       <!-- Tabs -->
-      <div style="display:flex;gap:2px;margin-bottom:20px;background:var(--bg3);border-radius:var(--r);padding:3px;">
-        <button id="dashTabResumen" onclick="showDashTab('resumen')" style="flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:var(--accent);color:#000;font-weight:600;">Resumen</button>
-        <button id="dashTabHistorial" onclick="showDashTab('historial')" style="flex:1;padding:7px 12px;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;background:none;color:var(--t2);">Historial</button>
+      <div class="ixs-11">
+        <button id="dashTabResumen" onclick="showDashTab('resumen')" class="ixs-12">Resumen</button>
+        <button id="dashTabHistorial" onclick="showDashTab('historial')" class="ixs-13">Historial</button>
       </div>
       <!-- Resumen tab -->
       <div id="dashTabResumenContent">
         <div class="dash-section-title">Capital y exposici&oacute;n</div>
-        <div id="dashLiquidity" style="margin-bottom:20px;display:none;"></div>
+        <div id="dashLiquidity" class="ixs-14"></div>
         <div class="dash-section-title">Performance general</div>
-        <div id="dashProMetrics" class="g4" style="margin-bottom:20px;"></div>
-        <div id="histCharts" style="margin-bottom:20px;"></div>
+        <div id="dashProMetrics" class="g4 ixs-15"></div>
+        <div id="histCharts" class="ixs-15"></div>
         <div class="dash-section-title">Traders y se&ntilde;ales</div>
-        <div id="dashProTables" style="margin-bottom:20px;"></div>
+        <div id="dashProTables" class="ixs-15"></div>
         <div class="dash-section-title">Riesgo e inteligencia</div>
-        <div id="dashIntelligence" style="margin-bottom:20px;"></div>
+        <div id="dashIntelligence" class="ixs-15"></div>
         <div class="dash-section-title">Calidad de ejecuci&oacute;n</div>
-        <div id="dashQuality" style="margin-bottom:20px;"></div>
+        <div id="dashQuality" class="ixs-15"></div>
         <div class="dash-section-title">Distribuci&oacute;n operativa</div>
         <div class="g2">
-          <div class="card"><div class="sec-label">Distribución por activo</div><div style="position:relative;height:180px;"><canvas id="chartAssets"></canvas></div></div>
+          <div class="card"><div class="sec-label">Distribución por activo</div><div class="ixs-16"><canvas id="chartAssets"></canvas></div></div>
           <div class="card"><div class="sec-label">Posiciones activas</div><div id="dashActivePos"></div></div>
         </div>
       </div>
       <!-- Historial tab -->
-      <div id="dashTabHistorialContent" style="display:none;">
-        <div id="dashHistMetrics" class="g4" style="margin-bottom:20px;"></div>
-        <div class="fxb" style="margin-bottom:16px;gap:10px;flex-wrap:wrap;">
-          <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="dashHistStats"></div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div id="dashTabHistorialContent" class="ixs-1">
+        <div id="dashHistMetrics" class="g4 ixs-15"></div>
+        <div class="fxb ixs-17">
+          <div class="ixs-18" id="dashHistStats"></div>
+          <div class="ixs-19">
             <button class="btn acc sm" onclick="window.openDirectTradeModal()">+ Agregar trade</button>
           </div>
         </div>
@@ -183,13 +183,13 @@
     </div>
 
     <!-- SEÑALES -->
-    <div id="signalsPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;gap:12px;align-items:flex-start;">
+    <div id="signalsPage" class="ixs-1">
+      <div class="fxb ixs-20">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Signal Desk</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:4px;">MAUex lee Telegram autom&aacute;ticamente y deja las se&ntilde;ales listas para evaluar.</div>
+          <div class="ixs-8">Signal Desk</div>
+          <div class="ixs-21">MAUex lee Telegram autom&aacute;ticamente y deja las se&ntilde;ales listas para evaluar.</div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+        <div class="ixs-10">
           <button class="btn sm" onclick="syncTelegramSignals()">Sincronizar Telegram</button>
           <button class="btn sm" onclick="clearSignalInbox()">Limpiar descartadas</button>
           <button class="btn sm dan" onclick="clearAllSignalInbox()">Limpiar todas</button>
@@ -204,11 +204,11 @@
     </div>
 
     <!-- CALCULADORA -->
-    <div id="calcPage" style="display:none;">
-      <div style="font-family:var(--mono);font-size:18px;font-weight:600;margin-bottom:20px;">Calculadora de posición</div>
-      <div class="calc-layout" style="display:grid;grid-template-columns:340px 1fr;gap:20px;">
+    <div id="calcPage" class="ixs-1">
+      <div class="ixs-22">Calculadora de posición</div>
+      <div class="calc-layout ixs-23">
         <div>
-          <div class="card-sm" style="margin-bottom:12px;">
+          <div class="card-sm ixs-24">
             <div class="sec-label">Dirección</div>
             <div class="dir-toggle">
               <button class="dir-btn" data-d="long" onclick="setDir('long')">LONG ↑</button>
@@ -216,7 +216,7 @@
               <button class="dir-btn" data-d="spot" onclick="setDir('spot')">SPOT</button>
             </div>
           </div>
-          <div class="card-sm" style="margin-bottom:12px;" id="exchSec">
+          <div class="card-sm ixs-24" id="exchSec">
             <div class="sec-label">Exchange</div>
             <div class="exch-tabs">
               <div class="exch-tab active" data-ex="binance" data-calc-ex="BINANCE" onclick="setEx('binance')"><span>BINANCE</span><small>—</small></div>
@@ -225,61 +225,61 @@
               <div class="exch-tab" data-ex="mexc" data-calc-ex="MEXC" onclick="setEx('mexc')"><span>MEXC</span><small>—</small></div>
               <div class="exch-tab" data-ex="kucoin" data-calc-ex="KUCOIN" onclick="setEx('kucoin')"><span>KUCOIN</span><small>—</small></div>
             </div>
-            <div style="font-size:10px;color:var(--t3);margin-top:6px;font-family:var(--mono);" id="mmrLabel">Binance · MMR 0.5%</div>
+            <div class="ixs-25" id="mmrLabel">Binance · MMR 0.5%</div>
           </div>
-          <div class="card-sm" style="margin-bottom:12px;" id="levSec">
+          <div class="card-sm ixs-24" id="levSec">
             <div class="sec-label">Apalancamiento</div>
             <div class="lev-grid" id="levGrid"></div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:10px;color:var(--t3);font-family:var(--mono);white-space:nowrap;">Custom:</span>
-              <input type="number" id="levCustom" placeholder="ej: 1.5" min="1" max="125" step="0.1" style="height:30px;padding:4px 8px;font-size:11px;" oninput="setCustomLev(this.value)">
+            <div class="ixs-26">
+              <span class="ixs-27">Custom:</span>
+              <input type="number" id="levCustom" placeholder="ej: 1.5" min="1" max="125" step="0.1" class="ixs-28" oninput="setCustomLev(this.value)">
             </div>
           </div>
-          <div class="card-sm" style="margin-bottom:12px;">
+          <div class="card-sm ixs-24">
             <div class="sec-label">Ticker</div>
-            <div style="position:relative;">
+            <div class="ixs-29">
               <input type="text" id="cTicker" placeholder="BTC, ETH, AAPL..."
-                style="text-transform:uppercase;"
+                class="ixs-30"
                 oninput="handleCalcTickerInput(this.value)"
                 onblur="setTimeout(()=>{const d=document.getElementById('calcTickerDD');if(d)d.style.display='none';},200)">
-              <div id="calcTickerDD" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);z-index:60;max-height:280px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:2px;"></div>
+              <div id="calcTickerDD" class="ixs-31"></div>
             </div>
-            <div id="calcTickerSourceBadge" style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:6px;">Fuente: Auto</div>
+            <div id="calcTickerSourceBadge" class="ixs-32">Fuente: Auto</div>
           </div>
-          <div class="card-sm" style="margin-bottom:12px;">
+          <div class="card-sm ixs-24">
             <div class="sec-label">Niveles</div>
-            <div class="g2" style="gap:8px;margin-bottom:10px;">
+            <div class="g2 ixs-33">
               <div><label class="lbl">Entry</label><input type="number" id="cEntry" placeholder="Entry" oninput="compute()"></div>
               <div><label class="lbl">Stop Loss</label><input type="number" id="cSL" placeholder="Stop Loss" oninput="compute()"></div>
               <div><label class="lbl">Riesgo USD</label><input type="number" id="cRisk" value="200" oninput="compute()"></div>
-              <div><label class="lbl">Tamaño USD <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
+              <div><label class="lbl">Tamaño USD <span class="ixs-34">opcional</span></label><input type="number" id="cSize" placeholder="ej: 1496" oninput="compute()"></div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 56px;gap:6px;align-items:end;">
-              <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Take Profits <span style="color:var(--t3);font-size:9px;">precio · % a cerrar</span></label>
+            <div class="ixs-35">
+              <label class="lbl ixs-36">Take Profits <span class="ixs-34">precio · % a cerrar</span></label>
               <input type="number" id="cTP1" placeholder="TP1 precio" oninput="handleCalcTpPriceInput()">
-              <input type="number" id="cTP1pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
+              <input type="number" id="cTP1pct" placeholder="%" oninput="handleCalcTpPercentInput()" class="ixs-37">
               <input type="number" id="cTP2" placeholder="TP2 precio" oninput="handleCalcTpPriceInput()">
-              <input type="number" id="cTP2pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
+              <input type="number" id="cTP2pct" placeholder="%" oninput="handleCalcTpPercentInput()" class="ixs-37">
               <input type="number" id="cTP3" placeholder="TP3 precio" oninput="handleCalcTpPriceInput()">
-              <input type="number" id="cTP3pct" placeholder="%" oninput="handleCalcTpPercentInput()" style="text-align:center;">
+              <input type="number" id="cTP3pct" placeholder="%" oninput="handleCalcTpPercentInput()" class="ixs-37">
             </div>
-            <div id="calcSignalTargetsPanel" class="calc-signal-targets-panel" style="display:none;"></div>
-            <div style="display:grid;grid-template-columns:1fr 116px;gap:6px;margin-top:10px;align-items:end;">
-              <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
+            <div id="calcSignalTargetsPanel" class="calc-signal-targets-panel ixs-1"></div>
+            <div class="ixs-38">
+              <label class="lbl ixs-36">Invalidacion <span class="ixs-34">opcional</span></label>
               <input type="number" id="cInv1" placeholder="precio invalida" oninput="compute()">
               <select id="cInv1Side" onchange="compute()"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
               <input type="number" id="cInv2" placeholder="precio invalida 2" oninput="compute()">
               <select id="cInv2Side" onchange="compute()"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
-              <input type="text" id="cInvNote" placeholder="nota breve de invalidacion" style="grid-column:1/-1;">
+              <input type="text" id="cInvNote" placeholder="nota breve de invalidacion" class="ixs-39">
             </div>
           </div>
-          <div class="card-sm" style="margin-bottom:12px;">
+          <div class="card-sm ixs-24">
             <div class="sec-label">Trader</div>
             <select id="cTrader" onchange="compute()"><option value="">— Sin trader —</option></select>
           </div>
-          <div class="card-sm" style="margin-bottom:12px;" id="riskSuggestionPanel">
+          <div class="card-sm ixs-24" id="riskSuggestionPanel">
           </div>
-          <div class="card-sm" style="margin-bottom:12px;">
+          <div class="card-sm ixs-24">
             <div class="sec-label">Notas</div>
             <textarea id="cNotes" placeholder="Contexto del setup..."></textarea>
           </div>
@@ -287,15 +287,15 @@
         <div>
           <div class="alert-box alert-danger" id="calcAlert1"></div>
           <div class="alert-box alert-warn" id="calcAlert2"></div>
-          <div class="g4" id="calcMetrics" style="margin-bottom:16px;"></div>
-          <div class="card-sm" id="spotNote" style="display:none;margin-bottom:12px;"><div style="font-size:11px;color:var(--blue);font-family:var(--mono);">Spot: sin liquidación.</div></div>
-          <div class="card-sm" id="calcLevelsCard" style="margin-bottom:12px;"><div class="sec-label" style="margin-bottom:8px;">Niveles y PnL</div><div id="calcLevels"></div></div>
-          <div class="card-sm" id="calcPriceMapCard" style="margin-bottom:12px;"><div class="sec-label" style="margin-bottom:8px;">Mapa de precios</div><div class="price-bar-wrap" id="calcBar"></div></div>
+          <div class="g4 ixs-7" id="calcMetrics"></div>
+          <div class="card-sm ixs-40" id="spotNote"><div class="ixs-41">Spot: sin liquidación.</div></div>
+          <div class="card-sm ixs-24" id="calcLevelsCard"><div class="sec-label ixs-42">Niveles y PnL</div><div id="calcLevels"></div></div>
+          <div class="card-sm ixs-24" id="calcPriceMapCard"><div class="sec-label ixs-42">Mapa de precios</div><div class="price-bar-wrap" id="calcBar"></div></div>
           <div id="mobileLevSlot" class="mobile-lev-slot"></div>
           <div class="card-sm calc-chart-card">
             <div class="calc-chart-head">
               <div>
-                <div class="sec-label" style="margin-bottom:3px;">Validacion en grafico</div>
+                <div class="sec-label ixs-43">Validacion en grafico</div>
                 <div id="calcChartStatus" class="calc-chart-status">Carga ticker y entry para ver la señal.</div>
               </div>
               <div class="calc-chart-tools">
@@ -314,16 +314,16 @@
         </div>
       </div>
       <div class="calc-actions-final">
-        <button class="btn" style="background:var(--amber);color:#000;border-color:var(--amber);font-weight:700;" onclick="saveTrade('pending')">⚡ Enviar a Órdenes</button>
+        <button class="btn ixs-44" onclick="saveTrade('pending')">⚡ Enviar a Órdenes</button>
         <button class="btn acc" onclick="saveTrade('watchlist')">📋 Agregar al Watchlist</button>
-        <button class="btn" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:700;" onclick="saveTrade('active')">🟢 Abrir Posición directa</button>
+        <button class="btn ixs-45" onclick="saveTrade('active')">🟢 Abrir Posición directa</button>
       </div>
     </div>
 
     <!-- WATCHLIST -->
-    <div id="watchPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Watchlist</div>
+    <div id="watchPage" class="ixs-1">
+      <div class="fxb ixs-15">
+        <div class="ixs-8">Watchlist</div>
         <div class="watch-bulk-actions">
           <button class="btn sm" id="watchSelectAllBtn" onclick="window.toggleAllWatchlistSelection()">Seleccionar todo</button>
           <button class="btn sm dan" id="watchBulkDeleteBtn" onclick="window.deleteSelectedWatchlist()" title="Eliminar seleccionadas">🗑</button>
@@ -336,13 +336,13 @@
     </div>
 
     <!-- ÓRDENES -->
-    <div id="ordersPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
+    <div id="ordersPage" class="ixs-1">
+      <div class="fxb ixs-15">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Órdenes abiertas</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
+          <div class="ixs-8">Órdenes abiertas</div>
+          <div class="ixs-9">Limit orders pendientes — seleccioná varias para agrupar como trade</div>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div class="ixs-46">
           <button class="btn acc sm" id="syncOrdersBtn" onclick="window.syncAllOrders()">↻ Sync órdenes</button>
         </div>
       </div>
@@ -350,12 +350,12 @@
     </div>
 
     <!-- POSICIONES -->
-    <div id="posPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Posiciones abiertas</div>
-        <div class="fx" style="gap:8px;flex-wrap:wrap;">
-          <span style="font-size:10px;color:var(--t3);font-family:var(--mono);" id="priceTime"></span>
-          <button class="btn sm" id="zombieToggleBtn" style="display:none;" onclick="window._showZombies=!window._showZombies;renderPositions();">Ver zombies</button>
+    <div id="posPage" class="ixs-1">
+      <div class="fxb ixs-15">
+        <div class="ixs-8">Posiciones abiertas</div>
+        <div class="fx ixs-47">
+          <span class="ixs-48" id="priceTime"></span>
+          <button class="btn sm ixs-1" id="zombieToggleBtn" onclick="window._showZombies=!window._showZombies;renderPositions();">Ver zombies</button>
           <button class="btn acc sm" onclick="window.openDirectPositionModal()">+ Posición</button>
         </div>
       </div>
@@ -363,13 +363,13 @@
     </div>
 
     <!-- MAPA -->
-    <div id="mapPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:16px;">
+    <div id="mapPage" class="ixs-1">
+      <div class="fxb ixs-7">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Mapa</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Vista agrupada por ticker</div>
+          <div class="ixs-8">Mapa</div>
+          <div class="ixs-9">Vista agrupada por ticker</div>
         </div>
-        <div class="fx" style="gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <div class="fx ixs-49">
           <label class="map-filter"><input type="checkbox" id="mapIncPositions" checked onchange="renderMap()"> Posiciones</label>
           <label class="map-filter"><input type="checkbox" id="mapIncOrders" checked onchange="renderMap()"> Órdenes</label>
           <label class="map-filter"><input type="checkbox" id="mapIncWatch" checked onchange="renderMap()"> Watchlist</label>
@@ -379,63 +379,63 @@
     </div>
 
     <!-- HISTORIAL -->
-    <div id="histPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Historial</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
-          <div style="font-size:11px;color:var(--t2);font-family:var(--mono);" id="histStats"></div>
+    <div id="histPage" class="ixs-1">
+      <div class="fxb ixs-15">
+        <div class="ixs-8">Historial</div>
+        <div class="ixs-10">
+          <div class="ixs-18" id="histStats"></div>
           <button class="btn acc sm" onclick="window.openDirectTradeModal()">+ Agregar trade</button>
         </div>
       </div>
       <!-- Metrics cards (moved from dashboard) -->
-      <div class="g4" style="margin-bottom:20px;" id="histMetrics"></div>
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <input type="text" id="filtTicker" placeholder="Ticker..." style="width:120px;" oninput="renderHistory()">
-        <select id="filtDir" style="width:100px;" onchange="renderHistory()"><option value="">Dirección</option><option>long</option><option>short</option><option>spot</option></select>
-        <select id="filtTrader" style="width:140px;" onchange="renderHistory()"><option value="">Trader</option></select>
-        <select id="filtResult" style="width:100px;" onchange="renderHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
+      <div class="g4 ixs-15" id="histMetrics"></div>
+      <div class="ixs-50">
+        <input type="text" id="filtTicker" placeholder="Ticker..." class="ixs-51" oninput="renderHistory()">
+        <select id="filtDir" class="ixs-52" onchange="renderHistory()"><option value="">Dirección</option><option>long</option><option>short</option><option>spot</option></select>
+        <select id="filtTrader" class="ixs-53" onchange="renderHistory()"><option value="">Trader</option></select>
+        <select id="filtResult" class="ixs-52" onchange="renderHistory()"><option value="">Resultado</option><option value="win">Win</option><option value="loss">Loss</option></select>
       </div>
-      <div class="card" style="padding:0;overflow:hidden;">
-        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
-        <table class="tbl" style="min-width:700px;"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry px</th><th>Exit px</th><th>PnL</th><th>PnL%</th><th>F.Entrada</th><th>F.Cierre</th><th>Resultado</th><th>Notas</th><th></th></tr></thead>
+      <div class="card ixs-54">
+        <div class="ixs-55">
+        <table class="tbl ixs-56"><thead><tr><th>Ticker</th><th>Dir</th><th>Exchange</th><th>Trader</th><th>Entry px</th><th>Exit px</th><th>PnL</th><th>PnL%</th><th>F.Entrada</th><th>F.Cierre</th><th>Resultado</th><th>Notas</th><th></th></tr></thead>
         <tbody id="histTbody"></tbody></table>
         </div>
       </div>
     </div>
 
     <!-- AI ANALYSIS -->
-    <div id="analysisPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:16px;">
+    <div id="analysisPage" class="ixs-1">
+      <div class="fxb ixs-7">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Charts</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">Grafico operativo + analisis AI con velas, EMAs, RSI, OBV y datos de mercado</div>
+          <div class="ixs-8">Charts</div>
+          <div class="ixs-9">Grafico operativo + analisis AI con velas, EMAs, RSI, OBV y datos de mercado</div>
         </div>
       </div>
       <!-- Trade info panel (shown when opened from watchlist) -->
-      <div id="aiTradePanel" style="display:none;"></div>
+      <div id="aiTradePanel" class="ixs-1"></div>
 
       <!-- Controls -->
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;">
-        <div style="flex:1;min-width:180px;position:relative;">
+      <div class="ixs-57">
+        <div class="ixs-58">
           <label class="lbl">Par (crypto, acciones, ETFs, commodities)</label>
           <input type="text" id="aiSymbol" value="BTCUSDT" placeholder="BTC, AAPL, OIL, GOLD, SILVER..."
-            style="text-transform:uppercase;"
+            class="ixs-30"
             oninput="showTickerSuggestions(this.value)"
             onblur="setTimeout(()=>{const d=document.getElementById('aiTickerDD');if(d)d.style.display='none';},200)">
-          <div id="aiTickerDD" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);z-index:50;max-height:280px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:2px;"></div>
+          <div id="aiTickerDD" class="ixs-59"></div>
         </div>
-        <div style="display:flex;gap:0;border:0.5px solid var(--border2);border-radius:var(--r);overflow:hidden;">
+        <div class="ixs-60">
           <button id="toggleSpot" onclick="setMarketType('spot')"
-            style="padding:9px 16px;border:none;background:var(--accent);color:#000;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">SPOT</button>
+            class="ixs-61">SPOT</button>
           <button id="toggleFut" onclick="setMarketType('futures')"
-            style="padding:9px 16px;border:none;background:var(--bg3);color:var(--t2);font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">FUTUROS</button>
+            class="ixs-62">FUTUROS</button>
         </div>
         <button class="btn" onclick="loadCharts()" id="chartsBtn">↺ Cargar</button>
         <button class="btn acc" onclick="copyChartsToClipboard()" id="copyBtn">📋 Copiar para Claude</button>
       </div>
 
       <!-- Market data strip -->
-      <div id="marketStrip" style="display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:11px;"></div>
+      <div id="marketStrip" class="ixs-63"></div>
 
       <div id="chartsTabs" class="chart-tabs">
         <button id="chartsTabGraficos" class="chart-tab active" onclick="showChartsTab('graficos')">Graficos</button>
@@ -472,65 +472,65 @@
         </div>
       </div>
 
-      <div id="chartsTabAIContent" style="display:none;">
+      <div id="chartsTabAIContent" class="ixs-1">
 
       <!-- 2x2 chart grid — each with 3 subpanels -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;" id="aiChartGrid">
-        <div class="card ai-tf-card tf-1w" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1W — SEMANAL</div>
-          <div id="cs1W" style="height:220px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
-          <div id="vol1W" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
-          <div id="obv1W" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
-          <div id="rsi1W" style="height:80px;"></div>
+      <div class="ixs-64" id="aiChartGrid">
+        <div class="card ai-tf-card tf-1w ixs-65">
+          <div class="ixs-66">1W — SEMANAL</div>
+          <div id="cs1W" class="ixs-67"></div>
+          <div class="ixs-68">VOLUMEN</div>
+          <div id="vol1W" class="ixs-69"></div>
+          <div class="ixs-68">OBV</div>
+          <div id="obv1W" class="ixs-69"></div>
+          <div class="ixs-68">RSI</div>
+          <div id="rsi1W" class="ixs-69"></div>
         </div>
-        <div class="card ai-tf-card tf-1d" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1D — DIARIO</div>
-          <div id="cs1D" style="height:220px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
-          <div id="vol1D" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
-          <div id="obv1D" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
-          <div id="rsi1D" style="height:80px;"></div>
+        <div class="card ai-tf-card tf-1d ixs-65">
+          <div class="ixs-66">1D — DIARIO</div>
+          <div id="cs1D" class="ixs-67"></div>
+          <div class="ixs-68">VOLUMEN</div>
+          <div id="vol1D" class="ixs-69"></div>
+          <div class="ixs-68">OBV</div>
+          <div id="obv1D" class="ixs-69"></div>
+          <div class="ixs-68">RSI</div>
+          <div id="rsi1D" class="ixs-69"></div>
         </div>
-        <div class="card ai-tf-card tf-4h" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">4H — CUATRO HORAS</div>
-          <div id="cs4H" style="height:220px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
-          <div id="vol4H" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
-          <div id="obv4H" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
-          <div id="rsi4H" style="height:80px;"></div>
+        <div class="card ai-tf-card tf-4h ixs-65">
+          <div class="ixs-66">4H — CUATRO HORAS</div>
+          <div id="cs4H" class="ixs-67"></div>
+          <div class="ixs-68">VOLUMEN</div>
+          <div id="vol4H" class="ixs-69"></div>
+          <div class="ixs-68">OBV</div>
+          <div id="obv4H" class="ixs-69"></div>
+          <div class="ixs-68">RSI</div>
+          <div id="rsi4H" class="ixs-69"></div>
         </div>
-        <div class="card ai-tf-card tf-1h" style="padding:10px;">
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1H — UNA HORA</div>
-          <div id="cs1H" style="height:220px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
-          <div id="vol1H" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
-          <div id="obv1H" style="height:80px;"></div>
-          <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
-          <div id="rsi1H" style="height:80px;"></div>
+        <div class="card ai-tf-card tf-1h ixs-65">
+          <div class="ixs-66">1H — UNA HORA</div>
+          <div id="cs1H" class="ixs-67"></div>
+          <div class="ixs-68">VOLUMEN</div>
+          <div id="vol1H" class="ixs-69"></div>
+          <div class="ixs-68">OBV</div>
+          <div id="obv1H" class="ixs-69"></div>
+          <div class="ixs-68">RSI</div>
+          <div id="rsi1H" class="ixs-69"></div>
         </div>
       </div>
 
       <!-- Monthly chart -->
-      <div class="card ai-tf-card tf-1m" style="padding:10px;margin-bottom:10px;" id="monthlyCard">
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:6px;font-weight:600;">1M — MENSUAL</div>
-        <div id="cs1M" style="height:220px;"></div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">VOLUMEN</div>
-        <div id="vol1M" style="height:80px;"></div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">OBV</div>
-        <div id="obv1M" style="height:80px;"></div>
-        <div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin:4px 0 2px;padding-left:2px;">RSI</div>
-        <div id="rsi1M" style="height:80px;"></div>
+      <div class="card ai-tf-card tf-1m ixs-70" id="monthlyCard">
+        <div class="ixs-66">1M — MENSUAL</div>
+        <div id="cs1M" class="ixs-67"></div>
+        <div class="ixs-68">VOLUMEN</div>
+        <div id="vol1M" class="ixs-69"></div>
+        <div class="ixs-68">OBV</div>
+        <div id="obv1M" class="ixs-69"></div>
+        <div class="ixs-68">RSI</div>
+        <div id="rsi1M" class="ixs-69"></div>
       </div>
 
-      <div id="copyStatus" style="display:none;text-align:center;padding:12px;font-family:var(--mono);font-size:12px;color:var(--accent);">
+      <div id="copyStatus" class="ixs-71">
         ✅ Imagen copiada al portapapeles. Pegala directamente en Claude!
       </div>
       </div>
@@ -539,92 +539,92 @@
     <!-- SETTINGS -->
 <!-- API Config Modal -->
 <div class="modal-overlay" id="apiConfigModal">
-  <div class="modal" style="width:680px;max-height:85vh;overflow-y:auto;">
+  <div class="modal ixs-72">
     <div class="modal-hdr">
       <div class="modal-title">Configurar API Keys</div>
       <button class="modal-close" onclick="closeModal('apiConfigModal')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="card" style="margin-bottom:16px;border-left:3px solid var(--accent);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <div class="sec-label" style="margin:0;">Contraseña maestra</div>
-          <div id="masterStatus2" style="font-size:11px;margin-left:auto;display:none;"></div>
+      <div class="card ixs-73">
+        <div class="ixs-74">
+          <div class="sec-label ixs-75">Contraseña maestra</div>
+          <div id="masterStatus2" class="ixs-76"></div>
         </div>
-        <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;"><label class="lbl">Elegí una contraseña (mínimo 8 caracteres)</label><input type="password" id="masterPass2" placeholder="Tu contraseña maestra"></div>
+        <div class="ixs-77">
+          <div class="ixs-78"><label class="lbl">Elegí una contraseña (mínimo 8 caracteres)</label><input type="password" id="masterPass2" placeholder="Tu contraseña maestra"></div>
           <button class="btn acc" onclick="saveMasterPass2()">Guardar</button>
         </div>
-        <div style="font-size:11px;color:var(--t3);margin-top:8px;">⚠️ Si la olvidás, regenerá las keys en el exchange y cargalas de nuevo.</div>
+        <div class="ixs-79">⚠️ Si la olvidás, regenerá las keys en el exchange y cargalas de nuevo.</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+      <div class="ixs-80">
         <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://bin.bnbstatic.com/static/images/common/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#f0b90b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
-            <div style="font-family:var(--mono);font-weight:600;">Binance</div>
-            <div id="bnbStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
+          <div class="ixs-81">
+            <img src="https://bin.bnbstatic.com/static/images/common/favicon.ico" width="22" height="22" class="ixs-82" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#f0b90b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
+            <div class="ixs-83">Binance</div>
+            <div id="bnbStatus2" class="ixs-84">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bnbKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bnbSecret2" placeholder="Pegá tu API Secret"></div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('binance')">Guardar</button>
+          <div class="ixs-42"><label class="lbl">API Key</label><input type="text" id="bnbKey2" placeholder="Pegá tu API Key"></div>
+          <div class="ixs-85"><label class="lbl">API Secret</label><input type="password" id="bnbSecret2" placeholder="Pegá tu API Secret"></div>
+          <div class="ixs-86">
+            <button class="btn acc sm ixs-78" onclick="saveExchangeKeys2('binance')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('binance')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('binance')">✕</button>
           </div>
         </div>
         <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://www.bybit.com/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#f7a600;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
-            <div style="font-family:var(--mono);font-weight:600;">Bybit</div>
-            <div id="bybitStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
+          <div class="ixs-81">
+            <img src="https://www.bybit.com/favicon.ico" width="22" height="22" class="ixs-82" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#f7a600;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;\'>B</div>'">
+            <div class="ixs-83">Bybit</div>
+            <div id="bybitStatus2" class="ixs-84">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="bybitKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="bybitSecret2" placeholder="Pegá tu API Secret"></div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('bybit')">Guardar</button>
+          <div class="ixs-42"><label class="lbl">API Key</label><input type="text" id="bybitKey2" placeholder="Pegá tu API Key"></div>
+          <div class="ixs-85"><label class="lbl">API Secret</label><input type="password" id="bybitSecret2" placeholder="Pegá tu API Secret"></div>
+          <div class="ixs-86">
+            <button class="btn acc sm ixs-78" onclick="saveExchangeKeys2('bybit')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('bybit')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('bybit')">✕</button>
           </div>
         </div>
         <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <img src="https://www.okx.com/favicon.ico" width="22" height="22" style="border-radius:4px;" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#1a1a2e;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;\'>OKX</div>'">
-            <div style="font-family:var(--mono);font-weight:600;">OKX</div>
-            <div id="okxStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
+          <div class="ixs-81">
+            <img src="https://www.okx.com/favicon.ico" width="22" height="22" class="ixs-82" onerror="this.outerHTML='<div style=\'width:22px;height:22px;background:#1a1a2e;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;\'>OKX</div>'">
+            <div class="ixs-83">OKX</div>
+            <div id="okxStatus2" class="ixs-84">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="okxKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="okxSecret2" placeholder="Pegá tu API Secret"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="okxPass2" placeholder="Tu passphrase de OKX"></div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('okx')">Guardar</button>
+          <div class="ixs-42"><label class="lbl">API Key</label><input type="text" id="okxKey2" placeholder="Pegá tu API Key"></div>
+          <div class="ixs-42"><label class="lbl">API Secret</label><input type="password" id="okxSecret2" placeholder="Pegá tu API Secret"></div>
+          <div class="ixs-85"><label class="lbl">Passphrase</label><input type="password" id="okxPass2" placeholder="Tu passphrase de OKX"></div>
+          <div class="ixs-86">
+            <button class="btn acc sm ixs-78" onclick="saveExchangeKeys2('okx')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('okx')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('okx')">✕</button>
           </div>
         </div>
         <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <div style="width:22px;height:22px;background:#00b8d9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#000;">M</div>
-            <div style="font-family:var(--mono);font-weight:600;">MEXC</div>
-            <div id="mexcStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
+          <div class="ixs-81">
+            <div class="ixs-87">M</div>
+            <div class="ixs-83">MEXC</div>
+            <div id="mexcStatus2" class="ixs-84">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="mexcKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">API Secret</label><input type="password" id="mexcSecret2" placeholder="Pegá tu API Secret"></div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('mexc')">Guardar</button>
+          <div class="ixs-42"><label class="lbl">API Key</label><input type="text" id="mexcKey2" placeholder="Pegá tu API Key"></div>
+          <div class="ixs-85"><label class="lbl">API Secret</label><input type="password" id="mexcSecret2" placeholder="Pegá tu API Secret"></div>
+          <div class="ixs-86">
+            <button class="btn acc sm ixs-78" onclick="saveExchangeKeys2('mexc')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('mexc')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('mexc')">✕</button>
           </div>
         </div>
         <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-            <div style="width:22px;height:22px;background:#24ae8f;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#041411;">K</div>
-            <div style="font-family:var(--mono);font-weight:600;">KuCoin</div>
-            <div id="kucoinStatus2" style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--mono);">No configurado</div>
+          <div class="ixs-81">
+            <div class="ixs-88">K</div>
+            <div class="ixs-83">KuCoin</div>
+            <div id="kucoinStatus2" class="ixs-84">No configurado</div>
           </div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Key</label><input type="text" id="kucoinKey2" placeholder="Pegá tu API Key"></div>
-          <div style="margin-bottom:8px;"><label class="lbl">API Secret</label><input type="password" id="kucoinSecret2" placeholder="Pegá tu API Secret"></div>
-          <div style="margin-bottom:10px;"><label class="lbl">Passphrase</label><input type="password" id="kucoinPass2" placeholder="Tu passphrase de KuCoin"></div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn acc sm" style="flex:1;" onclick="saveExchangeKeys2('kucoin')">Guardar</button>
+          <div class="ixs-42"><label class="lbl">API Key</label><input type="text" id="kucoinKey2" placeholder="Pegá tu API Key"></div>
+          <div class="ixs-42"><label class="lbl">API Secret</label><input type="password" id="kucoinSecret2" placeholder="Pegá tu API Secret"></div>
+          <div class="ixs-85"><label class="lbl">Passphrase</label><input type="password" id="kucoinPass2" placeholder="Tu passphrase de KuCoin"></div>
+          <div class="ixs-86">
+            <button class="btn acc sm ixs-78" onclick="saveExchangeKeys2('kucoin')">Guardar</button>
             <button class="btn sm" onclick="testExchangeKeys('kucoin')">Probar</button>
             <button class="btn dan sm" onclick="clearExchangeKeys('kucoin')">✕</button>
           </div>
@@ -635,22 +635,22 @@
 </div>
 
 <!-- Settings page -->
-    <div id="settingsPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
+    <div id="settingsPage" class="ixs-1">
+      <div class="fxb ixs-15">
         <div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Configuración</div>
-          <div style="font-size:12px;color:var(--t2);margin-top:2px;">MAUex · Trading Journal</div>
+          <div class="ixs-8">Configuración</div>
+          <div class="ixs-9">MAUex · Trading Journal</div>
         </div>
       </div>
 
       <!-- Operational status -->
-      <div class="card" style="margin-bottom:12px;">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div class="card ixs-24">
+        <div class="ixs-89">
           <div>
             <div class="sec-label">Estado operativo</div>
-            <div style="font-size:11px;color:var(--t3);margin-top:-6px;">Chequeo local de configuracion. La prueba online del Worker se ejecuta solo cuando la pedis.</div>
+            <div class="ixs-90">Chequeo local de configuracion. La prueba online del Worker se ejecuta solo cuando la pedis.</div>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <div class="ixs-91">
             <button class="btn sm" onclick="renderOperationalStatus()">Actualizar</button>
             <button class="btn sm" onclick="testProxyUrl()">Probar Worker</button>
           </div>
@@ -660,17 +660,17 @@
       </div>
 
       <!-- API Keys -->
-      <div class="card" style="margin-bottom:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div class="card ixs-24">
+        <div class="ixs-92">
           <div>
-            <div style="font-size:13px;font-weight:500;margin-bottom:3px;">API Keys de exchanges</div>
-            <div style="font-size:11px;color:var(--t3);">Conectá tus exchanges para sincronizar posiciones y balances</div>
-            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-              <span id="bnbStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Binance —</span>
-              <span id="bybitStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">Bybit —</span>
-              <span id="okxStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">OKX —</span>
-              <span id="mexcStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">MEXC —</span>
-              <span id="kucoinStatusBadge" style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;background:var(--bg3);color:var(--t3);">KuCoin —</span>
+            <div class="ixs-93">API Keys de exchanges</div>
+            <div class="ixs-94">Conectá tus exchanges para sincronizar posiciones y balances</div>
+            <div class="ixs-95">
+              <span id="bnbStatusBadge" class="ixs-96">Binance —</span>
+              <span id="bybitStatusBadge" class="ixs-96">Bybit —</span>
+              <span id="okxStatusBadge" class="ixs-96">OKX —</span>
+              <span id="mexcStatusBadge" class="ixs-96">MEXC —</span>
+              <span id="kucoinStatusBadge" class="ixs-96">KuCoin —</span>
             </div>
           </div>
           <button class="btn acc sm" onclick="openModal('apiConfigModal');syncApiModalStatus();">Configurar API</button>
@@ -678,47 +678,47 @@
       </div>
 
       <!-- Traders -->
-      <div class="card" style="margin-bottom:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div class="card ixs-24">
+        <div class="ixs-92">
           <div>
-            <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Traders seguidos</div>
-            <div style="font-size:11px;color:var(--t3);">Administrá los traders que seguís</div>
+            <div class="ixs-93">Traders seguidos</div>
+            <div class="ixs-94">Administrá los traders que seguís</div>
           </div>
           <button class="btn sm" onclick="window.showPage('traders')">Gestionar traders →</button>
         </div>
       </div>
 
       <!-- Master password -->
-      <div class="card" style="margin-bottom:12px;">
+      <div class="card ixs-24">
         <div class="sec-label">Contraseña maestra</div>
-        <div style="font-size:11px;color:var(--t3);margin:-6px 0 10px;">Sirve para abrir y re-encriptar las API Keys de exchanges. No es el token del Worker y no queda recordada al cerrar la sesion.</div>
-        <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;"><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
+        <div class="ixs-97">Sirve para abrir y re-encriptar las API Keys de exchanges. No es el token del Worker y no queda recordada al cerrar la sesion.</div>
+        <div class="ixs-77">
+          <div class="ixs-78"><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
           <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
         </div>
-        <div id="masterStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
-        <div style="font-size:11px;color:var(--t3);margin-top:6px;">Protege tus API Keys. Si la olvidas, regenera las keys en el exchange.</div>
+        <div id="masterStatus" class="ixs-98"></div>
+        <div class="ixs-99">Protege tus API Keys. Si la olvidas, regenera las keys en el exchange.</div>
       </div>
 
       <!-- Proxy URL -->
-      <div class="card" style="margin-bottom:12px;">
+      <div class="card ixs-24">
         <div class="sec-label">Proxy URL (Cloudflare Worker)</div>
-        <div style="font-size:11px;color:var(--t3);margin:-6px 0 10px;">El API token autoriza al frontend contra el Worker. Es distinto de la contraseña maestra.</div>
-        <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;"><input type="text" id="proxyUrl" placeholder="https://mauex-proxy.tuusuario.workers.dev"></div>
+        <div class="ixs-97">El API token autoriza al frontend contra el Worker. Es distinto de la contraseña maestra.</div>
+        <div class="ixs-77">
+          <div class="ixs-78"><input type="text" id="proxyUrl" placeholder="https://mauex-proxy.tuusuario.workers.dev"></div>
           <button class="btn acc sm" onclick="saveProxyUrl()">Guardar</button>
           <button class="btn sm" onclick="testProxyUrl()">Probar</button>
         </div>
-        <div style="margin-top:8px;">
+        <div class="ixs-100">
           <input type="password" id="proxyToken" placeholder="MAUEX_API_TOKEN del Worker">
         </div>
-        <div id="proxyStatus" style="font-size:11px;margin-top:6px;display:none;"></div>
+        <div id="proxyStatus" class="ixs-98"></div>
       </div>
 
       <!-- Trading preferences -->
-      <div class="card" style="margin-bottom:12px;">
+      <div class="card ixs-24">
         <div class="sec-label">Preferencias de trading</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="ixs-101">
           <div>
             <label class="lbl">Capital base (USD)</label>
             <input type="number" id="prefCapital" placeholder="ej: 10000" oninput="savePrefs()">
@@ -742,22 +742,22 @@
             </select>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:var(--r);">
-          <div style="flex:1;">
-            <div style="font-size:12px;font-weight:500;">Notificaciones de precio</div>
-            <div style="font-size:10px;color:var(--t3);">Alertas cuando el precio toca un nivel del Watchlist</div>
+        <div class="ixs-102">
+          <div class="ixs-78">
+            <div class="ixs-103">Notificaciones de precio</div>
+            <div class="ixs-104">Alertas cuando el precio toca un nivel del Watchlist</div>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="prefNotif" onchange="savePrefs()" style="width:auto;">
-            <span style="font-size:12px;">Activar</span>
+          <label class="ixs-105">
+            <input type="checkbox" id="prefNotif" onchange="savePrefs()" class="ixs-106">
+            <span class="ixs-107">Activar</span>
           </label>
         </div>
       </div>
 
       <!-- Danger zone -->
-      <div class="card" style="margin-bottom:12px;">
-        <div class="sec-label" style="color:var(--red);">Danger zone</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="card ixs-24">
+        <div class="sec-label ixs-4">Danger zone</div>
+        <div class="ixs-91">
           <button class="btn sm" onclick="exportAllData()">📥 Exportar datos (CSV)</button>
           <button class="btn dan sm" onclick="deleteExchangeTrades()">🗑 Borrar trades del exchange</button>
           <button class="btn dan sm" onclick="deleteAllData()">🗑 Borrar TODOS los trades</button>
@@ -765,9 +765,9 @@
       </div>
 
       <!-- Sync card -->
-      <div class="card" id="syncCard" style="display:none;margin-bottom:12px;">
+      <div class="card ixs-40" id="syncCard">
         <div class="sec-label">Estado de sincronización</div>
-        <div id="syncStatus" style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--t2);"></div>
+        <div id="syncStatus" class="ixs-108"></div>
       </div>
     </div>
         </div>
@@ -775,9 +775,9 @@
     </div>
 
     <!-- TRADERS -->
-    <div id="tradPage" style="display:none;">
-      <div class="fxb" style="margin-bottom:20px;">
-        <div style="font-family:var(--mono);font-size:18px;font-weight:600;">Traders</div>
+    <div id="tradPage" class="ixs-1">
+      <div class="fxb ixs-15">
+        <div class="ixs-8">Traders</div>
         <button class="btn acc sm" onclick="openTraderModal()">+ Agregar</button>
       </div>
       <div class="g3" id="traderCards"></div>
@@ -789,23 +789,23 @@
 <!-- MODALS -->
 <!-- MASTER PASSWORD MODAL -->
 <div class="modal-overlay" id="masterPassModal">
-  <div class="modal" style="width:400px;">
+  <div class="modal ixs-109">
     <div class="modal-hdr">
       <div class="modal-title">🔐 Conectar exchanges</div>
     </div>
     <div class="modal-body">
-      <div style="background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:16px;font-size:12px;color:var(--t2);line-height:1.6;">
+      <div class="ixs-110">
         Tenés API Keys configuradas. Ingresá tu contraseña maestra para conectar los exchanges y ver tus posiciones en vivo.
       </div>
-      <div id="masterPassExchanges" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;"></div>
-      <div style="margin-bottom:12px;">
+      <div id="masterPassExchanges" class="ixs-50"></div>
+      <div class="ixs-24">
         <label class="lbl">Contraseña maestra</label>
         <input type="password" id="unlockPass" placeholder="Tu contraseña maestra"
           onkeydown="if(event.key==='Enter')doUnlock()">
       </div>
-      <div id="unlockError" style="display:none;color:var(--red);font-size:11px;margin-bottom:8px;"></div>
+      <div id="unlockError" class="ixs-111"></div>
     </div>
-    <div class="modal-footer" style="justify-content:space-between;">
+    <div class="modal-footer ixs-112">
       <button class="btn" onclick="closeModal('masterPassModal')">Ahora no</button>
       <button class="btn acc" onclick="doUnlock()">Conectar</button>
     </div>
@@ -813,18 +813,18 @@
 </div>
 
 <div class="modal-overlay" id="themeModal">
-  <div class="modal" style="width:420px;">
+  <div class="modal ixs-113">
     <div class="modal-hdr"><div class="modal-title">Elegir tema</div><button class="modal-close" onclick="closeModal('themeModal')">✕</button></div>
     <div class="modal-body"><div class="theme-grid" id="themeGrid"></div></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="traderModal">
-  <div class="modal" style="width:380px;">
+  <div class="modal ixs-114">
     <div class="modal-hdr"><div class="modal-title" id="traderModalTitle">Agregar trader</div><button class="modal-close" onclick="closeModal('traderModal')">✕</button></div>
     <div class="modal-body">
-      <div style="margin-bottom:12px;"><label class="lbl">Nombre</label><input type="text" id="tName" placeholder="Dr.Profit..."></div>
-      <div style="margin-bottom:12px;"><label class="lbl">Canal / Red</label><input type="text" id="tChannel" placeholder="Telegram, Twitter..."></div>
+      <div class="ixs-24"><label class="lbl">Nombre</label><input type="text" id="tName" placeholder="Dr.Profit..."></div>
+      <div class="ixs-24"><label class="lbl">Canal / Red</label><input type="text" id="tChannel" placeholder="Telegram, Twitter..."></div>
       <div><label class="lbl">Notas</label><textarea id="tNotes" placeholder="Especialidad..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('traderModal')">Cancelar</button><button class="btn acc" onclick="saveTrader()">Guardar</button></div>
@@ -832,20 +832,20 @@
 </div>
 
 <div class="modal-overlay" id="editTradeModal">
-  <div class="modal" style="width:560px;">
+  <div class="modal ixs-115">
     <div class="modal-hdr">
       <div class="modal-title">Editar trade</div>
       <button class="modal-close" onclick="closeModal('editTradeModal')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div><label class="lbl">Ticker</label><input type="text" id="eTicker" oninput="this.value=this.value.toUpperCase()"></div>
         <div><label class="lbl">Exchange</label><input type="text" id="eExchange"></div>
       </div>
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div>
           <label class="lbl">Dirección</label>
-          <div class="dir-toggle" style="margin-top:4px;">
+          <div class="dir-toggle ixs-117">
             <button class="dir-btn al" data-ed="long" onclick="setEditDir('long')">LONG ↑</button>
             <button class="dir-btn" data-ed="short" onclick="setEditDir('short')">SHORT ↓</button>
             <button class="dir-btn" data-ed="spot" onclick="setEditDir('spot')">SPOT</button>
@@ -853,48 +853,48 @@
         </div>
         <div><label class="lbl">Apalancamiento</label><input type="number" id="eLev" min="1" max="125" step="0.1"></div>
       </div>
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div><label class="lbl">Entry</label><input type="number" id="eEntry" oninput="syncEditFields('entry')"></div>
         <div><label class="lbl">Stop Loss</label><input type="number" id="eSL" oninput="syncEditFields('sl')"></div>
       </div>
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div><label class="lbl">Liquidación DEX</label><input type="number" id="eLiquidation" placeholder="Precio real del DEX"></div>
         <div><label class="lbl">Tamaño USD</label><input type="number" id="eSize" placeholder="Opcional si hay Riesgo+SL" oninput="syncEditFields('size')"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 116px 1fr 116px;gap:6px;margin-bottom:12px;align-items:end;">
-        <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
+      <div class="ixs-118">
+        <label class="lbl ixs-36">Invalidacion <span class="ixs-34">opcional</span></label>
         <input type="number" id="eInv1" placeholder="precio invalida">
         <select id="eInv1Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
         <input type="number" id="eInv2" placeholder="precio invalida 2">
         <select id="eInv2Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
-        <input type="text" id="eInvNote" placeholder="nota breve de invalidacion" style="grid-column:1/-1;">
+        <input type="text" id="eInvNote" placeholder="nota breve de invalidacion" class="ixs-39">
       </div>
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div><label class="lbl">Riesgo USD</label><input type="number" id="eRisk" placeholder="Opcional" oninput="syncEditFields('risk')"></div>
         <div></div>
       </div>
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div><label class="lbl">Trader</label><select id="eTrader"></select></div>
         <div><label class="lbl">Fecha entrada</label><input type="date" id="eDate"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
+      <div class="ixs-119">
         <input type="number" id="eTP1" placeholder="TP1 precio">
-        <input type="number" id="eTP1pct" style="text-align:center;" placeholder="%">
+        <input type="number" id="eTP1pct" class="ixs-37" placeholder="%">
         <input type="number" id="eTP2" placeholder="TP2 precio">
-        <input type="number" id="eTP2pct" style="text-align:center;" placeholder="%">
+        <input type="number" id="eTP2pct" class="ixs-37" placeholder="%">
         <input type="number" id="eTP3" placeholder="TP3 precio">
-        <input type="number" id="eTP3pct" style="text-align:center;" placeholder="%">
+        <input type="number" id="eTP3pct" class="ixs-37" placeholder="%">
       </div>
-      <div id="eAlertStatePanel" style="margin-bottom:12px;display:none;">
-        <label class="lbl">Alertas tocadas <span style="color:var(--t3);font-size:9px;">destildar limpia la alerta</span></label>
-        <div id="eAlertChips" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+      <div id="eAlertStatePanel" class="ixs-120">
+        <label class="lbl">Alertas tocadas <span class="ixs-34">destildar limpia la alerta</span></label>
+        <div id="eAlertChips" class="ixs-121"></div>
       </div>
-      <div id="eChangeReasonPanel" style="margin-bottom:12px;">
-        <label class="lbl">Motivo del cambio <span style="color:var(--t3);font-size:9px;">si modificaste el plan</span></label>
-        <div id="eChangeReasonChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+      <div id="eChangeReasonPanel" class="ixs-24">
+        <label class="lbl">Motivo del cambio <span class="ixs-34">si modificaste el plan</span></label>
+        <div id="eChangeReasonChips" class="ixs-122"></div>
         <input type="text" id="eChangeReasonNote" placeholder="detalle opcional del cambio">
       </div>
-      <div><label class="lbl">Notas</label><textarea id="eNotes" style="min-height:60px;"></textarea></div>
+      <div><label class="lbl">Notas</label><textarea id="eNotes" class="ixs-123"></textarea></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('editTradeModal')">Cancelar</button>
@@ -904,18 +904,18 @@
 </div>
 
 <div class="modal-overlay" id="closeTradeModal">
-  <div class="modal" style="width:460px;max-height:90vh;overflow-y:auto;">
+  <div class="modal ixs-124">
     <div class="modal-hdr"><div class="modal-title">Cerrar posicion</div><button class="modal-close" onclick="closeModal('closeTradeModal')">x</button></div>
     <div class="modal-body">
-      <div id="closeSummary" style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--t2);font-family:var(--mono);line-height:1.6;"></div>
-      <div id="closeQuickActions" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div id="closeSummary" class="ixs-125"></div>
+      <div id="closeQuickActions" class="ixs-126"></div>
+      <div class="ixs-64">
         <div><label class="lbl">% del restante</label><input type="number" id="closePct" min="1" max="100" value="100"></div>
         <div><label class="lbl">Motivo</label><select id="closeReason"><option value="manual">Manual</option><option value="tp">Take profit</option><option value="sl">Stop loss</option></select></div>
       </div>
-      <div style="margin-bottom:12px;"><label class="lbl">Precio de salida</label><input type="number" id="closePrice" placeholder="68000"></div>
-      <div style="margin-bottom:12px;"><label class="lbl">Fecha</label><input type="text" id="closeDate"></div>
-      <div id="closeReviewTags" style="margin-bottom:12px;"></div>
+      <div class="ixs-24"><label class="lbl">Precio de salida</label><input type="number" id="closePrice" placeholder="68000"></div>
+      <div class="ixs-24"><label class="lbl">Fecha</label><input type="text" id="closeDate"></div>
+      <div id="closeReviewTags" class="ixs-24"></div>
       <div><label class="lbl">Notas</label><textarea id="closeNotes" placeholder="Por que cerraste?"></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('closeTradeModal')">Cancelar</button><button class="btn acc" id="closeConfirmBtn" onclick="confirmClose()">Registrar cierre</button></div>
@@ -923,20 +923,20 @@
 </div>
 
 <div class="modal-overlay" id="directPositionModal">
-  <div class="modal" style="width:420px;max-height:90vh;overflow-y:auto;">
+  <div class="modal ixs-127">
     <div class="modal-hdr"><div class="modal-title">Agregar posición abierta</div><button class="modal-close" onclick="closeModal('directPositionModal')">✕</button></div>
     <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Ticker</label><input type="text" id="dpTicker" oninput="this.value=this.value.toUpperCase()" placeholder="BTC"></div>
         <div><label class="lbl">Dirección</label>
-          <div class="dir-toggle" style="margin-top:4px;">
+          <div class="dir-toggle ixs-117">
             <button class="dir-btn al" data-dp="long" onclick="setDPDir('long')">LONG ↑</button>
             <button class="dir-btn" data-dp="short" onclick="setDPDir('short')">SHORT ↓</button>
             <button class="dir-btn" data-dp="spot" onclick="setDPDir('spot')">SPOT</button>
           </div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Exchange</label>
           <select id="dpExchange">
             <option value="BINANCE">Binance</option>
@@ -950,23 +950,23 @@
         </div>
         <div><label class="lbl">Leverage</label><input type="number" id="dpLev" placeholder="1" value="1" min="1" max="125" step="0.1"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Precio entrada</label><input type="number" id="dpEntry" placeholder="68000"></div>
         <div><label class="lbl">Stop Loss</label><input type="number" id="dpSL" placeholder="Opcional"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Tamaño USD</label><input type="number" id="dpSize" placeholder="1000"></div>
         <div><label class="lbl">Riesgo USD</label><input type="number" id="dpRisk" placeholder="Opcional"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 56px 1fr 56px 1fr 56px;gap:6px;margin-bottom:12px;">
+      <div class="ixs-119">
         <input type="number" id="dpTP1" placeholder="TP1 precio">
-        <input type="number" id="dpTP1pct" placeholder="%" value="33" style="text-align:center;">
+        <input type="number" id="dpTP1pct" placeholder="%" value="33" class="ixs-37">
         <input type="number" id="dpTP2" placeholder="TP2 precio">
-        <input type="number" id="dpTP2pct" placeholder="%" value="33" style="text-align:center;">
+        <input type="number" id="dpTP2pct" placeholder="%" value="33" class="ixs-37">
         <input type="number" id="dpTP3" placeholder="TP3 precio">
-        <input type="number" id="dpTP3pct" placeholder="%" value="34" style="text-align:center;">
+        <input type="number" id="dpTP3pct" placeholder="%" value="34" class="ixs-37">
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Trader</label><select id="dpTrader"><option value="">— ninguno —</option></select></div>
         <div><label class="lbl">Fecha entrada</label><input type="date" id="dpDate"></div>
       </div>
@@ -977,16 +977,16 @@
 </div>
 
 <div class="modal-overlay" id="directTradeModal">
-  <div class="modal" style="width:680px;max-height:90vh;overflow-y:auto;">
+  <div class="modal ixs-128">
     <div class="modal-hdr"><div class="modal-title">Agregar trade al historial</div><button class="modal-close" onclick="closeModal('directTradeModal')">✕</button></div>
     <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Ticker</label><input type="text" id="dtTicker" placeholder="BTC"></div>
         <div><label class="lbl">Dirección</label>
           <select id="dtDir" onchange="window.updateDirectTradeSizeLabel()"><option value="long">Long</option><option value="short">Short</option><option value="spot">Spot</option></select>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Exchange</label>
           <select id="dtExchange">
             <option value="BINANCE">Binance</option>
@@ -1000,33 +1000,33 @@
         </div>
         <div><label class="lbl">Leverage</label><input type="number" id="dtLev" placeholder="1" value="1" min="1" max="125" step="0.1"></div>
       </div>
-      <div style="margin-bottom:12px;"><label class="lbl">Trader</label><select id="dtTrader"><option value="">— ninguno —</option></select></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-24"><label class="lbl">Trader</label><select id="dtTrader"><option value="">— ninguno —</option></select></div>
+      <div class="ixs-101">
         <div><label class="lbl">Precio entrada</label><input type="number" id="dtEntry" placeholder="68000"></div>
         <div><label class="lbl">Precio salida</label><input type="number" id="dtExit" placeholder="72000"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div><label class="lbl" id="dtSizeLabel">Margen USD</label><input type="number" id="dtSize" placeholder="1000"><div id="dtSizeHint" style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Capital usado como margen.</div></div>
-        <div><label class="lbl">PnL manual <span style="color:var(--t3);font-size:9px;">opcional</span></label><input type="number" id="dtPnl" placeholder="Auto" oninput="this.dataset.manual='1'"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);margin-top:4px;">Si lo dejás vacío, MAUex lo calcula.</div></div>
+      <div class="ixs-101">
+        <div><label class="lbl" id="dtSizeLabel">Margen USD</label><input type="number" id="dtSize" placeholder="1000"><div id="dtSizeHint" class="ixs-129">Capital usado como margen.</div></div>
+        <div><label class="lbl">PnL manual <span class="ixs-34">opcional</span></label><input type="number" id="dtPnl" placeholder="Auto" oninput="this.dataset.manual='1'"><div class="ixs-129">Si lo dejás vacío, MAUex lo calcula.</div></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="ixs-101">
         <div><label class="lbl">Fecha entrada</label><input type="date" id="dtOpenDate"></div>
         <div><label class="lbl">Fecha cierre</label><input type="date" id="dtCloseDate"></div>
       </div>
-      <div id="dtReviewTags" style="margin-bottom:12px;"></div>
-      <div style="margin-bottom:12px;"><label class="lbl">Notas</label><textarea id="dtNotes" placeholder="Contexto del trade..."></textarea></div>
+      <div id="dtReviewTags" class="ixs-24"></div>
+      <div class="ixs-24"><label class="lbl">Notas</label><textarea id="dtNotes" placeholder="Contexto del trade..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('directTradeModal')">Cancelar</button><button class="btn acc" id="dtSaveBtn" onclick="window._saveDirectTrade()">Guardar en historial</button></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="partialCloseModal">
-  <div class="modal" style="width:380px;">
+  <div class="modal ixs-114">
     <div class="modal-hdr"><div class="modal-title">Cierre parcial</div><button class="modal-close" onclick="closeModal('partialCloseModal')">✕</button></div>
     <div class="modal-body">
-      <div style="margin-bottom:12px;"><label class="lbl">Precio de salida parcial</label><input type="number" id="partialPrice" placeholder="68000"></div>
-      <div style="margin-bottom:12px;"><label class="lbl">% del tamaño a cerrar</label><input type="number" id="partialPct" placeholder="50" min="1" max="99" value="50"></div>
-      <div style="margin-bottom:12px;"><label class="lbl">Fecha</label><input type="text" id="partialDate"></div>
+      <div class="ixs-24"><label class="lbl">Precio de salida parcial</label><input type="number" id="partialPrice" placeholder="68000"></div>
+      <div class="ixs-24"><label class="lbl">% del tamaño a cerrar</label><input type="number" id="partialPct" placeholder="50" min="1" max="99" value="50"></div>
+      <div class="ixs-24"><label class="lbl">Fecha</label><input type="text" id="partialDate"></div>
       <div><label class="lbl">Notas</label><textarea id="partialNotes" placeholder="TP1, cierre parcial..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('partialCloseModal')">Cancelar</button><button class="btn acc" onclick="confirmPartialClose()">Confirmar cierre parcial</button></div>
@@ -1034,13 +1034,13 @@
 </div>
 
 <div class="modal-overlay" id="manualTradeModal">
-  <div class="modal" style="width:560px;">
+  <div class="modal ixs-115">
     <div class="modal-hdr"><div class="modal-title">Carga manual de posición</div><button class="modal-close" onclick="closeModal('manualTradeModal')">✕</button></div>
     <div class="modal-body">
-      <div class="g2" style="gap:10px;margin-bottom:12px;">
+      <div class="g2 ixs-116">
         <div>
           <label class="lbl">Dirección</label>
-          <div class="dir-toggle" style="margin-top:4px;">
+          <div class="dir-toggle ixs-117">
             <button class="dir-btn al" data-md="long" onclick="setMDir('long')">LONG ↑</button>
             <button class="dir-btn" data-md="short" onclick="setMDir('short')">SHORT ↓</button>
             <button class="dir-btn" data-md="spot" onclick="setMDir('spot')">SPOT</button>
@@ -1048,31 +1048,31 @@
         </div>
         <div><label class="lbl">Ticker</label><input type="text" id="mTicker" placeholder="BTC, ETH..." oninput="this.value=this.value.toUpperCase()"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div class="ixs-130">
         <div><label class="lbl">Exchange</label><input type="text" id="mExchange" placeholder="Binance..."></div>
         <div><label class="lbl">Apalancamiento</label><input type="number" id="mLev" value="1" min="1" max="125" step="0.1"></div>
         <div><label class="lbl">Trader</label><select id="mTrader"><option value="">— ninguno —</option></select></div>
       </div>
-      <div style="margin-bottom:12px;">
-        <div class="fxb" style="margin-bottom:8px;"><label class="lbl" style="margin:0;">Entradas</label><button class="btn sm" onclick="addEntryRow()">+ Entrada</button></div>
+      <div class="ixs-24">
+        <div class="fxb ixs-42"><label class="lbl ixs-75">Entradas</label><button class="btn sm" onclick="addEntryRow()">+ Entrada</button></div>
         <div id="entryRows"></div>
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:6px;" id="mAvgLabel"></div>
+        <div class="ixs-32" id="mAvgLabel"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div class="ixs-131">
         <div><label class="lbl">Stop Loss</label><input type="number" id="mSL" placeholder="precio SL"></div>
         <div><label class="lbl">TP1 precio</label><input type="number" id="mTP1" placeholder="TP1"></div>
         <div><label class="lbl">TP2 precio</label><input type="number" id="mTP2" placeholder="TP2"></div>
         <div><label class="lbl">TP3 precio</label><input type="number" id="mTP3" placeholder="TP3"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 116px 1fr 116px;gap:6px;margin-bottom:12px;align-items:end;">
-        <label class="lbl" style="grid-column:1/-1;margin-bottom:0;">Invalidacion <span style="color:var(--t3);font-size:9px;">opcional</span></label>
+      <div class="ixs-118">
+        <label class="lbl ixs-36">Invalidacion <span class="ixs-34">opcional</span></label>
         <input type="number" id="mInv1" placeholder="precio invalida">
         <select id="mInv1Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
         <input type="number" id="mInv2" placeholder="precio invalida 2">
         <select id="mInv2Side"><option value="up">si sube hasta</option><option value="down">si baja hasta</option></select>
-        <input type="text" id="mInvNote" placeholder="nota breve de invalidacion" style="grid-column:1/-1;">
+        <input type="text" id="mInvNote" placeholder="nota breve de invalidacion" class="ixs-39">
       </div>
-      <div style="margin-bottom:10px;"><label class="lbl">Fecha</label><input type="text" id="mDate"></div>
+      <div class="ixs-85"><label class="lbl">Fecha</label><input type="text" id="mDate"></div>
       <div><label class="lbl">Notas</label><textarea id="mNotes" placeholder="Contexto..."></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('manualTradeModal')">Cancelar</button><button class="btn acc" onclick="saveManualTrade()">Guardar</button></div>
@@ -1081,9 +1081,9 @@
 
 <!-- Orden ejecutada modal -->
 <div class="modal-overlay" id="orderExecutedModal">
-  <div class="modal" style="width:380px;border:1px solid rgba(245,158,11,0.3);">
+  <div class="modal ixs-132">
     <div class="modal-hdr">
-      <div class="modal-title" style="color:#f59e0b;">⚡ Orden ejecutada</div>
+      <div class="modal-title ixs-133">⚡ Orden ejecutada</div>
       <button class="modal-close" onclick="closeModal('orderExecutedModal')">✕</button>
     </div>
     <div class="modal-body" id="orderExecutedBody"></div>
@@ -1094,20 +1094,20 @@
 </div>
 
 <div class="modal-overlay" id="importHistoryModal">
-  <div class="modal" style="width:440px;">
+  <div class="modal ixs-134">
     <div class="modal-hdr"><div class="modal-title">📥 Importar historial de exchanges</div><button class="modal-close" onclick="closeModal('importHistoryModal')">✕</button></div>
     <div class="modal-body">
-      <div style="font-size:12px;color:var(--t2);margin-bottom:16px;line-height:1.6;">
+      <div class="ixs-135">
         Importa trades cerrados de todos los exchanges configurados. Los trades ya importados no se duplican.
       </div>
-      <div class="g2" style="gap:10px;margin-bottom:16px;">
+      <div class="g2 ixs-136">
         <div><label class="lbl">Desde</label><input type="date" id="importFrom" value="2026-01-01"></div>
         <div><label class="lbl">Hasta</label><input type="date" id="importTo"></div>
       </div>
-      <div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--t2);">
+      <div class="ixs-137">
         Importará: futuros + spot de Binance, Bybit, OKX, MEXC y KuCoin (los que tenés configurados)
       </div>
-      <div id="importHistProgress" style="margin-top:12px;display:none;font-family:var(--mono);font-size:11px;color:var(--t2);line-height:1.8;"></div>
+      <div id="importHistProgress" class="ixs-138"></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('importHistoryModal')">Cancelar</button>
@@ -1117,11 +1117,11 @@
 </div>
 
 <div class="modal-overlay" id="importModal">
-  <div class="modal" style="width:460px;">
+  <div class="modal ixs-139">
     <div class="modal-hdr"><div class="modal-title">Importar CSV</div><button class="modal-close" onclick="closeModal('importModal')">✕</button></div>
     <div class="modal-body">
-      <div style="background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:16px;font-size:11px;color:var(--t2);font-family:var(--mono);line-height:1.7;">Importa tu historial desde Google Sheets exportado como CSV.</div>
-      <input type="file" id="csvFile" accept=".csv" style="width:100%;padding:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);color:var(--t1);font-family:var(--sans);">
+      <div class="ixs-140">Importa tu historial desde Google Sheets exportado como CSV.</div>
+      <input type="file" id="csvFile" accept=".csv" class="ixs-141">
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('importModal')">Cancelar</button><button class="btn acc" onclick="importCSV()">Importar</button></div>
   </div>

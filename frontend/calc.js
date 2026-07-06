@@ -237,7 +237,7 @@ async function renderCalcSignalChart() {
       : `${info.raw} · precio ${gap >= 0 ? '+' : ''}${gap.toFixed(2)}% vs entry`;
   } catch(e) {
     if (status) status.textContent = `No pude cargar ${info.raw}: ${e.message}`;
-    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${e.message}</div>`;
+    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${esc(e.message)}</div>`;
   } finally {
     window._aiSource = prevSource;
     window._aiType = prevType;

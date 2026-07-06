@@ -9,6 +9,12 @@ function esc(value) {
   })[ch]);
 }
 window.esc = esc;
+function jsArg(value) {
+  return JSON.stringify(String(value ?? '')).replace(/[<>&]/g, ch => ({
+    '<':'\\u003C', '>':'\\u003E', '&':'\\u0026'
+  })[ch]);
+}
+window.jsArg = jsArg;
 // Smart price format: adapts decimals based on magnitude
 const fmtPx = n => {
   if(isNaN(n)||n==null) return '—';
@@ -174,9 +180,9 @@ function showOrderExecutedModal(order) {
   body.innerHTML = `
     <div style="font-family:var(--mono);margin-bottom:14px;">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
-        <span style="font-size:16px;font-weight:600;">${order.ticker||order.symbol||'—'}</span>
+        <span style="font-size:16px;font-weight:600;">${esc(order.ticker||order.symbol||'—')}</span>
         <span class="badge ${dirCls}">${dir.toUpperCase()}${lev}</span>
-        <span style="font-size:11px;color:var(--t3);">${order.exchange||''}</span>
+        <span style="font-size:11px;color:var(--t3);">${esc(order.exchange||'')}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
         <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Precio de entrada</div><div style="color:#3d9cf0;">$${fmtPx(entry)}</div></div>

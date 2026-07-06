@@ -200,7 +200,7 @@ function renderHistCharts(trades) {
     const bw=Math.max(4,Math.abs(d.pnl)/maxTrPnl*80);
     const wrColor=wr>=50?'var(--accent)':'var(--red)';
     return `<div style="display:grid;grid-template-columns:80px 32px 36px 44px 44px 1fr;gap:4px;align-items:center;padding:4px 0;border-bottom:0.5px solid var(--border);">
-      <div style="font-size:10px;color:var(--t2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${name}">${name}</div>
+      <div style="font-size:10px;color:var(--t2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${dashSafe(name)}">${dashSafe(name)}</div>
       <div style="font-size:9px;color:var(--t3);text-align:center;">${d.count}</div>
       <div style="font-size:10px;font-weight:600;font-family:var(--mono);color:${wrColor};text-align:center;">${wr}%</div>
       <div style="font-size:9px;font-family:var(--mono);color:var(--accent);text-align:right;">+$${fmt(avgW)}</div>
@@ -511,10 +511,10 @@ function renderHistory() {
     const resBadge=(t.pnl||0)>=0?'bl':'bs';
     const resLabel=(t.pnl||0)>=0?'WIN':'LOSS';
     return `<tr style="cursor:pointer;" onclick="toggleHistNote('note-${t.id}')">
-      <td><strong>${t.ticker||'—'}</strong></td>
+      <td><strong>${dashSafe(t.ticker||'—')}</strong></td>
       <td><span class="badge ${dirBadge}">${(t.dir||'').toUpperCase()}</span></td>
-      <td style="color:var(--t2);">${t.exchange?.toUpperCase()||'—'}</td>
-      <td style="color:var(--t2);">${t.traderName||'—'}</td>
+      <td style="color:var(--t2);">${dashSafe(t.exchange?.toUpperCase()||'—')}</td>
+      <td style="color:var(--t2);">${dashSafe(t.traderName||'—')}</td>
       <td style="font-family:var(--mono);">$${fmtPx(t.entry)}</td>
       <td style="font-family:var(--mono);">${t.closePrice?'$'+fmtPx(t.closePrice):'—'}</td>
       <td class="${pnlCls}">${t.pnl!=null?(t.pnl>=0?'+':'-')+'$'+fmt(Math.abs(t.pnl)):'—'}</td>
@@ -547,7 +547,7 @@ function renderTraders() {
     const totPnl = cl.reduce((s,x)=>s+(x.pnl||0),0);
     return `<div class="card">
       <div class="fxb" style="margin-bottom:12px;">
-        <div><div style="font-family:var(--mono);font-size:15px;font-weight:600;">${t.name}</div>${t.channel?`<div style="font-size:11px;color:var(--t2);margin-top:2px;">${t.channel}</div>`:''}</div>
+        <div><div style="font-family:var(--mono);font-size:15px;font-weight:600;">${dashSafe(t.name)}</div>${t.channel?`<div style="font-size:11px;color:var(--t2);margin-top:2px;">${dashSafe(t.channel)}</div>`:''}</div>
         <div class="fx" style="gap:6px;">
           <button class="btn sm" onclick="openTraderModal('${t.id}')">Editar</button>
           <button class="btn dan sm" onclick="deleteTrader('${t.id}')">✕</button>
@@ -558,7 +558,7 @@ function renderTraders() {
         <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">WIN RATE</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${cl.length&&wins/cl.length>=.5?'pnl-pos':'pnl-neg'}">${cl.length?Math.round(wins/cl.length*100)+'%':'—'}</div></div>
         <div style="text-align:center;background:var(--bg3);border-radius:var(--r);padding:10px;"><div style="font-size:9px;color:var(--t3);font-family:var(--mono);">PNL</div><div style="font-family:var(--mono);font-size:18px;font-weight:600;" class="${totPnl>=0?'pnl-pos':'pnl-neg'}">${cl.length?(totPnl>=0?'+':'')+fmt(totPnl):'—'}</div></div>
       </div>
-      ${t.notes?`<div style="font-size:11px;color:var(--t2);">${t.notes}</div>`:''}
+      ${t.notes?`<div style="font-size:11px;color:var(--t2);">${dashSafe(t.notes)}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -710,7 +710,7 @@ window.openEditTrade = id => {
     const sel = document.getElementById('dtTrader');
     if (sel && G) {
       sel.innerHTML = '<option value="">— ninguno —</option>' +
-        G.traders().map(tr=>`<option value="${tr.id}"${tr.id===t.traderId?' selected':''}>${tr.name}</option>`).join('');
+        G.traders().map(tr=>`<option value="${dashSafe(tr.id)}"${tr.id===t.traderId?' selected':''}>${dashSafe(tr.name)}</option>`).join('');
     }
     // Pre-fill fields
     document.getElementById('dtTicker').value    = t.ticker||'';
@@ -749,7 +749,7 @@ window.openEditTrade = id => {
   const traders = window.G?.traders()||[];
   document.getElementById('eTrader').innerHTML =
     '<option value="">— Sin trader —</option>' +
-    traders.map(tr=>`<option value="${tr.id}"${tr.id===t?.traderId?' selected':''}>${tr.name}</option>`).join('');
+    traders.map(tr=>`<option value="${dashSafe(tr.id)}"${tr.id===t?.traderId?' selected':''}>${dashSafe(tr.name)}</option>`).join('');
   document.getElementById('eNotes').value = t?.notes||'';
 
   if(fromExchange) {
@@ -981,7 +981,7 @@ window.openManualTrade = () => {
   const G=window.G;
   if(G) {
     document.getElementById('mTrader').innerHTML='<option value="">— ninguno —</option>'+
-      G.traders().map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+      G.traders().map(t=>`<option value="${dashSafe(t.id)}">${dashSafe(t.name)}</option>`).join('');
   }
   addEntryRow();
   openModal('manualTradeModal');

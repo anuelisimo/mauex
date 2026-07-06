@@ -602,11 +602,11 @@ function renderPositions() {
         <div style="display:flex;flex-direction:column;gap:4px;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div style="width:8px;height:8px;border-radius:50%;background:${t.status==='zombie'?'#666':'#22c55e'};flex-shrink:0;"></div>
-            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${t.ticker||'—'}</span>
+            <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--t1);">${dashSafe(t.ticker||'—')}</span>
             <span style="font-size:10px;padding:2px 8px;border-radius:5px;background:${dirBg};color:${dirColor};font-family:var(--mono);border:0.5px solid ${dirBorder};">${dirLevLabel(t)}</span>
             ${t.exchange?`<a href="${getExchangeUrl(t.exchange, t.ticker, t.dir)||'#'}" target="_blank" rel="noopener"
-              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${t.exchange} ↗</a>`:''}
-            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${t.traderName}</span>`:''}
+              style="font-size:10px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);text-decoration:none;">${dashSafe(t.exchange)} ↗</a>`:''}
+            ${t.traderName?`<span style="font-size:10px;color:var(--t3);font-family:var(--mono);">· ${dashSafe(t.traderName)}</span>`:''}
             ${alert.badges?`<span style="display:inline-flex;gap:4px;">${alert.badges}</span>`:''}
           </div>
         </div>
@@ -726,7 +726,7 @@ function renderPositions() {
       </div>
 ` : ''}
 
-      ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${cleanAutoCloseNotes(t.notes)}</div>`:''}
+      ${cleanAutoCloseNotes(t.notes)?`<div style="font-size:11px;color:var(--t2);padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border2);">${dashSafe(cleanAutoCloseNotes(t.notes))}</div>`:''}
       ${invalidationNotesHtml(t)}
 
       <div style="display:grid;grid-template-columns:2fr 3fr 1fr 1fr 1fr;gap:8px;padding:10px 14px;background:rgba(0,0,0,0.15);">
@@ -889,7 +889,7 @@ function mapRow(item, currentPrice) {
       : 'idea';
   const rightCls = item.kind === 'position' && pnl != null ? (pnl >= 0 ? 'pnl-pos' : 'pnl-neg') : '';
   return `<div class="map-row">
-    <div class="map-kind" style="color:${item.color};">${item.label}</div>
+    <div class="map-kind" style="color:${item.color};">${dashSafe(item.label)}</div>
     <div>
       <span style="font-weight:700;color:var(--t1);">${dashSafe(t.ticker||'')}</span>
       <span class="badge ${t.dir==='short'?'bs':t.dir==='spot'?'bsp':'bl'}" style="margin-left:6px;">${dirLevLabel(t)}</span>
