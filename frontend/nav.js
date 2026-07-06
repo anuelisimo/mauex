@@ -141,7 +141,7 @@ window.showPage = page => {
   if (page === 'settings') { loadProxyUrlField(); renderOperationalStatus(); }
 
   // Sync orders when entering orders page
-  if (page === 'orders' && _masterPass && window.G?._hasExchangeKeys?.()) {
+  if (page === 'orders' && ((PROXY_URL && window.getWorkerApiToken?.()) || (_masterPass && window.G?._hasExchangeKeys?.()))) {
     window.syncAllOrders();
   }
 

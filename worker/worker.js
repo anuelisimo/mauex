@@ -19,6 +19,18 @@ const DEFAULT_ALLOWED_ORIGIN = 'https://mauex.vercel.app';
 const ERROR_LOG_KV_KEY = 'errors_log';
 const READER_HEARTBEAT_KV_KEY = 'reader_heartbeat';
 const ERROR_LOG_LIMIT = 100;
+const PROXY_ALLOWED_HOSTS = new Set([
+  'api.binance.com',
+  'fapi.binance.com',
+  'data-api.binance.vision',
+  'api.bybit.com',
+  'www.okx.com',
+  'api.mexc.com',
+  'contract.mexc.com',
+  'api.kucoin.com',
+  'api-futures.kucoin.com',
+  'query1.finance.yahoo.com',
+]);
 
 function requestOriginAllowed(origin, env) {
   if (!origin) return true;
@@ -39,6 +51,62 @@ function corsHeaders(request, env) {
 
 function errorMessage(error) {
   return String(error?.message || error || 'Error desconocido').slice(0, 500);
+}
+
+function proxyTargetAllowed(target) {
+  return target?.protocol === 'https:' && PROXY_ALLOWED_HOSTS.has(target.hostname.toLowerCase());
+}
+
+async function handleProxyRequest(request, url, json, cors) {
+  if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+  const rawTarget = url.searchParams.get('url') || '';
+  let target;
+  try {
+    target = new URL(rawTarget);
+  } catch(e) {
+    return json({ error: 'URL invalida' }, 400);
+  }
+  if (!proxyTargetAllowed(target)) {
+    return json({ error: 'proxy target not allowed', host: target.hostname || '' }, 403);
+  }
+
+  const upstreamHeaders = new Headers();
+  [
+    'accept',
+    'x-mbx-apikey',
+    'x-bapi-api-key',
+    'x-bapi-timestamp',
+    'x-bapi-sign',
+    'x-bapi-recv-window',
+    'ok-access-key',
+    'ok-access-sign',
+    'ok-access-timestamp',
+    'ok-access-passphrase',
+    'kc-api-key',
+    'kc-api-sign',
+    'kc-api-timestamp',
+    'kc-api-passphrase',
+    'kc-api-key-version',
+  ].forEach(name => {
+    const value = request.headers.get(name);
+    if (value) upstreamHeaders.set(name, value);
+  });
+  if (!upstreamHeaders.has('accept')) upstreamHeaders.set('accept', 'application/json,text/plain,*/*');
+
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: 'GET',
+      headers: upstreamHeaders,
+      signal: AbortSignal.timeout(20000),
+    });
+    const outHeaders = new Headers(cors);
+    outHeaders.set('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+    outHeaders.set('Cache-Control', 'no-store');
+    const body = await upstream.arrayBuffer();
+    return new Response(body, { status: upstream.status, headers: outHeaders });
+  } catch(e) {
+    return json({ error: 'proxy fetch failed', message: errorMessage(e) }, 502);
+  }
 }
 
 async function appendErrorLog(env, entry = {}) {
@@ -399,7 +467,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-06-ops-health-orders-v2';
+const WORKER_VERSION = '2026-07-06-proxy-orders-health-v3';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -1697,6 +1765,10 @@ export default {
       return json({ error: 'unauthorized' }, 401);
     }
 
+    if (url.pathname === '/proxy') {
+      return handleProxyRequest(request, url, json, cors);
+    }
+
     if (url.pathname === '/errors') {
       const errors = await readErrorLog(env);
       return json({
@@ -2100,7 +2172,7 @@ export default {
       });
     }
 
-    return json({ error: 'Not found', endpoints: ['/health','/ops-health','/errors','/reader-heartbeat','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/signal-inbox','/telegram-signals','/telegram-signal-ai'] }, 404);
+    return json({ error: 'Not found', endpoints: ['/health','/ops-health','/errors','/reader-heartbeat','/proxy','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/signal-inbox','/telegram-signals','/telegram-signal-ai'] }, 404);
   },
 
   // ── Cron trigger — runs every minute ─────────────────────────────────────

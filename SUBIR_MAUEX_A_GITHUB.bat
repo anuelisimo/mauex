@@ -76,6 +76,8 @@ if exist MAUEX_FASE3_DIAGNOSTICO_FRONTEND.bat git add MAUEX_FASE3_DIAGNOSTICO_FR
 if exist MAUEX_FASE3_DIAGNOSTICO_FRONTEND.ps1 git add MAUEX_FASE3_DIAGNOSTICO_FRONTEND.ps1
 if exist CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.bat git add CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.bat
 if exist CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.ps1
+if exist DEPLOY_WORKER_MAUEX.bat git add DEPLOY_WORKER_MAUEX.bat
+if exist DEPLOY_WORKER_MAUEX.ps1 git add DEPLOY_WORKER_MAUEX.ps1
 if exist frontend\package.json git add frontend\package.json
 if exist frontend\vite.config.js git add frontend\vite.config.js
 if exist frontend\proxy.js git add frontend\proxy.js

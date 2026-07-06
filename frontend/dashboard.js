@@ -465,6 +465,15 @@ async function renderDashboardHealth() {
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch(e) {}
     if (r.status === 401) throw new Error('MAUEX_API_TOKEN ausente o incorrecto en Settings');
+    if (r.status === 404) {
+      let version = '';
+      try {
+        const h = await window.workerFetch(`/health?t=${Date.now()}`, { cache: 'no-store' });
+        const hd = await h.json();
+        version = hd?.version ? ` (${hd.version})` : '';
+      } catch(e) {}
+      throw new Error(`Worker publicado viejo${version}: falta /ops-health. Ejecuta DEPLOY_WORKER_MAUEX.bat.`);
+    }
     if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
     renderDashboardHealthCard(data);
   } catch(e) {

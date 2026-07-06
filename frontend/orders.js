@@ -1,5 +1,44 @@
 // ── Orders rendering ─────────────────────────────────────────────────────────
 let exchangeOrders = [];
+window.exchangeOrders = window.exchangeOrders || exchangeOrders;
+let orderSyncError = '';
+
+function orderNum(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeExchangeOpenOrder(o = {}) {
+  const exchange = String(o.exchange || o.exchangeSource || 'EXCHANGE').toUpperCase();
+  const rawTicker = String(o.ticker || o.symbol || o.instId || '?').trim();
+  const ticker = rawTicker
+    .replace(/[-_]?USDTM$/i, '')
+    .replace(/[-_]?USDT[-_]?SWAP$/i, '')
+    .replace(/[-_]?USDT$/i, '')
+    .replace(/USDT|BUSD|USD$/i, '')
+    .toUpperCase() || rawTicker.toUpperCase();
+  const entry = orderNum(o.entry ?? o.price ?? o.orderPrice ?? o.triggerPrice ?? o.stopPrice);
+  const qty = orderNum(o.qty ?? o.quantity ?? o.origQty ?? o.sizeBase);
+  const totalSize = orderNum(o.totalSize ?? o.size ?? o.notional ?? o.orderValue, qty && entry ? qty * entry : 0);
+  const side = String(o.dir || o.side || '').toLowerCase();
+  const dir = side.includes('sell') || side === 'short' ? 'short' : side.includes('spot') ? 'spot' : 'long';
+  const exchangeId = String(o.exchangeId || o.orderId || o.id || `${exchange}-${rawTicker}-${entry}-${totalSize}`).trim();
+  return {
+    ...o,
+    _exchange: true,
+    exchange,
+    ticker,
+    entry,
+    price: entry,
+    totalSize,
+    size: totalSize,
+    dir,
+    type: o.type || o.orderType || 'LIMIT',
+    status: o.status || 'ABIERTA',
+    exchangeId,
+    id: exchangeId,
+  };
+}
 
 // ── Order selection and grouping ─────────────────────────────────────────────
 let _selectedOrders = new Set();
@@ -96,15 +135,6 @@ function renderOrders() {
   const container = document.getElementById('ordersList');
   if(!container) return;
 
-  if(!_masterPass || !window.G?._hasExchangeKeys?.()) {
-    container.innerHTML = `<div class="empty">
-      <div class="empty-icon">◻</div>
-      <div class="empty-text">Conectá tus exchanges para ver órdenes</div>
-      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>
-    </div>`;
-    return;
-  }
-
   // Merge exchange orders + manual orders from Firestore (status='pending')
   const manualOrders = (window.G?.trades().filter(t=>t.status==='pending')||[]).map(t=>({
     ...t,
@@ -122,13 +152,31 @@ function renderOrders() {
     exchangeId: t.id,
   })).filter(o => o.entry > 0);
 
-  const allOrders = [...manualOrders];
+  const canUseWorkerOrders = !!(PROXY_URL && window.getWorkerApiToken?.());
+  const canUseLocalOrders = !!(_masterPass && window.G?._hasExchangeKeys?.());
+  const liveOrders = (window.exchangeOrders || exchangeOrders || [])
+    .map(normalizeExchangeOpenOrder)
+    .filter(o => o.exchangeId && (o.entry > 0 || o.totalSize > 0));
+  const manualIds = new Set(manualOrders.map(o => String(o.exchangeId || o.id || '')));
+  const allOrders = [
+    ...manualOrders,
+    ...liveOrders.filter(o => !manualIds.has(String(o.exchangeId || o.id || ''))),
+  ];
+
+  if(!allOrders.length && !canUseWorkerOrders && !canUseLocalOrders) {
+    container.innerHTML = `<div class="empty">
+      <div class="empty-icon">◇</div>
+      <div class="empty-text">Conecta tus exchanges o configura MAUEX_API_TOKEN para ver ordenes</div>
+      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>
+    </div>`;
+    return;
+  }
 
   if(!allOrders.length) {
     container.innerHTML = `<div class="empty">
-      <div class="empty-icon">◻</div>
-      <div class="empty-text">No hay órdenes pendientes</div>
-      <div class="empty-sub">Usá la calculadora para enviar órdenes aquí</div>
+      <div class="empty-icon">◇</div>
+      <div class="empty-text">No hay ordenes pendientes</div>
+      <div class="empty-sub">${orderSyncError ? 'Ultimo sync: ' + esc(orderSyncError) : 'Usa la calculadora para enviar ordenes aqui'}</div>
     </div>`;
     return;
   }
@@ -453,11 +501,14 @@ async function fetchAllOrders() {
 window.syncAllOrders = async () => {
   const btn = document.getElementById('syncOrdersBtn');
   if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
+  orderSyncError = '';
   try {
     if(PROXY_URL) {
       const r = await window.workerFetch(`/orders?live=1&t=${Date.now()}`, { cache:'no-store' });
-      if (!r.ok) throw new Error(`Worker /orders HTTP ${r.status}`);
-      const d = await r.json();
+      const text = await r.text();
+      let d = {};
+      try { d = text ? JSON.parse(text) : {}; } catch(e) {}
+      if (!r.ok) throw new Error(d.error || `Worker /orders HTTP ${r.status}`);
       const freshOrders = d.orders || [];
       // Restore grouped orders (remove any that are now individual)
       const grouped = loadGroupedOrders();
@@ -474,6 +525,10 @@ window.syncAllOrders = async () => {
     if(btn){ btn.textContent=`↻ ${exchangeOrders.length} órdenes`; btn.disabled=false; }
   } catch(e) {
     console.error('syncAllOrders:', e);
+    orderSyncError = (typeof liquidityFetchErrorMessage === 'function' ? liquidityFetchErrorMessage(e) : '') || e.message || String(e);
+    window.exchangeOrders = exchangeOrders;
+    renderOrders();
+    toast('Ordenes: ' + orderSyncError, 'error');
     if(btn){ btn.textContent='↻ Sync órdenes'; btn.disabled=false; }
   }
 };

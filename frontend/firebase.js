@@ -124,6 +124,8 @@ onAuthStateChanged(auth, async user => {
     // Show master password modal if keys are configured
     setTimeout(checkMasterPassNeeded, 800);
     startAutoSync();
+    window.startTelegramAutoSync?.();
+    setTimeout(() => window.syncTelegramSignals?.(true), 1800);
     // Railway is reached through the Cloudflare Worker for exchange sync.
     // Avoid a direct browser call here because Railway can reject CORS preflight.
   } else {

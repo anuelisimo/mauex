@@ -1375,6 +1375,7 @@ function startTelegramAutoSync() {
     window.syncTelegramSignals?.(true);
   }, 15000);
 }
+window.startTelegramAutoSync = startTelegramAutoSync;
 
 window.parseSignalInboxInput = async () => {
   const raw = document.getElementById('signalRawInput')?.value || '';
