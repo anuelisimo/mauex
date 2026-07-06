@@ -386,6 +386,88 @@ window._updateLiquidityCache = (data, opts = {}) => {
 window.refreshDashboardLiquidity = () => fetchAndRenderLiquidity({ forceRefresh: true });
 
 const dashSafe = v => esc(v);
+function dashRelativeTime(value) {
+  const ms = Date.parse(value || '');
+  if (!Number.isFinite(ms)) return '-';
+  const diff = Math.max(0, Date.now() - ms);
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'ahora';
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function dashHealthPill(label, state) {
+  const cls = state === 'ok' ? 'pnl-pos' : state === 'warn' ? '' : 'pnl-neg';
+  const color = state === 'ok' ? 'var(--accent)' : state === 'warn' ? 'var(--amber)' : 'var(--red)';
+  return `<span class="${cls}" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:${color};">${dashSafe(label)}</span>`;
+}
+
+function renderDashboardHealthLoading() {
+  const el = document.getElementById('dashHealth');
+  if (!el) return;
+  el.innerHTML = `<div class="card" style="padding:16px;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando salud operativa...</div>`;
+}
+
+function renderDashboardHealthCard(data) {
+  const el = document.getElementById('dashHealth');
+  if (!el) return;
+  const oracle = data?.services?.oracle || {};
+  const railway = data?.services?.railway || {};
+  const reader = data?.reader || null;
+  const errors24h = Number(data?.errors24h || 0) || 0;
+  const serviceText = svc => !svc.configured
+    ? dashHealthPill('sin URL', 'warn')
+    : dashHealthPill(svc.ok ? 'ok' : 'error', svc.ok ? 'ok' : 'bad');
+  const readerText = reader
+    ? dashHealthPill(reader.alive ? `vivo ${dashRelativeTime(reader.ts)}` : `caido ${dashRelativeTime(reader.ts)}`, reader.alive ? 'ok' : 'bad')
+    : dashHealthPill('sin heartbeat', 'warn');
+  const latest = Array.isArray(data?.latestErrors) ? data.latestErrors.slice(0, 3) : [];
+  el.innerHTML = `<div class="card" style="padding:16px 20px;">
+    <div class="fxb" style="gap:12px;margin-bottom:12px;">
+      <div>
+        <div class="sec-label">Salud operativa</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);">Worker ${dashSafe(data?.worker?.version || '-')}</div>
+      </div>
+      <button class="btn sm" onclick="renderDashboardHealth()">Actualizar</button>
+    </div>
+    <div class="g4" style="margin-bottom:12px;">
+      ${dashMetricCard({ l:'Ultimo sync', v:dashRelativeTime(data?.lastSync), sub:data?.lastSync ? new Date(data.lastSync).toLocaleString('es') : '' })}
+      ${dashMetricCard({ l:'Errores 24h', v:String(errors24h), cls:errors24h ? 'red' : 'green' })}
+      ${dashMetricCard({ l:'Telegram reader', v:reader?.alive ? 'VIVO' : 'REVISAR', sub:readerText, cls:reader?.alive ? 'green' : 'red' })}
+      ${dashMetricCard({ l:'Backends', v:'Estado', sub:`Oracle ${serviceText(oracle)} · Railway ${serviceText(railway)}` })}
+    </div>
+    ${latest.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;">
+      <div style="font-family:var(--mono);font-size:9px;color:var(--t3);margin-bottom:6px;">ULTIMOS ERRORES</div>
+      ${latest.map(e => `<div style="display:grid;grid-template-columns:80px 1fr 54px;gap:8px;align-items:center;padding:5px 0;border-bottom:.5px solid var(--border);">
+        <strong style="font-family:var(--mono);font-size:10px;color:var(--t1);">${dashSafe(e.exchange || e.service || 'WORKER')}</strong>
+        <span style="font-size:10px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dashSafe(e.message || '')}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--t3);text-align:right;">${dashRelativeTime(e.ts)}</span>
+      </div>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+async function renderDashboardHealth() {
+  const el = document.getElementById('dashHealth');
+  if (!el || !window.workerFetch) return;
+  renderDashboardHealthLoading();
+  try {
+    const r = await window.workerFetch(`/ops-health?t=${Date.now()}`, { cache: 'no-store' });
+    const text = await r.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch(e) {}
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+    renderDashboardHealthCard(data);
+  } catch(e) {
+    el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--red);font-family:var(--mono);font-size:11px;">
+      No pude cargar Salud: ${dashSafe(liquidityFetchErrorMessage(e))}
+    </div>`;
+  }
+}
+
+window.renderDashboardHealth = renderDashboardHealth;
 const dashPnl = t => Number(t?.pnl) || 0;
 const dashClosedAt = t => t?.closeDate || t?.closedAt || t?.updatedAt || t?.createdAt || '';
 const dashRiskOf = t => {
@@ -895,6 +977,7 @@ function renderDashboard() {
   // Charts
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
   fetchAndRenderLiquidity();
+  renderDashboardHealth();
   renderProfessionalDashboard(closed);
   renderIntelligenceDashboard(closed, all);
   renderQualityDashboard(closed);

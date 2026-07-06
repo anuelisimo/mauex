@@ -1116,7 +1116,8 @@ async function getIbkrDebug() {
 }
 
 function sendJson(req, res, data, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json', ...corsHeaders(req) });
+  const finalStatus = status === 200 && data?.error ? 500 : status;
+  res.writeHead(finalStatus, { 'Content-Type': 'application/json', ...corsHeaders(req) });
   res.end(JSON.stringify(data));
 }
 

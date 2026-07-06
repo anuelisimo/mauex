@@ -66,6 +66,11 @@ function requireApiToken(req, res, next) {
 
 app.use(requireApiToken);
 
+function sendResult(res, data) {
+  const status = data?.error ? 500 : 200;
+  return res.status(status).json(data);
+}
+
 const hmac256 = (secret, msg) =>
   crypto.createHmac('sha256', secret).update(msg).digest('hex');
 
@@ -614,7 +619,7 @@ app.get('/sync-history-now', async (req, res) => {
   } catch(e) {
     results.error = e.message;
   }
-  res.json(results);
+  sendResult(res, results);
 });
 
 app.get('/health', (req, res) => res.json({
@@ -631,13 +636,13 @@ app.get('/myip', async (req, res) => {
     const r = await fetch('https://api4.ipify.org?format=json');
     const d = await r.json();
     res.json({ ip: d.ip });
-  } catch(e) { res.json({ error: e.message }); }
+  } catch(e) { sendResult(res, { error: e.message }); }
 });
 
 app.get('/binance-balance', async (req, res) => {
   const key = (process.env.BINANCE_KEY    || '').trim();
   const sec = (process.env.BINANCE_SECRET || '').trim();
-  if (!key || !sec) return res.json({ error: 'No keys' });
+  if (!key || !sec) return sendResult(res, { error: 'No keys' });
 
   try {
     const ts = Date.now();
@@ -646,7 +651,7 @@ app.get('/binance-balance', async (req, res) => {
       `https://fapi.binance.com/fapi/v2/account?${q}&signature=${hmac256(sec,q)}`,
       { headers: { 'X-MBX-APIKEY': key } }
     );
-    if (!r.ok || !r.data) return res.json({ error: `${r.status} ${r.raw||''}` });
+    if (!r.ok || !r.data) return sendResult(res, { error: `${r.status} ${r.raw||''}` });
     const d = r.data;
 
     // Sum across all assets (multi-asset mode: USDT + USDC separate)
@@ -686,10 +691,10 @@ app.get('/binance-balance', async (req, res) => {
       orders: Math.round(orders * 100) / 100,
       pnl:    Math.round(pnl    * 100) / 100,
     });
-  } catch(e) { res.json({ error: e.message }); }
+  } catch(e) { sendResult(res, { error: e.message }); }
 });
 
-app.get('/binance-positions', (req, res) => res.json({
+app.get('/binance-positions', (req, res) => sendResult(res, {
   positions: state.positions,
   lastSync:  state.lastSync,
   error:     state.error,
@@ -703,7 +708,7 @@ app.get('/binance-orders', (req, res) => res.json({
 app.get('/binance-history', async (req, res) => {
   const key = (process.env.BINANCE_KEY    || '').trim();
   const sec = (process.env.BINANCE_SECRET || '').trim();
-  if (!key || !sec) return res.json({ trades: [], error: 'No keys' });
+  if (!key || !sec) return sendResult(res, { trades: [], error: 'No keys' });
 
   const startTs = parseInt(req.query.from) || new Date('2026-01-01').getTime();
   const endTs   = parseInt(req.query.to)   || Date.now();
@@ -719,7 +724,7 @@ app.get('/binance-history', async (req, res) => {
     );
 
     if (!r.ok || !Array.isArray(r.data)) {
-      return res.json({ trades: [], error: `${r.status} ${r.raw || ''}` });
+      return sendResult(res, { trades: [], error: `${r.status} ${r.raw || ''}` });
     }
 
     const byOrder = {};
@@ -757,7 +762,7 @@ app.get('/binance-history', async (req, res) => {
 
     res.json({ trades, total: trades.length });
   } catch(e) {
-    res.json({ trades: [], error: e.message });
+    sendResult(res, { trades: [], error: e.message });
   }
 });
 
@@ -765,7 +770,7 @@ app.get('/binance-history', async (req, res) => {
 app.get('/binance-position-history', async (req, res) => {
   const key = (process.env.BINANCE_KEY    || '').trim();
   const sec = (process.env.BINANCE_SECRET || '').trim();
-  if (!key || !sec) return res.json({ trades: [], error: 'No keys' });
+  if (!key || !sec) return sendResult(res, { trades: [], error: 'No keys' });
 
   const startTs = parseInt(req.query.from) || new Date('2026-01-01').getTime();
   const endTs   = parseInt(req.query.to)   || Date.now();
@@ -782,7 +787,7 @@ app.get('/binance-position-history', async (req, res) => {
     );
 
     if (!r.ok || !Array.isArray(r.data)) {
-      return res.json({ trades: [], error: `${r.status} ${r.raw || ''}` });
+      return sendResult(res, { trades: [], error: `${r.status} ${r.raw || ''}` });
     }
 
     // Group by symbol to combine multiple partial closes
@@ -847,14 +852,14 @@ app.get('/binance-position-history', async (req, res) => {
 
     res.json({ trades, total: trades.length });
   } catch(e) {
-    res.json({ trades: [], error: e.message });
+    sendResult(res, { trades: [], error: e.message });
   }
 });
 
 app.get('/bybit-balance', async (req, res) => {
   const key = (process.env.BYBIT_KEY    || '').trim();
   const sec = (process.env.BYBIT_SECRET || '').trim();
-  if (!key || !sec) return res.json({ error: 'No Bybit keys' });
+  if (!key || !sec) return sendResult(res, { error: 'No Bybit keys' });
 
   const bybitReq = async (accountType) => {
     const ts  = Date.now().toString();
@@ -871,8 +876,8 @@ app.get('/bybit-balance', async (req, res) => {
     let r = await bybitReq('UNIFIED');
     if (!r.ok || r.data?.retCode !== 0) r = await bybitReq('CONTRACT');
 
-    if (!r.ok || !r.data) return res.json({ error: `${r.status} ${r.raw||''}` });
-    if (r.data.retCode !== 0) return res.json({ error: r.data.retMsg });
+    if (!r.ok || !r.data) return sendResult(res, { error: `${r.status} ${r.raw||''}` });
+    if (r.data.retCode !== 0) return sendResult(res, { error: r.data.retMsg });
 
     const acct     = r.data.result?.list?.[0] || {};
     const totalEq  = parseFloat(acct.totalEquity || 0);
@@ -909,7 +914,7 @@ app.get('/bybit-balance', async (req, res) => {
       pnl:    Math.round(upnl                      * 100) / 100,
     });
   } catch(e) {
-    res.json({ error: e.message });
+    sendResult(res, { error: e.message });
   }
 });
 

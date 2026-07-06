@@ -16,6 +16,9 @@
  */
 
 const DEFAULT_ALLOWED_ORIGIN = 'https://mauex.vercel.app';
+const ERROR_LOG_KV_KEY = 'errors_log';
+const READER_HEARTBEAT_KV_KEY = 'reader_heartbeat';
+const ERROR_LOG_LIMIT = 100;
 
 function requestOriginAllowed(origin, env) {
   if (!origin) return true;
@@ -31,6 +34,145 @@ function corsHeaders(request, env) {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Telegram-Bot-Api-Secret-Token',
     'Vary': 'Origin',
+  };
+}
+
+function errorMessage(error) {
+  return String(error?.message || error || 'Error desconocido').slice(0, 500);
+}
+
+async function appendErrorLog(env, entry = {}) {
+  if (!env.MAUEX_CACHE) return;
+  try {
+    let current = [];
+    const raw = await env.MAUEX_CACHE.get(ERROR_LOG_KV_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) current = parsed;
+      } catch(e) {}
+    }
+    current.unshift({
+      ts: new Date().toISOString(),
+      exchange: String(entry.exchange || entry.service || 'worker').toUpperCase(),
+      endpoint: entry.endpoint || '',
+      message: errorMessage(entry.message || entry.error),
+      status: entry.status || null,
+      phase: entry.phase || '',
+    });
+    await env.MAUEX_CACHE.put(ERROR_LOG_KV_KEY, JSON.stringify(current.slice(0, ERROR_LOG_LIMIT)), { expirationTtl: 7 * 24 * 60 * 60 });
+  } catch(e) {
+    console.error('appendErrorLog failed', e?.message || e);
+  }
+}
+
+async function logBalanceErrors(env, errors = {}, phase = 'balance') {
+  await Promise.all(Object.entries(errors || {}).map(([exchange, message]) =>
+    appendErrorLog(env, { exchange, message, phase })
+  ));
+}
+
+async function readErrorLog(env) {
+  if (!env.MAUEX_CACHE) return [];
+  try {
+    const raw = await env.MAUEX_CACHE.get(ERROR_LOG_KV_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, ERROR_LOG_LIMIT) : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function countErrorsSince(errors, sinceMs) {
+  return (errors || []).filter(e => {
+    const ts = Date.parse(e?.ts || 0);
+    return Number.isFinite(ts) && ts >= sinceMs;
+  }).length;
+}
+
+async function readReaderHeartbeat(env) {
+  if (!env.MAUEX_CACHE) return null;
+  try {
+    const raw = await env.MAUEX_CACHE.get(READER_HEARTBEAT_KV_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    const lastSeenMs = Date.parse(data?.ts || 0);
+    const ageMs = Number.isFinite(lastSeenMs) ? Date.now() - lastSeenMs : null;
+    return {
+      ts: data.ts || null,
+      source: data.source || 'telegram-reader',
+      status: data.status || 'alive',
+      ageMs,
+      alive: ageMs != null && ageMs <= 10 * 60 * 1000,
+    };
+  } catch(e) {
+    return null;
+  }
+}
+
+async function writeReaderHeartbeat(env, payload = {}) {
+  if (!env.MAUEX_CACHE) throw new Error('MAUEX_CACHE KV no configurado');
+  const heartbeat = {
+    ts: new Date().toISOString(),
+    source: String(payload.source || 'telegram-reader').slice(0, 80),
+    status: String(payload.status || 'alive').slice(0, 40),
+    version: String(payload.version || '').slice(0, 80),
+  };
+  await env.MAUEX_CACHE.put(READER_HEARTBEAT_KV_KEY, JSON.stringify(heartbeat), { expirationTtl: 30 * 60 });
+  return heartbeat;
+}
+
+async function readCachedSummary(env) {
+  if (!env.MAUEX_CACHE) return null;
+  try {
+    const raw = await env.MAUEX_CACHE.get('summary');
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function checkServiceHealth(env, name, baseUrl) {
+  const url = String(baseUrl || '').replace(/\/+$/, '');
+  if (!url) return { configured: false, ok: null, status: null, message: 'sin URL' };
+  try {
+    const r = await backendFetch(env, `${url}/health`, { timeoutMs: 8000 });
+    const ok = !!(r.ok && r.data && !r.data.error);
+    return {
+      configured: true,
+      ok,
+      status: r.status || 0,
+      message: ok ? (r.data.status || 'ok') : (r.data?.error || r.raw || `HTTP ${r.status || 0}`),
+      service: r.data?.service || name,
+    };
+  } catch(e) {
+    await appendErrorLog(env, { service: name, phase: 'service-health', message: e.message });
+    return { configured: true, ok: false, status: 0, message: e.message, service: name };
+  }
+}
+
+async function buildOpsHealth(env) {
+  const [summary, errors, reader] = await Promise.all([
+    readCachedSummary(env),
+    readErrorLog(env),
+    readReaderHeartbeat(env),
+  ]);
+  const since24h = Date.now() - 24 * 60 * 60 * 1000;
+  const [oracle, railway] = await Promise.all([
+    checkServiceHealth(env, 'oracle', env.BINANCE_BACKEND_URL || env.ORACLE_BACKEND_URL || ''),
+    checkServiceHealth(env, 'railway', env.RAILWAY_URL || ''),
+  ]);
+  return {
+    ok: true,
+    worker: { status: 'ok', version: WORKER_VERSION },
+    lastSync: summary?.lastSync || null,
+    cacheSavedAt: summary?.cacheSavedAt || null,
+    errors24h: countErrorsSince(errors, since24h),
+    totalErrors: errors.length,
+    latestErrors: errors.slice(0, 5),
+    reader,
+    services: { oracle, railway },
   };
 }
 
@@ -1380,7 +1522,14 @@ async function fetchBalances(env) {
 // ═════════════════════════════════════════════════════════════════════════════
 async function syncAll(env) {
   let balanceData = { balances: {}, totals: { USDT: 0, USDC: 0, total: 0 }, errors: {} };
-  try { balanceData = await fetchBalancesV2(env); } catch(e) {}
+  try {
+    balanceData = await fetchBalancesV2(env);
+  } catch(e) {
+    await appendErrorLog(env, { service: 'worker', phase: 'syncAll', message: e.message });
+  }
+  if (balanceData.errors && Object.keys(balanceData.errors).length) {
+    await logBalanceErrors(env, balanceData.errors, 'syncAll');
+  }
 
   const payload = {
     positions: [],
@@ -1424,7 +1573,7 @@ async function syncAll(env) {
 export default {
 
   // ── HTTP requests ─────────────────────────────────────────────────────────
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const cors = corsHeaders(request, env);
 
@@ -1514,11 +1663,7 @@ export default {
     }
 
     if (url.pathname === '/health') {
-      let cached = null;
-      if (env.MAUEX_CACHE) {
-        const raw = await env.MAUEX_CACHE.get('summary');
-        if (raw) cached = JSON.parse(raw);
-      }
+      const cached = await readCachedSummary(env);
       return json({
         status:    'ok',
         version:   WORKER_VERSION,
@@ -1528,6 +1673,33 @@ export default {
 
     if (!apiTokenOk(request, env)) {
       return json({ error: 'unauthorized' }, 401);
+    }
+
+    if (url.pathname === '/errors') {
+      const errors = await readErrorLog(env);
+      return json({
+        ok: true,
+        total: errors.length,
+        errors24h: countErrorsSince(errors, Date.now() - 24 * 60 * 60 * 1000),
+        errors,
+        reader: await readReaderHeartbeat(env),
+      });
+    }
+
+    if (url.pathname === '/reader-heartbeat') {
+      if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
+      let payload = {};
+      try { payload = await request.json(); } catch(e) {}
+      try {
+        const heartbeat = await writeReaderHeartbeat(env, payload);
+        return json({ ok: true, heartbeat });
+      } catch(e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+
+    if (url.pathname === '/ops-health') {
+      return json(await buildOpsHealth(env));
     }
 
     if (url.pathname === '/telegram-signals') {
@@ -1577,6 +1749,9 @@ export default {
       if (cached) return json(cached);
       // No cache — fetch live
       const data = await fetchBalancesV2(env);
+      if (data.errors && Object.keys(data.errors).length) {
+        ctx?.waitUntil?.(logBalanceErrors(env, data.errors, 'balance-live'));
+      }
       return json(data);
     }
 
@@ -1902,17 +2077,21 @@ export default {
       });
     }
 
-    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/signal-inbox','/telegram-signals','/telegram-signal-ai'] }, 404);
+    return json({ error: 'Not found', endpoints: ['/health','/ops-health','/errors','/reader-heartbeat','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/signal-inbox','/telegram-signals','/telegram-signal-ai'] }, 404);
   },
 
   // ── Cron trigger — runs every minute ─────────────────────────────────────
   async scheduled(event, env, ctx) {
-    console.log('Cron sync starting...');
-    const data = await syncAll(env);
-    console.log(`Cron done: ${data.count.positions} positions, ${data.count.orders} orders`);
-    if (data.errors.binance) console.error('Binance:', data.errors.binance);
-    if (data.errors.bybit)   console.error('Bybit:',   data.errors.bybit);
-    if (data.errors.okx)     console.error('OKX:',     data.errors.okx);
-    if (data.errors.mexc)    console.error('MEXC:',    data.errors.mexc);
+    try {
+      console.log('Cron sync starting...');
+      const data = await syncAll(env);
+      console.log(`Cron done: ${data.count.positions} positions, ${data.count.orders} orders`);
+      for (const [exchange, message] of Object.entries(data.errors || {})) {
+        console.error(`${exchange}:`, message);
+      }
+    } catch(e) {
+      console.error('Cron sync failed:', e?.message || e);
+      ctx?.waitUntil?.(appendErrorLog(env, { service: 'worker', phase: 'cron', message: e?.message || e }));
+    }
   },
 };

@@ -13,12 +13,14 @@ const apiId = Number(process.env.TELEGRAM_API_ID || 0);
 const apiHash = process.env.TELEGRAM_API_HASH || '';
 const workerUrl = (process.env.MAUEX_WORKER_URL || 'https://mauex-proxy.mauaparo.workers.dev').replace(/\/+$/, '');
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_INBOX_SECRET || '';
+const apiToken = process.env.MAUEX_API_TOKEN || '';
 const channelNeedles = (process.env.MAUEX_TELEGRAM_CHANNELS || 'BinanceKillersVipOfficial,BitcoinBullets_VipOfficial')
   .split(',')
   .map(s => normalize(s))
   .filter(Boolean);
 const backfillLimit = Math.max(0, Number(process.env.MAUEX_TELEGRAM_BACKFILL || 20));
 const maxImageBytes = Math.max(0, Number(process.env.MAUEX_TELEGRAM_MAX_IMAGE_BYTES || 700000));
+const heartbeatMs = Math.max(60000, Number(process.env.MAUEX_READER_HEARTBEAT_MS || 5 * 60 * 1000));
 
 function normalize(v) {
   return String(v || '')
@@ -90,6 +92,52 @@ function mediaMimeType(msg) {
   if (mime && /^image\//i.test(mime)) return mime;
   if (msg?.photo || msg?.media?.photo) return 'image/jpeg';
   return '';
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function postReaderHeartbeat(status = 'alive', extra = {}) {
+  if (!apiToken) return;
+  try {
+    const res = await fetch(`${workerUrl}/reader-heartbeat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiToken}`
+      },
+      body: JSON.stringify({
+        source: 'telegram-reader',
+        status,
+        version: '2026-07-06-heartbeat-v1',
+        ...extra
+      })
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[MAUex] Heartbeat rechazado: ${res.status} ${body.slice(0, 200)}`);
+    }
+  } catch (error) {
+    console.error(`[MAUex] Heartbeat error: ${error.message}`);
+  }
+}
+
+function startHeartbeat(client) {
+  const tick = async () => {
+    try {
+      await client.getMe();
+      await postReaderHeartbeat('alive');
+    } catch (error) {
+      console.error(`[MAUex] Telegram heartbeat fallo: ${error.message}`);
+      await postReaderHeartbeat('telegram-error', { error: error.message });
+      try { await client.disconnect(); } catch (_) {}
+      process.exit(1);
+    }
+  };
+  tick().catch(error => console.error(`[MAUex] Heartbeat inicial fallo: ${error.message}`));
+  const timer = setInterval(tick, heartbeatMs);
+  timer.unref?.();
 }
 
 async function readMessageImage(client, msg) {
@@ -225,12 +273,26 @@ async function main() {
   }, new NewMessage({}));
 
   console.log('[MAUex] Lector Telegram activo. Puede quedar corriendo con la PC apagada.');
+  startHeartbeat(client);
 }
 
 const seen = loadSeen();
 
-main().catch(err => {
-  console.error('[MAUex] Error fatal:', err.message);
-  process.exit(1);
-});
+async function startWithBackoff() {
+  let attempt = 0;
+  while (true) {
+    try {
+      await main();
+      return;
+    } catch (err) {
+      attempt += 1;
+      const wait = Math.min(5 * 60 * 1000, 10000 * Math.pow(2, Math.min(attempt - 1, 5)));
+      console.error(`[MAUex] Error fatal: ${err.message}. Reintento en ${Math.round(wait / 1000)}s.`);
+      await postReaderHeartbeat('startup-error', { error: err.message });
+      await sleep(wait);
+    }
+  }
+}
+
+startWithBackoff();
 
