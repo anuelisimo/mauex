@@ -30,6 +30,7 @@ const PROXY_ALLOWED_HOSTS = new Set([
   'api.kucoin.com',
   'api-futures.kucoin.com',
   'query1.finance.yahoo.com',
+  'query2.finance.yahoo.com',
 ]);
 
 function requestOriginAllowed(origin, env) {
@@ -159,6 +160,32 @@ function countErrorsSince(errors, sinceMs) {
   }).length;
 }
 
+function filterOpsHealthErrors(errors = [], { oracleOk = false } = {}) {
+  return (errors || []).filter(e => {
+    const exchange = String(e?.exchange || e?.service || '').toUpperCase();
+    const message = String(e?.message || '');
+    if (oracleOk && exchange === 'BINANCE' && /Railway:\s*404/i.test(message)) return false;
+    return true;
+  });
+}
+
+function uniqueOpsHealthErrors(errors = []) {
+  const seen = new Set();
+  const out = [];
+  for (const e of errors || []) {
+    const key = [
+      String(e?.exchange || '').toUpperCase(),
+      String(e?.service || '').toUpperCase(),
+      String(e?.phase || ''),
+      String(e?.message || ''),
+    ].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
 async function readReaderHeartbeat(env) {
   if (!env.MAUEX_CACHE) return null;
   try {
@@ -231,14 +258,15 @@ async function buildOpsHealth(env) {
     checkServiceHealth(env, 'oracle', env.BINANCE_BACKEND_URL || env.ORACLE_BACKEND_URL || ''),
     checkServiceHealth(env, 'railway', env.RAILWAY_URL || ''),
   ]);
+  const visibleErrors = uniqueOpsHealthErrors(filterOpsHealthErrors(errors, { oracleOk: !!oracle.ok }));
   return {
     ok: true,
     worker: { status: 'ok', version: WORKER_VERSION },
     lastSync: summary?.lastSync || null,
     cacheSavedAt: summary?.cacheSavedAt || null,
-    errors24h: countErrorsSince(errors, since24h),
-    totalErrors: errors.length,
-    latestErrors: errors.slice(0, 5),
+    errors24h: countErrorsSince(visibleErrors, since24h),
+    totalErrors: visibleErrors.length,
+    latestErrors: visibleErrors.slice(0, 5),
     reader,
     services: { oracle, railway },
   };
@@ -467,7 +495,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-06-proxy-orders-health-v3';
+const WORKER_VERSION = '2026-07-06-yahoo-query2-health-v5';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────

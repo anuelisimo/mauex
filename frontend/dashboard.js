@@ -415,9 +415,12 @@ function renderDashboardHealthCard(data) {
   if (!el) return;
   const oracle = data?.services?.oracle || {};
   const railway = data?.services?.railway || {};
+  if (oracle?.ok && railway?.configured && !railway?.ok) railway.optionalFallback = true;
   const reader = data?.reader || null;
   const errors24h = Number(data?.errors24h || 0) || 0;
-  const serviceText = svc => !svc.configured
+  const serviceText = svc => svc.optionalFallback
+    ? dashHealthPill('fallback', 'warn')
+    : !svc.configured
     ? dashHealthPill('sin URL', 'warn')
     : dashHealthPill(svc.ok ? 'ok' : 'error', svc.ok ? 'ok' : 'bad');
   const readerText = reader

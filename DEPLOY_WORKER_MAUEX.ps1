@@ -54,6 +54,7 @@ if ($token) {
   Write-Host ""
   Write-Host "Probando /proxy para charts..." -ForegroundColor Cyan
   $proxyTargets = @(
+    'https://query2.finance.yahoo.com/v8/finance/chart/PSLV?interval=1d&range=5d',
     'https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=1H&limit=2',
     'https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?interval=1h&range=1d'
   )

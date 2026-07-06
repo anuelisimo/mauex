@@ -1228,9 +1228,10 @@ function tradeMarketSource(t={}) {
 
 function isTradFiTrade(t={}) {
   const source = String(t?.marketSource || '').trim().toUpperCase();
+  const exchange = String(t?.exchange || '').trim().toUpperCase();
   const marketType = String(t?.marketType || '').trim().toLowerCase();
   const ticker = String(t?.ticker || '').trim().toUpperCase();
-  if (source === 'YAHOO' || source === 'IBKR') return true;
+  if (source === 'YAHOO' || source === 'IBKR' || exchange === 'YAHOO' || exchange === 'IBKR') return true;
   if (['stock','etf','commodity','index','forex'].includes(marketType)) return true;
   return /^[A-Z0-9.^=-]{1,16}$/.test(ticker)
     && /[.=^]/.test(ticker)
@@ -1281,23 +1282,29 @@ function kucoinFuturesSymbol(ticker='') {
 async function fetchYahooPrice(ticker) {
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
-  const fetchers = [
-    ...(window.proxyFetch ? [() => window.proxyFetch(url, { cache:'no-store' })] : []),
-    ...(window.publicFetch ? [() => window.publicFetch(url, { cache:'no-store' })] : []),
-    () => fetch(url, { cache:'no-store' }),
-  ];
+  const urls = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'].flatMap(host => [
+    `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
+    `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
+  ]);
   let d = null;
   let lastError = null;
-  for (const run of fetchers) {
-    try {
-      const r = await run();
-      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
-      d = await r.json();
-      break;
-    } catch(e) {
-      lastError = e;
+  for (const url of urls) {
+    const fetchers = [
+      ...(window.proxyFetch ? [() => window.proxyFetch(url, { cache:'no-store' })] : []),
+      ...(window.publicFetch ? [() => window.publicFetch(url, { cache:'no-store' })] : []),
+      () => fetch(url, { cache:'no-store' }),
+    ];
+    for (const run of fetchers) {
+      try {
+        const r = await run();
+        if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+        d = await r.json();
+        if (d?.chart?.result?.[0]) break;
+      } catch(e) {
+        lastError = e;
+      }
     }
+    if (d?.chart?.result?.[0]) break;
   }
   if (!d) throw lastError || new Error('Yahoo sin datos');
   const res = d.chart?.result?.[0];
