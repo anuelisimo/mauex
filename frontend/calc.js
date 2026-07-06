@@ -328,7 +328,12 @@ window.handleCalcTickerInput = val => {
   const el = document.getElementById('cTicker');
   if (el) el.value = String(val || '').toUpperCase();
   setCalcTickerSource('auto', '');
-  window.showCalcTickerSuggestions?.(el?.value || val || '');
+  const nextValue = el?.value || val || '';
+  if (typeof window.showCalcTickerSuggestions === 'function') {
+    window.showCalcTickerSuggestions(nextValue);
+  } else {
+    renderCalcTickerFallbackSuggestions(nextValue);
+  }
   compute();
 };
 
@@ -348,6 +353,34 @@ window.legacyCurrentCalcTickerMarket = () => ({
 
 function cryptoExchangeSource(source='') {
   return ['binance','bybit','okx','mexc','kucoin'].includes(String(source || '').toLowerCase());
+}
+
+function renderCalcTickerFallbackSuggestions(val) {
+  const dd = document.getElementById('calcTickerDD');
+  if (!dd) return;
+  const q = String(val || '').trim().toUpperCase();
+  if (q.length < 2) { dd.style.display = 'none'; return; }
+  const bases = ['BTC','ETH','SOL','BNB','XRP','ADA','DOGE','AVAX','LINK','LTC','DOT','TRX','TON','NEAR','AAVE','UNI','ONDO','SUI'];
+  const base = bases.find(x => x.startsWith(q) || `${x}USDT`.startsWith(q)) || (/^[A-Z0-9]{2,10}$/.test(q) ? q.replace(/USDT$/,'') : '');
+  const rows = base ? [
+    { ticker:`${base}USDT`, source:'binance', kind:'futures', label:'Binance futures' },
+    { ticker:`${base}USDT`, source:'binance', kind:'spot', label:'Binance spot' },
+    { ticker:`${base}USDT`, source:'bybit', kind:'futures', label:'Bybit futures' },
+    { ticker:`${base}-USDT-SWAP`, source:'okx', kind:'futures', label:'OKX futures' },
+    { ticker:`${base}_USDT`, source:'mexc', kind:'futures', label:'MEXC futures' },
+  ] : [];
+  if (!rows.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = rows.map(r => `
+    <div onclick="selectCalcTicker(${jsArg(r.ticker)},${jsArg(r.source)},'crypto',${jsArg(r.kind)})"
+      style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--border);"
+      onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <span style="font-size:10px;color:var(--accent);font-family:var(--mono);min-width:48px;">${r.kind.toUpperCase()}</span>
+      <div>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;">${esc(r.ticker)}</div>
+        <div style="font-size:10px;color:var(--t3);">${esc(r.label)}</div>
+      </div>
+    </div>`).join('');
+  dd.style.display = 'block';
 }
 
 function calcTickerSourceLabel() {

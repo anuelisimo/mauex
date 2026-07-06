@@ -399,7 +399,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-04-bybit-row-reconcile-v1';
+const WORKER_VERSION = '2026-07-06-ops-health-orders-v2';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
