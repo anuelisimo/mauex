@@ -101,6 +101,7 @@ if exist scripts\deploy\SUBIR_BACKEND_MAUEX_A_GITHUB.bat git add scripts\deploy\
 if exist MAUEX_ACTUALIZAR_TODO.bat git add MAUEX_ACTUALIZAR_TODO.bat
 if exist MAUEX_ACTUALIZAR_TODO_AUTO.bat git add MAUEX_ACTUALIZAR_TODO_AUTO.bat
 if exist scripts\deploy\COPIAR_WORKER_CLOUDFLARE.bat git add scripts\deploy\COPIAR_WORKER_CLOUDFLARE.bat
+if exist scripts\build-vercel-static.js git add scripts\build-vercel-static.js
 if exist scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.bat git add scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.bat
 if exist scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.ps1 git add scripts\setup\INSTALAR_IBKR_ORACLE_MAUEX.ps1
 if exist scripts\diagnostics\PROBAR_IBKR_MAUEX.bat git add scripts\diagnostics\PROBAR_IBKR_MAUEX.bat
