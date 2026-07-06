@@ -344,7 +344,7 @@ window.saveTrade = async status => {
       marketType: calcTickerMarket.type || '',
       marketKind: calcTickerMarket.kind || '',
       dir: calcState.dir,
-      exchange: calcState.ex,
+      exchange: calcTickerMarket.source === 'yahoo' ? 'YAHOO' : calcState.ex,
       leverage: lev,
       traderId, traderName, notes, invalidations, status,
       ...(watchOrder ? { watchOrder } : {}),
@@ -1226,9 +1226,25 @@ function tradeMarketSource(t={}) {
   return String(t?.marketSource || t?.exchange || '').trim().toUpperCase();
 }
 
-function isCryptoTrade(t={}) {
-  return isCrypto(t?.ticker, t?.exchange) || CRYPTO_EXCHANGES.includes(tradeMarketSource(t));
+function isTradFiTrade(t={}) {
+  const source = String(t?.marketSource || '').trim().toUpperCase();
+  const marketType = String(t?.marketType || '').trim().toLowerCase();
+  const ticker = String(t?.ticker || '').trim().toUpperCase();
+  if (source === 'YAHOO' || source === 'IBKR') return true;
+  if (['stock','etf','commodity','index','forex'].includes(marketType)) return true;
+  return /^[A-Z0-9.^=-]{1,16}$/.test(ticker)
+    && /[.=^]/.test(ticker)
+    && !/USDT$|BUSD$/.test(ticker);
 }
+
+function isCryptoTrade(t={}) {
+  if (isTradFiTrade(t)) return false;
+  return CRYPTO_EXCHANGES.includes(tradeMarketSource(t)) || isCrypto(t?.ticker, t?.exchange);
+}
+window.isTradFiTrade = isTradFiTrade;
+window.isCryptoTrade = isCryptoTrade;
+G.isTradFiTrade = isTradFiTrade;
+G.isCryptoTrade = isCryptoTrade;
 
 function baseCryptoSymbol(ticker='') {
   return String(ticker || '')
@@ -1266,8 +1282,24 @@ async function fetchYahooPrice(ticker) {
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
-  const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
-  const d = await r.json();
+  const fetchers = [
+    ...(window.proxyFetch ? [() => window.proxyFetch(url, { cache:'no-store' })] : []),
+    ...(window.publicFetch ? [() => window.publicFetch(url, { cache:'no-store' })] : []),
+    () => fetch(url, { cache:'no-store' }),
+  ];
+  let d = null;
+  let lastError = null;
+  for (const run of fetchers) {
+    try {
+      const r = await run();
+      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      d = await r.json();
+      break;
+    } catch(e) {
+      lastError = e;
+    }
+  }
+  if (!d) throw lastError || new Error('Yahoo sin datos');
   const res = d.chart?.result?.[0];
   const quote = res?.indicators?.quote?.[0]?.close || [];
   const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();
@@ -1773,7 +1805,7 @@ function startLivePrices() {
       for (const t of stockTickers) {
         try {
           const p = await fetchYahooPrice(t);
-          if (p > 0) setPrice(t, 'spot', p);
+          if (p > 0) setPrice(t, 'spot', p, 'yahoo');
         } catch(e){}
       }
     };
@@ -1837,7 +1869,7 @@ window.refreshPricesManual = async () => {
     } else {
       try {
         const p = await fetchYahooPrice(t.ticker);
-        if (p > 0) setPrice(sym, 'spot', p);
+        if (p > 0) setPrice(sym, 'spot', p, 'yahoo');
       } catch(e){}
     }
   }

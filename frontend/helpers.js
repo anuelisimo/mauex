@@ -59,10 +59,12 @@ const APP_CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','L
   'HYPE','CAKE','LINEA','XVG','POL','TAO','VIRTUAL','ASTER','JUP','SUI','IDOL','PTB','WLD'];
 const APP_CRYPTO_EXCHANGES = ['BINANCE','BYBIT','OKX','MEXC','KUCOIN','GATE','KRAKEN','COINBASE','HUOBI'];
 function appIsCryptoTicker(ticker, exchange) {
-  if (window.isCryptoTicker) return window.isCryptoTicker(ticker, exchange);
   const ex = String(exchange || '').toUpperCase();
-  if (APP_CRYPTO_EXCHANGES.includes(ex)) return true;
+  if (['YAHOO','IBKR'].includes(ex)) return false;
   const raw = String(ticker || '').trim().toUpperCase();
+  if (/[.=^]/.test(raw) && !/USDT$|BUSD$/.test(raw)) return false;
+  if (window.isCryptoTicker) return window.isCryptoTicker(ticker, exchange);
+  if (APP_CRYPTO_EXCHANGES.includes(ex)) return true;
   const sym = raw.replace(/USDT|BUSD|USD$/,'');
   return APP_CRYPTOS.includes(sym) || raw.endsWith('USDT') || raw.endsWith('BUSD');
 }
@@ -70,8 +72,24 @@ async function fetchYahooSpotPrice(ticker) {
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`;
-  const r = await (window.publicFetch ? window.publicFetch(url) : fetch(url));
-  const d = await r.json();
+  const fetchers = [
+    ...(window.proxyFetch ? [() => window.proxyFetch(url, { cache:'no-store' })] : []),
+    ...(window.publicFetch ? [() => window.publicFetch(url, { cache:'no-store' })] : []),
+    () => fetch(url, { cache:'no-store' }),
+  ];
+  let d = null;
+  let lastError = null;
+  for (const run of fetchers) {
+    try {
+      const r = await run();
+      if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+      d = await r.json();
+      break;
+    } catch(e) {
+      lastError = e;
+    }
+  }
+  if (!d) throw lastError || new Error('Yahoo sin datos');
   const res = d.chart?.result?.[0];
   const quote = res?.indicators?.quote?.[0]?.close || [];
   const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();

@@ -163,13 +163,16 @@ window.showPage = page => {
       if (!sym || !window.startLivePrices) return;
       const p = G.getPrice ? G.getPrice(sym, t.dir) : null;
       if (p == null || sym === 'XMR') {
-        const isStockOrEtf = !appIsCryptoTicker(t.ticker, t.exchange);
+        const isStockOrEtf = typeof window.isCryptoTrade === 'function'
+          ? !window.isCryptoTrade(t)
+          : !appIsCryptoTicker(t.ticker, t.exchange);
         if (isStockOrEtf) {
           fetchYahooSpotPrice(t.ticker)
             .then(px => {
               if (px && window.G) {
-                window.G.prices[sym] = {...(window.G.prices[sym] || {}), spot:px};
+                window.G.prices[sym] = {...(window.G.prices[sym] || {}), spot:px, yahoo_spot:px};
                 renderPositions();
+                if (typeof renderOrders === 'function') renderOrders();
                 if (typeof renderMap === 'function') renderMap();
               }
             })

@@ -115,6 +115,12 @@ function calcChartSymbolInfo() {
     : (calcState.marketSource || 'auto');
   const selectedType = calcState.marketType || '';
   const selectedKind = calcState.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures');
+  const autoTradFi = calcState.marketSource === 'auto'
+    && ((typeof STOCK_LIST !== 'undefined' && STOCK_LIST.some(x => x.s === raw))
+      || (/[.=^]/.test(raw) && !/USDT$|BUSD$/.test(raw)));
+  if (autoTradFi) {
+    return { raw, symbol: raw, source:'yahoo', type: selectedType || 'stock', marketKind:'spot' };
+  }
   if (selectedSource === 'yahoo') {
     return { raw, symbol: raw, source:'yahoo', type: selectedType || 'stock', marketKind:'spot' };
   }
@@ -430,11 +436,17 @@ window.selectCalcTicker = (ticker, source, type, marketKind='') => {
   compute();
 };
 
-window.currentCalcTickerMarket = () => ({
-  source: calcState.marketSource || 'auto',
-  type: calcState.marketType || '',
-  kind: calcState.marketKind || '',
-});
+window.currentCalcTickerMarket = () => {
+  if (calcState.marketSource === 'auto') {
+    const info = calcChartSymbolInfo();
+    if (info) return { source: info.source || 'auto', type: info.type || '', kind: info.marketKind || '' };
+  }
+  return {
+    source: calcState.marketSource || 'auto',
+    type: calcState.marketType || '',
+    kind: calcState.marketKind || '',
+  };
+};
 
 function calcTpPercentIds() {
   return ['cTP1pct','cTP2pct','cTP3pct'];

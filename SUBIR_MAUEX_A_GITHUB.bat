@@ -47,6 +47,7 @@ if exist frontend\exchange-keys.js git add frontend\exchange-keys.js
 if exist frontend\orders.js git add frontend\orders.js
 if exist frontend\init.js git add frontend\init.js
 if exist vercel.json git add vercel.json
+if exist .vercelignore git add .vercelignore
 if exist .gitignore git add .gitignore
 if exist wrangler.jsonc git add wrangler.jsonc
 if exist firebase.json git add firebase.json
@@ -78,6 +79,8 @@ if exist CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.bat git add CONFIGURA
 if exist CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.ps1 git add CONFIGURAR_HEARTBEAT_TELEGRAM_READER_ORACLE_MAUEX.ps1
 if exist DEPLOY_WORKER_MAUEX.bat git add DEPLOY_WORKER_MAUEX.bat
 if exist DEPLOY_WORKER_MAUEX.ps1 git add DEPLOY_WORKER_MAUEX.ps1
+if exist DEPLOY_VERCEL_MAUEX.bat git add DEPLOY_VERCEL_MAUEX.bat
+if exist DEPLOY_VERCEL_MAUEX.ps1 git add DEPLOY_VERCEL_MAUEX.ps1
 if exist frontend\package.json git add frontend\package.json
 if exist frontend\vite.config.js git add frontend\vite.config.js
 if exist frontend\proxy.js git add frontend\proxy.js

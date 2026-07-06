@@ -135,7 +135,8 @@ function renderOrders() {
   const container = document.getElementById('ordersList');
   if(!container) return;
 
-  // Merge exchange orders + manual orders from Firestore (status='pending')
+  // Orders view is intentionally manual-only. Exchange open orders still sync for
+  // account diagnostics, but they are not mixed into this page.
   const manualOrders = (window.G?.trades().filter(t=>t.status==='pending')||[]).map(t=>({
     ...t,
     _manual: true,
@@ -152,31 +153,13 @@ function renderOrders() {
     exchangeId: t.id,
   })).filter(o => o.entry > 0);
 
-  const canUseWorkerOrders = !!(PROXY_URL && window.getWorkerApiToken?.());
-  const canUseLocalOrders = !!(_masterPass && window.G?._hasExchangeKeys?.());
-  const liveOrders = (window.exchangeOrders || exchangeOrders || [])
-    .map(normalizeExchangeOpenOrder)
-    .filter(o => o.exchangeId && (o.entry > 0 || o.totalSize > 0));
-  const manualIds = new Set(manualOrders.map(o => String(o.exchangeId || o.id || '')));
-  const allOrders = [
-    ...manualOrders,
-    ...liveOrders.filter(o => !manualIds.has(String(o.exchangeId || o.id || ''))),
-  ];
-
-  if(!allOrders.length && !canUseWorkerOrders && !canUseLocalOrders) {
-    container.innerHTML = `<div class="empty">
-      <div class="empty-icon">◇</div>
-      <div class="empty-text">Conecta tus exchanges o configura MAUEX_API_TOKEN para ver ordenes</div>
-      <button class="btn acc sm" style="margin-top:12px;" onclick="window.showPage('settings')">⚙ Configurar</button>
-    </div>`;
-    return;
-  }
+  const allOrders = manualOrders;
 
   if(!allOrders.length) {
     container.innerHTML = `<div class="empty">
       <div class="empty-icon">◇</div>
       <div class="empty-text">No hay ordenes pendientes</div>
-      <div class="empty-sub">${orderSyncError ? 'Ultimo sync: ' + esc(orderSyncError) : 'Usa la calculadora para enviar ordenes aqui'}</div>
+      <div class="empty-sub">${orderSyncError ? 'Ultimo sync: ' + esc(orderSyncError) : 'Usa la calculadora para enviar ordenes manuales aqui'}</div>
     </div>`;
     return;
   }
@@ -503,6 +486,13 @@ window.syncAllOrders = async () => {
   if(btn){ btn.textContent='⟳ Cargando...'; btn.disabled=true; }
   orderSyncError = '';
   try {
+    await window._loadTrades?.();
+    window.startLivePrices?.();
+    renderOrders();
+    updateStatusBar();
+    const manualCount = (window.G?.trades?.() || []).filter(t => t.status === 'pending').length;
+    if(btn){ btn.textContent=`↻ ${manualCount} manuales`; btn.disabled=false; }
+    return;
     if(PROXY_URL) {
       const r = await window.workerFetch(`/orders?live=1&t=${Date.now()}`, { cache:'no-store' });
       const text = await r.text();

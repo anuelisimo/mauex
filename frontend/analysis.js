@@ -176,8 +176,24 @@ async function fetchOHLCV(symbol, interval, limit=300) {
     const range = rangeMap[interval]||'1y';
     const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yhIv}&range=${range}`;
     try {
-      const r = await (window.publicFetch ? window.publicFetch(yhUrl) : fetch(yhUrl));
-      const d = await r.json();
+      const fetchers = [
+        ...(window.proxyFetch ? [() => window.proxyFetch(yhUrl, { cache:'no-store' })] : []),
+        ...(window.publicFetch ? [() => window.publicFetch(yhUrl, { cache:'no-store' })] : []),
+        () => fetch(yhUrl, { cache:'no-store' }),
+      ];
+      let d = null;
+      let lastError = null;
+      for (const run of fetchers) {
+        try {
+          const r = await run();
+          if(!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+          d = await r.json();
+          break;
+        } catch(err) {
+          lastError = err;
+        }
+      }
+      if (!d) throw lastError || new Error('Sin datos Yahoo');
       const res = d.chart?.result?.[0];
       if(!res) throw new Error('Sin datos Yahoo');
       const ts = res.timestamp;
@@ -250,9 +266,24 @@ async function fetchOHLCV(symbol, interval, limit=300) {
       const yhIvMap = {'1M':'1mo','1w':'1wk','1d':'1d','4h':'1h','1h':'1h','30m':'30m','15m':'15m'};
       const yhRangeMap = {'1M':'10y','1w':'5y','1d':'1y','4h':'3mo','1h':'1mo','30m':'1mo','15m':'5d'};
       const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(baseAsset + '-USD')}?interval=${yhIvMap[interval]||'1d'}&range=${yhRangeMap[interval]||'1y'}`;
-      const r = await fetchFn(yhUrl);
-      if(!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
-      const d = await r.json();
+      const fetchers = [
+        ...(window.proxyFetch ? [() => window.proxyFetch(yhUrl, { cache:'no-store' })] : []),
+        ...(window.publicFetch ? [() => window.publicFetch(yhUrl, { cache:'no-store' })] : []),
+        () => fetch(yhUrl, { cache:'no-store' }),
+      ];
+      let d = null;
+      let yahooLastErr = null;
+      for (const run of fetchers) {
+        try {
+          const r = await run();
+          if(!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+          d = await r.json();
+          break;
+        } catch(err) {
+          yahooLastErr = err;
+        }
+      }
+      if (!d) throw yahooLastErr || new Error('Yahoo sin datos');
       const res = d.chart?.result?.[0];
       const ts = res?.timestamp || [];
       const q = res?.indicators?.quote?.[0] || {};

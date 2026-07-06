@@ -53,9 +53,34 @@ if ($token) {
 
   Write-Host ""
   Write-Host "Probando /proxy para charts..." -ForegroundColor Cyan
-  $chartUrl = [uri]::EscapeDataString('https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=2')
-  $proxy = Invoke-WebRequest -UseBasicParsing -Uri "https://mauex-proxy.mauaparo.workers.dev/proxy?url=$chartUrl&t=$stamp" -Headers $headers -TimeoutSec 30
-  Write-Host ("Proxy status: " + $proxy.StatusCode + " bytes=" + $proxy.Content.Length)
+  $proxyTargets = @(
+    'https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=1H&limit=2',
+    'https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?interval=1h&range=1d'
+  )
+  $proxyOk = $false
+  foreach ($target in $proxyTargets) {
+    $chartUrl = [uri]::EscapeDataString($target)
+    try {
+      $proxy = Invoke-WebRequest -UseBasicParsing -Uri "https://mauex-proxy.mauaparo.workers.dev/proxy?url=$chartUrl&t=$stamp" -Headers $headers -TimeoutSec 30
+      Write-Host ("Proxy OK: " + ([uri]$target).Host + " status=" + $proxy.StatusCode + " bytes=" + $proxy.Content.Length)
+      $proxyOk = $true
+      break
+    } catch {
+      $status = ''
+      $body = ''
+      if ($_.Exception.Response) {
+        try { $status = [int]$_.Exception.Response.StatusCode } catch {}
+        try {
+          $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+          $body = $reader.ReadToEnd()
+        } catch {}
+      }
+      Write-Host ("Proxy aviso: " + ([uri]$target).Host + " status=" + $status + " " + $body.Substring(0, [Math]::Min(180, $body.Length))) -ForegroundColor Yellow
+    }
+  }
+  if (-not $proxyOk) {
+    Write-Host "El Worker deployo bien, pero los proveedores publicos de velas devolvieron bloqueo temporal. No marco el deploy como fallido por esto." -ForegroundColor Yellow
+  }
 }
 
 Write-Host ""
