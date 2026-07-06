@@ -1,20 +1,26 @@
-// â”€â”€ Proxy config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Proxy config ──────────────────────────────────────────────────────────
 // Set this to your Cloudflare Worker URL after deploying worker.js
 // Example: 'https://mauex-proxy.tuusuario.workers.dev'
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const fmt  = (n,d=0) => isNaN(n)?'â€”':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+// ── Helpers ────────────────────────────────────────────────────────────────
+const fmt  = (n,d=0) => isNaN(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
+window.esc = esc;
 // Smart price format: adapts decimals based on magnitude
 const fmtPx = n => {
-  if(isNaN(n)||n==null) return 'â€”';
+  if(isNaN(n)||n==null) return '—';
   if(n>=1000)  return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
   if(n>=100)   return n.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
   if(n>=1)     return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   if(n>=0.01)  return n.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
   return n.toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:6});
 };
-const fmtP = n => isNaN(n)?'â€”':(n>=0?'+':'')+n.toFixed(2)+'%';
+const fmtP = n => isNaN(n)?'—':(n>=0?'+':'')+n.toFixed(2)+'%';
 const fmtQty = n => {
-  if(isNaN(n)||n==null) return 'â€”';
+  if(isNaN(n)||n==null) return '—';
   const a = Math.abs(n);
   const d = a>=100 ? 2 : a>=10 ? 3 : a>=1 ? 4 : 6;
   return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:d});
@@ -49,7 +55,7 @@ window.updateDirectTradeSizeLabel = () => {
   const hint = document.getElementById('dtSizeHint');
   const lev = document.getElementById('dtLev');
   if (dir === 'spot') {
-    if (label) label.textContent = 'TamaÃ±o spot USD';
+    if (label) label.textContent = 'Tamaño spot USD';
     if (hint) hint.textContent = 'Capital comprado en spot. Sin margen ni leverage.';
     if (lev) { lev.value = '1'; lev.disabled = true; }
   } else {
@@ -66,7 +72,7 @@ function formatLevValue(value) {
 function dirLevLabel(item) {
   const dir = String(item?.dir || '').toUpperCase();
   const lev = Number(item?.leverage || item?.lev || 1);
-  if (!dir) return 'â€”';
+  if (!dir) return '—';
   if (dir === 'SPOT' || !Number.isFinite(lev) || lev <= 1) return dir;
   return dir + ' x' + formatLevValue(lev);
 }
@@ -90,12 +96,12 @@ function effectiveTradeSize(t={}) {
   return Math.round(risk * (Number(t.leverage || 1) || 1) * 100) / 100;
 }
 const fmtD = d => {
-  if (!d) return 'â€”';
+  if (!d) return '—';
   const str = String(d);
   const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
   try { return new Date(d).toLocaleDateString('es',{day:'2-digit',month:'2-digit',year:'2-digit'}); }
-  catch(e) { return str || 'â€”'; }
+  catch(e) { return str || '—'; }
 };
 
 window.toast = (msg, type='success') => {
@@ -160,7 +166,7 @@ window.closeModal = id => document.getElementById(id).classList.remove('open');
 function showOrderExecutedModal(order) {
   const body = document.getElementById('orderExecutedBody');
   if (!body) return;
-  const dir   = order.dir || 'â€”';
+  const dir   = order.dir || '—';
   const dirCls = dir==='long'?'bl':dir==='short'?'bs':'bsp';
   const size  = order.totalSize || order.size || 0;
   const entry = order.entry || order.price || 0;
@@ -168,17 +174,17 @@ function showOrderExecutedModal(order) {
   body.innerHTML = `
     <div style="font-family:var(--mono);margin-bottom:14px;">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
-        <span style="font-size:16px;font-weight:600;">${order.ticker||order.symbol||'â€”'}</span>
+        <span style="font-size:16px;font-weight:600;">${order.ticker||order.symbol||'—'}</span>
         <span class="badge ${dirCls}">${dir.toUpperCase()}${lev}</span>
         <span style="font-size:11px;color:var(--t3);">${order.exchange||''}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
         <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Precio de entrada</div><div style="color:#3d9cf0;">$${fmtPx(entry)}</div></div>
-        <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">TamaÃ±o</div><div>$${fmt(size)}</div></div>
+        <div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;margin-bottom:2px;">Tamaño</div><div>$${fmt(size)}</div></div>
       </div>
       <div style="margin-top:12px;padding:10px 12px;background:var(--bg3);border-radius:var(--r);font-size:11px;color:var(--t2);line-height:1.6;">
-        La orden ya no aparece en el exchange â€” probablemente fue ejecutada.<br>
-        UsÃ¡ el desplegable en la tarjeta para moverla a Posiciones.
+        La orden ya no aparece en el exchange — probablemente fue ejecutada.<br>
+        Usá el desplegable en la tarjeta para moverla a Posiciones.
       </div>
     </div>`;
   openModal('orderExecutedModal');

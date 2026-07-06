@@ -568,7 +568,7 @@ function telegramSecret(env) {
 function telegramSecretOk(request, url, env) {
   const secret = telegramSecret(env);
   if (!secret) return false;
-  const got = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
+  const got = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || url.searchParams.get('secret') || '';
   return constantTimeEqual(got, secret);
 }
 
@@ -647,6 +647,63 @@ function normalizeTelegramSignal(update = {}) {
     imageSkipped: !!msg.mauex_image_skipped,
     providerSignalId: msg.mauex_provider_signal_id || '',
     messageKind: msg.mauex_message_kind || '',
+  };
+}
+
+function normalizeInboxSignal(payload = {}) {
+  const source = String(payload.source || '').trim().toLowerCase();
+  if (!source || !['colony', 'telegram'].includes(source)) return null;
+  const signalId = String(payload.signalId || payload.id || `${source}:${Date.now()}`).trim();
+  const symbol = String(payload.symbol || payload.parsed?.ticker || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const ticker = String(payload.parsed?.ticker || symbol.replace(/USDT|USDC|USD|PERP/g, '') || '').toUpperCase();
+  const direction = String(payload.direction || payload.parsed?.dir || '').toLowerCase();
+  const entryPrice = Number(payload.entry?.price ?? payload.entry ?? payload.parsed?.entry ?? 0) || 0;
+  const stopLoss = Number(payload.stopLoss ?? payload.sl ?? payload.parsed?.sl ?? 0) || 0;
+  const takeProfits = Array.isArray(payload.takeProfits) ? payload.takeProfits : [];
+  const targets = takeProfits.map(tp => Number(tp.price || tp)).filter(Number.isFinite);
+  const targetPercents = takeProfits.map(tp => Number(tp.pct || 0)).filter(Number.isFinite);
+  const ts = payload.ts || payload.signalTime || payload.date || new Date().toISOString();
+  const raw = String(payload.raw || [
+    `${source.toUpperCase()} ${payload.strategyId || payload.sourceName || ''}`.trim(),
+    `${direction.toUpperCase()} ${symbol}`,
+    entryPrice ? `ENTRY ${entryPrice}` : '',
+    stopLoss ? `SL ${stopLoss}` : '',
+    targets.length ? `TP ${targets.join(' / ')}` : '',
+    Array.isArray(payload.explain) && payload.explain.length ? `EXPLAIN ${payload.explain.join('; ')}` : '',
+  ].filter(Boolean).join('\n')).trim();
+  return {
+    id: signalId,
+    telegramId: signalId,
+    raw,
+    source,
+    sourceName: payload.strategyId || payload.sourceName || source,
+    strategyId: payload.strategyId || '',
+    receivedAt: new Date().toISOString(),
+    date: ts,
+    signalTime: ts,
+    originalMessageDate: ts,
+    originalDateMissing: false,
+    providerSignalId: signalId,
+    messageKind: source === 'colony' ? 'colony-paper' : 'inbox',
+    parsed: {
+      ...(payload.parsed || {}),
+      ticker,
+      dir: direction,
+      exchange: payload.parsed?.exchange || 'BYBIT',
+      entry: entryPrice,
+      sl: stopLoss,
+      targets,
+      targetPercents,
+      riskPct: Number(payload.riskPct || payload.parsed?.riskPct || 0) || 0,
+    },
+    colony: source === 'colony' ? {
+      signalId,
+      strategyId: payload.strategyId || '',
+      validUntil: payload.validUntil || '',
+      explain: Array.isArray(payload.explain) ? payload.explain : [],
+      configHash: payload.configHash || '',
+    } : undefined,
+    status: payload.status || 'ready',
   };
 }
 
@@ -1421,6 +1478,41 @@ export default {
       return json({ ok: true, saved: ix < 0, updated: ix >= 0, total: signals.length, signal: { id: signal.id, sourceName: signal.sourceName } });
     }
 
+    if (url.pathname === '/signal-inbox') {
+      if (!telegramSecretOk(request, url, env)) {
+        return json({ ok: false, error: 'Forbidden' }, 403);
+      }
+      if (!env.MAUEX_CACHE) {
+        return json({ ok: false, error: 'MAUEX_CACHE KV no configurado' }, 500);
+      }
+      let payload;
+      try {
+        payload = await request.json();
+      } catch(e) {
+        return json({ ok: false, error: 'JSON invalido' }, 400);
+      }
+      const signal = normalizeInboxSignal(payload);
+      if (!signal) return json({ ok: false, error: 'signal invalida' }, 400);
+
+      const signals = await loadTelegramSignals(env);
+      const ix = signals.findIndex(x => (x.telegramId || x.id) === signal.telegramId);
+      if (ix >= 0) {
+        signals[ix] = {
+          ...signals[ix],
+          ...signal,
+          receivedAt: signals[ix].receivedAt || signal.receivedAt,
+        };
+      } else {
+        signals.unshift(signal);
+      }
+      try {
+        await saveTelegramSignals(env, signals);
+      } catch(e) {
+        return json({ ok: false, error: 'KV write failed: ' + e.message }, 503);
+      }
+      return json({ ok: true, saved: ix < 0, updated: ix >= 0, total: signals.length, signal: { id: signal.id, source: signal.source, sourceName: signal.sourceName } });
+    }
+
     if (url.pathname === '/health') {
       let cached = null;
       if (env.MAUEX_CACHE) {
@@ -1810,7 +1902,7 @@ export default {
       });
     }
 
-    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/telegram-signals','/telegram-signal-ai'] }, 404);
+    return json({ error: 'Not found', endpoints: ['/health','/summary','/positions','/orders','/sync','/myip','/diagnose-okx','/okx-diagnostic','/diagnose-bybit','/bybit-diagnostic','/telegram-webhook','/signal-inbox','/telegram-signals','/telegram-signal-ai'] }, 404);
   },
 
   // ── Cron trigger — runs every minute ─────────────────────────────────────

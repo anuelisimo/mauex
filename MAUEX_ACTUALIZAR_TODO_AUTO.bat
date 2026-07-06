@@ -24,6 +24,42 @@ echo Revisando app y Worker...
 node --check frontend\helpers.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 
+node --check frontend\nav.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\themes.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\signals.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\calc.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\dashboard.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\watchlist.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\positions.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\history.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\analysis.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\exchange-keys.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\orders.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
+node --check frontend\init.js
+if %ERRORLEVEL% NEQ 0 goto FAIL
+
 node --check frontend\app.js
 if %ERRORLEVEL% NEQ 0 goto FAIL
 

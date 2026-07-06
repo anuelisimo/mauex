@@ -21,6 +21,13 @@ Preparado:
 - `frontend/vite.config.js`
 - `frontend/proxy.js` como primer corte real desde `app.js`
 - `frontend/helpers.js` como segundo corte real desde `app.js`
+- `frontend/nav.js` como tercer corte real desde `app.js`
+- `frontend/themes.js` como cuarto corte real desde `app.js`
+- `frontend/signals.js` como quinto corte real desde `app.js`
+- `frontend/calc.js` como sexto corte real desde `app.js`
+- `frontend/dashboard.js`, `frontend/watchlist.js` y `frontend/positions.js` como cortes siguientes desde `app.js`
+- `frontend/history.js` y `frontend/analysis.js` separados desde `app.js`
+- `frontend/exchange-keys.js`, `frontend/orders.js` e `frontend/init.js` separados desde `app.js`
 
 Esto permite correr Vite en `frontend/` sin cambiar todavia el deploy estatico actual.
 
@@ -42,18 +49,18 @@ Orden recomendado:
 
 1. `proxy.js`: `PROXY_URL`, `WORKER_API_TOKEN_KEY`, `workerFetch`, `proxyFetch`, `publicFetch`. **Hecho.**
 2. `helpers.js`: formatos, crypto-neutral helpers, tooltips, modals, `toast`, `esc`. **Parcial: helpers iniciales, tooltips, modales y toast movidos. `esc` unico queda para 3.3.**
-3. `nav.js`: `PAGES`, `showPage`, tabs y estado operativo.
-4. `themes.js`: temas y selector.
-5. `signals.js`: Signal Desk completo.
-6. `calc.js`: calculadora y charts embebidos de calculadora.
-7. `dashboard.js`: capital, liquidez, metricas y PDF.
-8. `watchlist.js`: watchlist, bulk actions y cards.
-9. `positions.js`: posiciones, alertas y mapa de riesgo.
-10. `history.js`: historial, filtros y CSV.
-11. `analysis.js`: charts/AI analysis.
-12. `exchange-keys.js`: crypto helpers, master pass, API keys y exchange sync.
-13. `orders.js`: ordenes manuales y exchange orders.
-14. `init.js`: bootstrapping final.
+3. `nav.js`: `PAGES`, `showPage`, tabs y estado operativo. **Hecho.**
+4. `themes.js`: temas y selector. **Hecho.**
+5. `signals.js`: Signal Desk completo. **Hecho.**
+6. `calc.js`: calculadora y charts embebidos de calculadora. **Hecho.**
+7. `dashboard.js`: capital, liquidez, metricas y PDF. **Hecho.**
+8. `watchlist.js`: watchlist, bulk actions y cards. **Hecho.**
+9. `positions.js`: posiciones, alertas y mapa de riesgo. **Hecho.**
+10. `history.js`: historial, filtros y CSV. **Hecho.**
+11. `analysis.js`: charts/AI analysis. **Hecho.**
+12. `exchange-keys.js`: crypto helpers, master pass, API keys y exchange sync. **Hecho.**
+13. `orders.js`: ordenes manuales y exchange orders. **Hecho.**
+14. `init.js`: bootstrapping final. **Hecho.**
 
 ## Regla de migracion
 
@@ -74,7 +81,13 @@ Prioridad:
 
 ## 3.3 Higiene XSS
 
-Pendiente. Ya existe escape local en varias zonas y `firebase.js` tiene un `esc`.
+En progreso.
+
+Hecho:
+
+- `esc()` unico creado en `frontend/helpers.js` y expuesto como `window.esc`.
+- `signalEsc`, `operationalStatusEscape`, `dashSafe` y el escape local de `firebase.js` conectados al helper unico.
+- Se mantiene la regla de no cambiar visual ni comportamiento mientras se auditan templates.
 
 Regla:
 
@@ -84,10 +97,10 @@ Regla:
 
 ## 3.4 Modal 2
 
-Pendiente.
+Hecho.
 
 Objetivo:
 
-- Unificar `saveExchangeKeys` / `saveExchangeKeys2`.
-- Unificar `saveMasterPass` / `saveMasterPass2`.
-- Usar un sufijo de IDs: `suffix=''` o `suffix='2'`.
+- `saveExchangeKeys` / `saveExchangeKeys2` usan `saveExchangeKeysWithSuffix(exchange, suffix)`.
+- `saveMasterPass` / `saveMasterPass2` usan `saveMasterPassWithSuffix(suffix)`.
+- Se conservaron los nombres publicos porque el HTML actual los llama con `onclick`.

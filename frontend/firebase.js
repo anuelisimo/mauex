@@ -707,7 +707,7 @@ function renderDirectTradeReviewTags(t={}) {
   const errSet = new Set(t.errorTags || []);
   const mauexSet = new Set(t.mauexTags || []);
   const suggested = [...new Set([...(t.mauexTags || []), ...suggestedCloseTags(t)])];
-  const esc = s => String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const esc = window.esc || (s => String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])));
   const row = (title, hint, html) => `<div style="margin-bottom:10px;">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
       <span class="lbl" style="margin:0;">${esc(title)}</span>
