@@ -93,6 +93,11 @@ async function handleProxyRequest(request, url, json, cors) {
     if (value) upstreamHeaders.set(name, value);
   });
   if (!upstreamHeaders.has('accept')) upstreamHeaders.set('accept', 'application/json,text/plain,*/*');
+  if (/\.finance\.yahoo\.com$/i.test(target.hostname)) {
+    upstreamHeaders.set('user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36');
+    upstreamHeaders.set('accept-language', 'en-US,en;q=0.9,es;q=0.8');
+    upstreamHeaders.set('cache-control', 'no-cache');
+  }
 
   try {
     const upstream = await fetch(target.toString(), {
@@ -495,7 +500,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-06-yahoo-query2-health-v5';
+const WORKER_VERSION = '2026-07-07-yahoo-ua-v6';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
