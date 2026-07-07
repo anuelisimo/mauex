@@ -1,6 +1,6 @@
 // ── Calc state ─────────────────────────────────────────────────────────────
 const calcState = { dir:'short', ex:'binance', lev:null, marketSource:'auto', marketType:'', marketKind:'' };
-let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'', signalTime:0, guideRemove:null };
+let calcChartState = { tf:'1h', chart:null, resize:null, timer:null, key:'', dataKey:'', signalTime:0, guideRemove:null, candleSeries:null, candles:[], levelSeries:[], priceLines:[] };
 let calcSignalTargetsState = null;
 let calcTpPercentsManual = false;
 const MMR = {binance:.005,bybit:.005,okx:.004,mexc:.005,kucoin:.005};
@@ -141,11 +141,54 @@ function calcChartSymbolInfo() {
 }
 
 function clearCalcSignalChart() {
+  clearCalcChartLevels();
   if (calcChartState.guideRemove) { try { calcChartState.guideRemove(); } catch(e) {} calcChartState.guideRemove = null; }
   if (calcChartState.resize) { try { calcChartState.resize.disconnect(); } catch(e) {} calcChartState.resize = null; }
   if (calcChartState.chart) { try { calcChartState.chart.remove(); } catch(e) {} calcChartState.chart = null; }
+  calcChartState.candleSeries = null;
+  calcChartState.candles = [];
+  calcChartState.dataKey = '';
   const el = document.getElementById('calcSignalChart');
   if (el) el.innerHTML = '';
+}
+
+function clearCalcChartLevels() {
+  const chart = calcChartState.chart;
+  const series = calcChartState.candleSeries;
+  (calcChartState.priceLines || []).forEach(line => {
+    try { series?.removePriceLine(line); } catch(e) {}
+  });
+  (calcChartState.levelSeries || []).forEach(levelSeries => {
+    try { chart?.removeSeries(levelSeries); } catch(e) {}
+  });
+  calcChartState.priceLines = [];
+  calcChartState.levelSeries = [];
+}
+
+function renderCalcChartLevels() {
+  const chart = calcChartState.chart;
+  const series = calcChartState.candleSeries;
+  const candles = calcChartState.candles || [];
+  if (!chart || !series || !candles.length) return;
+  clearCalcChartLevels();
+  const firstTime = candles[0]?.time;
+  const lastTime = candles[candles.length - 1]?.time;
+  calcChartLevelsFromInputs().forEach(lvl => {
+    try {
+      const levelSeries = addHorizontalLevel(chart, lvl.price, firstTime, lastTime, { color:lvl.color, lineStyle:2 });
+      if (levelSeries) calcChartState.levelSeries.push(levelSeries);
+      const line = series.createPriceLine({
+        price:lvl.price,
+        color:lvl.color,
+        lineWidth:1,
+        lineStyle:2,
+        axisLabelVisible:true,
+        title:lvl.title,
+      });
+      calcChartState.priceLines.push(line);
+    } catch(e) {}
+  });
+  try { chart.timeScale().fitContent(); } catch(e) {}
 }
 
 function scheduleCalcSignalChart() {
@@ -160,7 +203,7 @@ window.setCalcChartTimeframe = (tf) => {
   renderCalcSignalChart();
 };
 
-async function renderCalcSignalChart() {
+renderCalcSignalChart = async function renderCalcSignalChartLive() {
   const el = document.getElementById('calcSignalChart');
   const status = document.getElementById('calcChartStatus');
   if (!el) return;
@@ -250,7 +293,103 @@ async function renderCalcSignalChart() {
     window._aiType = prevType;
     aiMarketType = prevMarketType;
   }
-}
+};
+
+renderCalcSignalChart = async function renderCalcSignalChartLiveLatest() {
+  const el = document.getElementById('calcSignalChart');
+  const status = document.getElementById('calcChartStatus');
+  if (!el) return;
+  const info = calcChartSymbolInfo();
+  const entry = parseFloat(document.getElementById('cEntry')?.value) || 0;
+  const retainedSignalTime = syncCalcChartSignalTime();
+  if (!info) {
+    clearCalcSignalChart();
+    if (status) status.textContent = 'Carga un ticker para ver el grafico.';
+    return;
+  }
+
+  const dataKey = [info.symbol, info.source, info.type || '', info.marketKind || '', calcChartState.tf].join('::');
+  const levelKey = [
+    dataKey, calcState.dir, calcState.ex, calcState.lev || 1, retainedSignalTime || 0,
+    ['cEntry','cSL','cTP1','cTP2','cTP3','cInv1','cInv2'].map(id => document.getElementById(id)?.value || '').join('|')
+  ].join('::');
+
+  if (dataKey === calcChartState.dataKey && calcChartState.chart) {
+    if (levelKey !== calcChartState.key) {
+      calcChartState.key = levelKey;
+      renderCalcChartLevels();
+    }
+    const last = (calcChartState.candles || []).at(-1)?.close;
+    const gap = last && entry ? ((last - entry) / entry * 100) : null;
+    if (status) status.textContent = gap == null
+      ? `${info.raw} - ${mainChartLabel(calcChartState.tf)}`
+      : `${info.raw} - precio ${gap >= 0 ? '+' : ''}${gap.toFixed(2)}% vs entry`;
+    return;
+  }
+
+  calcChartState.key = levelKey;
+  calcChartState.dataKey = dataKey;
+  clearCalcSignalChart();
+  calcChartState.dataKey = dataKey;
+  if (status) status.textContent = `Cargando ${info.raw} en ${mainChartLabel(calcChartState.tf)}...`;
+  el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando velas...</div>`;
+  const prevSource = window._aiSource;
+  const prevType = window._aiType;
+  const prevMarketType = aiMarketType;
+  try {
+    await window.ensureLightweightCharts?.();
+    window._aiSource = info.source;
+    window._aiType = info.type;
+    if (info.type === 'crypto') aiMarketType = info.marketKind || (calcState.dir === 'spot' ? 'spot' : 'futures');
+    const candles = await fetchOHLCV(info.symbol, calcChartState.tf, mainChartLimit(calcChartState.tf));
+    if (!candles.length) throw new Error('Sin datos');
+    el.innerHTML = '';
+    const chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth || 720,
+      height: el.clientHeight || 320,
+      layout:{ background:{color:'transparent'}, textColor:'#8ea0b5' },
+      localization:{ priceFormatter: mauexChartPriceFormatter },
+      grid:{ vertLines:{color:'rgba(255,255,255,0.035)'}, horzLines:{color:'rgba(255,255,255,0.035)'} },
+      crosshair:{ mode:1 },
+      rightPriceScale:{ borderColor:'rgba(255,255,255,0.10)', scaleMargins:{top:0.06,bottom:0.20} },
+      timeScale:{ borderColor:'rgba(255,255,255,0.10)', timeVisible:true, secondsVisible:false },
+      handleScroll:{ mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true, vertTouchDrag:true },
+      handleScale:{ axisPressedMouseMove:true, mouseWheel:true, pinch:true },
+    });
+    calcChartState.chart = chart;
+    const series = chart.addCandlestickSeries({
+      upColor:'#00c47a', downColor:'#f03d3d',
+      borderUpColor:'#00c47a', borderDownColor:'#f03d3d',
+      wickUpColor:'#00a85a', wickDownColor:'#c03030',
+      priceFormat: mauexPriceSeriesFormat(),
+    });
+    calcChartState.candleSeries = series;
+    calcChartState.candles = candles;
+    series.setData(candles);
+    const vol = chart.addHistogramSeries({ priceFormat:{type:'volume'}, priceScaleId:'volume', priceLineVisible:false, lastValueVisible:false });
+    vol.setData(candles.map(c => ({ time:c.time, value:c.volume, color:c.close>=c.open?'rgba(0,196,122,.23)':'rgba(240,61,61,.23)' })));
+    chart.priceScale('volume').applyOptions({ scaleMargins:{top:0.82,bottom:0} });
+    renderCalcChartLevels();
+    chart.timeScale().fitContent();
+    const calcGuideTime = nearestCandleTimeForGuide(candles, retainedSignalTime || 0);
+    calcChartState.guideRemove = addChartTimeGuide(el, chart, calcGuideTime, 'Senal');
+    el.ondblclick = () => chart.timeScale().fitContent();
+    calcChartState.resize = new ResizeObserver(() => chart.applyOptions({ width:el.clientWidth, height:el.clientHeight || 320 }));
+    calcChartState.resize.observe(el);
+    const last = candles.at(-1)?.close;
+    const gap = last && entry ? ((last - entry) / entry * 100) : null;
+    if (status) status.textContent = gap == null
+      ? `${info.raw} - ${mainChartLabel(calcChartState.tf)}`
+      : `${info.raw} - precio ${gap >= 0 ? '+' : ''}${gap.toFixed(2)}% vs entry`;
+  } catch(e) {
+    if (status) status.textContent = `No pude cargar ${info.raw}: ${e.message}`;
+    el.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--red);font-family:var(--mono);font-size:11px;">${esc(e.message)}</div>`;
+  } finally {
+    window._aiSource = prevSource;
+    window._aiType = prevType;
+    aiMarketType = prevMarketType;
+  }
+};
 
 window.openCalcSetupInCharts = () => {
   const info = calcChartSymbolInfo();

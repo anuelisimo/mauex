@@ -17,6 +17,7 @@
 
 const DEFAULT_ALLOWED_ORIGIN = 'https://mauex.vercel.app';
 const ERROR_LOG_KV_KEY = 'errors_log';
+const EXCHANGE_COOLDOWN_PREFIX = 'exchange_cooldown_';
 const READER_HEARTBEAT_KV_KEY = 'reader_heartbeat';
 const ERROR_LOG_LIMIT = 100;
 const PROXY_ALLOWED_HOSTS = new Set([
@@ -126,14 +127,22 @@ async function appendErrorLog(env, entry = {}) {
         if (Array.isArray(parsed)) current = parsed;
       } catch(e) {}
     }
-    current.unshift({
+    const next = {
       ts: new Date().toISOString(),
       exchange: String(entry.exchange || entry.service || 'worker').toUpperCase(),
       endpoint: entry.endpoint || '',
       message: errorMessage(entry.message || entry.error),
       status: entry.status || null,
       phase: entry.phase || '',
-    });
+    };
+    const recentDuplicate = current.find(e =>
+      String(e.exchange || '').toUpperCase() === next.exchange &&
+      String(e.phase || '') === next.phase &&
+      String(e.message || '') === next.message &&
+      Date.now() - (Date.parse(e.ts || '') || 0) < 15 * 60 * 1000
+    );
+    if (recentDuplicate) return;
+    current.unshift(next);
     await env.MAUEX_CACHE.put(ERROR_LOG_KV_KEY, JSON.stringify(current.slice(0, ERROR_LOG_LIMIT)), { expirationTtl: 7 * 24 * 60 * 60 });
   } catch(e) {
     console.error('appendErrorLog failed', e?.message || e);
@@ -165,6 +174,72 @@ function countErrorsSince(errors, sinceMs) {
   }).length;
 }
 
+function exchangeCooldownForError(exchange, message = '') {
+  const ex = String(exchange || '').toUpperCase();
+  const msg = String(message || '');
+  if (/429|rate limit|too many requests|code:?\s*1015/i.test(msg)) {
+    return {
+      ms: ex === 'OKX' ? 20 * 60 * 1000 : 10 * 60 * 1000,
+      reason: 'rate limit temporal',
+    };
+  }
+  if (ex === 'MEXC' && /402|api key expired|apply again|key expired/i.test(msg)) {
+    return {
+      ms: 12 * 60 * 60 * 1000,
+      reason: 'API key vencida',
+    };
+  }
+  return null;
+}
+
+async function readExchangeCooldown(env, exchange) {
+  if (!env.MAUEX_CACHE) return null;
+  const key = EXCHANGE_COOLDOWN_PREFIX + String(exchange || '').toUpperCase();
+  try {
+    const raw = await env.MAUEX_CACHE.get(key);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    const untilMs = Date.parse(data?.until || '');
+    if (!Number.isFinite(untilMs) || untilMs <= Date.now()) {
+      await env.MAUEX_CACHE.delete(key);
+      return null;
+    }
+    return data;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function setExchangeCooldown(env, exchange, message = '') {
+  if (!env.MAUEX_CACHE) return null;
+  const cooldown = exchangeCooldownForError(exchange, message);
+  if (!cooldown) return null;
+  const payload = {
+    exchange: String(exchange || '').toUpperCase(),
+    reason: cooldown.reason,
+    message: errorMessage(message),
+    until: new Date(Date.now() + cooldown.ms).toISOString(),
+  };
+  await env.MAUEX_CACHE.put(
+    EXCHANGE_COOLDOWN_PREFIX + payload.exchange,
+    JSON.stringify(payload),
+    { expirationTtl: Math.ceil(cooldown.ms / 1000) + 60 }
+  );
+  return payload;
+}
+
+async function exchangeCooldownActive(env, exchange) {
+  const cooldown = await readExchangeCooldown(env, exchange);
+  if (!cooldown) return null;
+  return {
+    positions: [],
+    orders: [],
+    error: null,
+    skipped: true,
+    cooldown,
+  };
+}
+
 function filterOpsHealthErrors(errors = [], { oracleOk = false } = {}) {
   return (errors || []).filter(e => {
     const exchange = String(e?.exchange || e?.service || '').toUpperCase();
@@ -174,15 +249,24 @@ function filterOpsHealthErrors(errors = [], { oracleOk = false } = {}) {
   });
 }
 
+function normalizedOpsErrorMessage(exchange, message) {
+  const ex = String(exchange || '').toUpperCase();
+  const msg = String(message || '');
+  if (/429|rate limit|too many requests|code:?\s*1015/i.test(msg)) return `${ex} rate limit`;
+  if (ex === 'MEXC' && /402|api key expired|apply again|key expired/i.test(msg)) return 'MEXC API key vencida';
+  return msg;
+}
+
 function uniqueOpsHealthErrors(errors = []) {
   const seen = new Set();
   const out = [];
   for (const e of errors || []) {
+    const exchange = String(e?.exchange || '').toUpperCase();
     const key = [
-      String(e?.exchange || '').toUpperCase(),
+      exchange,
       String(e?.service || '').toUpperCase(),
       String(e?.phase || ''),
-      String(e?.message || ''),
+      normalizedOpsErrorMessage(exchange, e?.message || ''),
     ].join('|');
     if (seen.has(key)) continue;
     seen.add(key);
@@ -353,7 +437,8 @@ async function fetchBalancesV2(env) {
   const okxSec = (env.OKX_SECRET || '').trim();
   const okxPass = (env.OKX_PASSPHRASE || '').trim();
   if (okxKey && okxSec && okxPass) {
-    try {
+    const okxCooldown = await readExchangeCooldown(env, 'OKX');
+    if (!okxCooldown) try {
       const okxGet = async (path) => {
         const ts = new Date().toISOString();
         const key2 = await crypto.subtle.importKey('raw', new TextEncoder().encode(okxSec), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -413,12 +498,14 @@ async function fetchBalancesV2(env) {
       if (!r1.ok && !r2.ok) errors.OKX = r1.data?.msg || `${r1.status}`;
       else if ((total || totalUsdt + totalUsdc || free || margin || orders || pnl) <= 0) errors.OKX = 'OKX respondio sin saldos USDT/USDC utilizables';
     } catch(e) { errors.OKX = e.message; }
+    if (errors.OKX) await setExchangeCooldown(env, 'OKX', errors.OKX);
   }
 
   const mexcKey = (env.MEXC_KEY || '').trim();
   const mexcSec = (env.MEXC_SECRET || '').trim();
   if (mexcKey && mexcSec) {
-    try {
+    const mexcCooldown = await readExchangeCooldown(env, 'MEXC');
+    if (!mexcCooldown) try {
       let total = 0, free = 0, margin = 0, orders = 0, pnl = 0;
       let totalUsdt = 0, totalUsdc = 0;
       const ts1 = Date.now().toString();
@@ -459,6 +546,7 @@ async function fetchBalancesV2(env) {
       balances.MEXC = normalizeBalance({ total: total || totalUsdt + totalUsdc, free, margin, orders, pnl, USDT: totalUsdt, USDC: totalUsdc });
       if (!r1.ok && !r2.ok) errors.MEXC = r1.data?.message || `${r1.status}`;
     } catch(e) { errors.MEXC = e.message; }
+    if (errors.MEXC) await setExchangeCooldown(env, 'MEXC', errors.MEXC);
   }
 
   const kucoinBackendUrl = (env.KUCOIN_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
@@ -500,7 +588,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-07-yahoo-ua-v6';
+const WORKER_VERSION = '2026-07-07-exchange-cooldown-v7';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -1635,17 +1723,30 @@ async function syncAll(env) {
     await logBalanceErrors(env, balanceData.errors, 'syncAll');
   }
 
+  const runExchangeSync = async (exchange, fn) => {
+    const skipped = await exchangeCooldownActive(env, exchange);
+    if (skipped) return [exchange, skipped];
+    try {
+      const data = await fn(env);
+      if (data?.error) await setExchangeCooldown(env, exchange, data.error);
+      return [exchange, data];
+    } catch(error) {
+      await setExchangeCooldown(env, exchange, error.message);
+      return [exchange, { positions: [], orders: [], error: error.message }];
+    }
+  };
+
   const exchangeSyncs = await Promise.all([
-    syncBinance(env).then(data => ['BINANCE', data]).catch(error => ['BINANCE', { positions: [], orders: [], error: error.message }]),
-    syncBybit(env).then(data => ['BYBIT', data]).catch(error => ['BYBIT', { positions: [], orders: [], error: error.message }]),
-    syncOKX(env).then(data => ['OKX', data]).catch(error => ['OKX', { positions: [], orders: [], error: error.message }]),
-    syncMEXC(env).then(data => ['MEXC', data]).catch(error => ['MEXC', { positions: [], orders: [], error: error.message }]),
+    runExchangeSync('BINANCE', syncBinance),
+    runExchangeSync('BYBIT', syncBybit),
+    runExchangeSync('OKX', syncOKX),
+    runExchangeSync('MEXC', syncMEXC),
   ]);
 
   for (const [exchange, data] of exchangeSyncs) {
     positions.push(...(Array.isArray(data.positions) ? data.positions : []));
     orders.push(...(Array.isArray(data.orders) ? data.orders : []));
-    if (data.error && data.error !== 'No keys') {
+    if (data.error && data.error !== 'No keys' && !data.skipped) {
       syncErrors[exchange] = data.error;
       await appendErrorLog(env, { exchange, phase: 'syncAll-orders', message: data.error });
     }
