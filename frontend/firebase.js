@@ -1207,6 +1207,7 @@ let kucoinPollTimer = null;
 let kucoinFuturesPollTimer = null;
 let mexcSpotPollTimer = null;
 let mexcFuturesPollTimer = null;
+let stockPollInFlight = false;
 
 const CRYPTOS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOT','AVAX','MATIC','LINK','UNI',
   'ATOM','NEAR','FTM','ALGO','VET','MANA','SAND','AXS','DOGE','LTC','BCH','ETC','XLM',
@@ -1280,18 +1281,22 @@ function kucoinFuturesSymbol(ticker='') {
 }
 
 async function fetchYahooPrice(ticker) {
+  if (typeof window.mauexFetchYahooPrice === 'function') {
+    return window.mauexFetchYahooPrice(ticker);
+  }
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
-  const urls = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'].flatMap(host => [
-    `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
-    `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
-  ]);
+  const urls = [
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
+  ];
   let d = null;
   let lastError = null;
   for (const url of urls) {
     const fetchers = [
       ...(window.proxyFetch ? [() => window.proxyFetch(url, { cache:'no-store' })] : []),
-      ...(window.publicFetch ? [() => window.publicFetch(url, { cache:'no-store' })] : []),
       () => fetch(url, { cache:'no-store' }),
     ];
     for (const run of fetchers) {
@@ -1311,6 +1316,17 @@ async function fetchYahooPrice(ticker) {
   const quote = res?.indicators?.quote?.[0]?.close || [];
   const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();
   return Number(res?.meta?.regularMarketPrice || lastClose || res?.meta?.previousClose || 0);
+}
+
+async function runLimited(items, limit, handler) {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      await handler(item);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function readInvalidationFields(prefix) {
@@ -1809,77 +1825,97 @@ function startLivePrices() {
   // Stocks/ETFs - poll every 30s
   if (stockTickers.length) {
     const poll = async () => {
-      for (const t of stockTickers) {
-        try {
-          const p = await fetchYahooPrice(t);
-          if (p > 0) setPrice(t, 'spot', p, 'yahoo');
-        } catch(e){}
+      if (stockPollInFlight) return;
+      stockPollInFlight = true;
+      try {
+        await runLimited(stockTickers, 4, async t => {
+          try {
+            const p = await fetchYahooPrice(t);
+            if (p > 0) setPrice(t, 'spot', p, 'yahoo');
+          } catch(e){}
+        });
+      } finally {
+        stockPollInFlight = false;
       }
     };
-    poll();
+    setTimeout(poll, 100);
     pollTimer = setInterval(poll, 30000);
+  }
+}
+
+async function refreshTradFiPricesManual(relevant) {
+  const tickers = [...new Set(relevant
+    .filter(t => !isCryptoTrade(t))
+    .map(t => String(t.ticker || '').trim().toUpperCase())
+    .filter(Boolean))];
+  await runLimited(tickers, 4, async ticker => {
+    try {
+      const p = await fetchYahooPrice(ticker);
+      if (p > 0) setPrice(ticker, 'spot', p, 'yahoo');
+    } catch(e){}
+  });
+}
+
+async function refreshCryptoPricesManual(relevant) {
+  for (const t of relevant) {
+    if (!isCryptoTrade(t)) continue;
+    const sym = baseCryptoSymbol(t.ticker);
+    if (!sym) continue;
+    const src = tradeMarketSource(t);
+    const kind = String(t.marketKind || '').toLowerCase();
+    if (src === 'MEXC' && (kind === 'spot' || t.dir === 'spot' || String(t.exchange || '').toLowerCase() === 'spot')) {
+      try {
+        const fullSym = mexcSpotSymbol(t.ticker);
+        const url = `https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`;
+        const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+        const d = await r.json();
+        if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'mexc');
+      } catch(e){}
+      continue;
+    }
+    if (src === 'MEXC' && kind !== 'spot' && t.dir !== 'spot') {
+      try {
+        const fullSym = mexcFuturesSymbol(t.ticker);
+        const url = `https://contract.mexc.com/api/v1/contract/ticker?symbol=${encodeURIComponent(fullSym)}`;
+        const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+        const d = await r.json();
+        const row = Array.isArray(d?.data) ? d.data[0] : (d?.data || {});
+        const p = Number(row.lastPrice || row.lastPriceFair || row.fairPrice || 0);
+        if (p > 0) setPrice(sym, 'futures', p, 'mexc');
+      } catch(e){}
+      continue;
+    }
+    if (src === 'KUCOIN' && kind !== 'spot' && t.dir !== 'spot') {
+      try {
+        const fullSym = kucoinFuturesSymbol(t.ticker);
+        const url = `https://api-futures.kucoin.com/api/v1/ticker?symbol=${encodeURIComponent(fullSym)}`;
+        const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
+        const d = await r.json();
+        const row = d?.data || {};
+        const p = Number(row.price || row.markPrice || row.bestBidPrice || row.bestAskPrice || 0);
+        if (p > 0) setPrice(sym, 'futures', p, 'kucoin');
+      } catch(e){}
+      continue;
+    }
+    try {
+      const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
+      const d = await r.json();
+      if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'binance');
+    } catch(e){}
+    try {
+      const r = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`);
+      const d = await r.json();
+      if (d.markPrice) setPrice(sym, 'futures', parseFloat(d.markPrice), 'binance');
+    } catch(e){}
   }
 }
 
 window.refreshPricesManual = async () => {
   const relevant = trades.filter(t=>['active','pending','watchlist','zombie'].includes(t.status));
-  for (const t of relevant) {
-    const sym = baseCryptoSymbol(t.ticker);
-    if (!sym) continue;
-    if (isCryptoTrade(t)) {
-      const src = tradeMarketSource(t);
-      const kind = String(t.marketKind || '').toLowerCase();
-      if (src === 'MEXC' && (kind === 'spot' || t.dir === 'spot' || String(t.exchange || '').toLowerCase() === 'spot')) {
-        try {
-          const fullSym = mexcSpotSymbol(t.ticker);
-          const url = `https://api.mexc.com/api/v3/ticker/price?symbol=${encodeURIComponent(fullSym)}`;
-          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
-          const d = await r.json();
-          if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'mexc');
-        } catch(e){}
-        continue;
-      }
-      if (src === 'MEXC' && kind !== 'spot' && t.dir !== 'spot') {
-        try {
-          const fullSym = mexcFuturesSymbol(t.ticker);
-          const url = `https://contract.mexc.com/api/v1/contract/ticker?symbol=${encodeURIComponent(fullSym)}`;
-          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
-          const d = await r.json();
-          const row = Array.isArray(d?.data) ? d.data[0] : (d?.data || {});
-          const p = Number(row.lastPrice || row.lastPriceFair || row.fairPrice || 0);
-          if (p > 0) setPrice(sym, 'futures', p, 'mexc');
-        } catch(e){}
-        continue;
-      }
-      if (src === 'KUCOIN' && kind !== 'spot' && t.dir !== 'spot') {
-        try {
-          const fullSym = kucoinFuturesSymbol(t.ticker);
-          const url = `https://api-futures.kucoin.com/api/v1/ticker?symbol=${encodeURIComponent(fullSym)}`;
-          const r = await (window.publicFetch ? window.publicFetch(url) : (window.proxyFetch ? window.proxyFetch(url) : fetch(url)));
-          const d = await r.json();
-          const row = d?.data || {};
-          const p = Number(row.price || row.markPrice || row.bestBidPrice || row.bestAskPrice || 0);
-          if (p > 0) setPrice(sym, 'futures', p, 'kucoin');
-        } catch(e){}
-        continue;
-      }
-      try {
-        const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
-        const d = await r.json();
-        if (d.price) setPrice(sym, 'spot', parseFloat(d.price), 'binance');
-      } catch(e){}
-      try {
-        const r = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`);
-        const d = await r.json();
-        if (d.markPrice) setPrice(sym, 'futures', parseFloat(d.markPrice), 'binance');
-      } catch(e){}
-    } else {
-      try {
-        const p = await fetchYahooPrice(t.ticker);
-        if (p > 0) setPrice(sym, 'spot', p, 'yahoo');
-      } catch(e){}
-    }
-  }
+  await Promise.all([
+    refreshCryptoPricesManual(relevant),
+    refreshTradFiPricesManual(relevant),
+  ]);
   renderPositions();
 };
 

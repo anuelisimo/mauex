@@ -68,19 +68,26 @@ function appIsCryptoTicker(ticker, exchange) {
   const sym = raw.replace(/USDT|BUSD|USD$/,'');
   return APP_CRYPTOS.includes(sym) || raw.endsWith('USDT') || raw.endsWith('BUSD');
 }
-async function fetchYahooSpotPrice(ticker) {
+const YAHOO_PRICE_CACHE_MS = 45000;
+const yahooPriceCache = window.__mauexYahooPriceCache || (window.__mauexYahooPriceCache = new Map());
+
+async function mauexFetchYahooPrice(ticker, options = {}) {
   const sym = String(ticker || '').trim().toUpperCase();
   if (!sym) return 0;
-  const urls = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'].flatMap(host => [
-    `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
-    `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
-  ]);
+  const now = Date.now();
+  const cached = yahooPriceCache.get(sym);
+  if (!options.force && cached && now - cached.ts < YAHOO_PRICE_CACHE_MS) return cached.price;
+  const urls = [
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d`,
+  ];
   let d = null;
   let lastError = null;
   for (const url of urls) {
     const fetchers = [
       ...(window.proxyFetch ? [() => window.proxyFetch(url, { cache:'no-store' })] : []),
-      ...(window.publicFetch ? [() => window.publicFetch(url, { cache:'no-store' })] : []),
       () => fetch(url, { cache:'no-store' }),
     ];
     for (const run of fetchers) {
@@ -99,7 +106,14 @@ async function fetchYahooSpotPrice(ticker) {
   const res = d.chart?.result?.[0];
   const quote = res?.indicators?.quote?.[0]?.close || [];
   const lastClose = quote.filter(x => Number.isFinite(Number(x))).map(Number).pop();
-  return Number(res?.meta?.regularMarketPrice || lastClose || res?.meta?.previousClose || 0);
+  const price = Number(res?.meta?.regularMarketPrice || lastClose || res?.meta?.previousClose || 0);
+  if (price > 0) yahooPriceCache.set(sym, { price, ts: Date.now() });
+  return price;
+}
+window.mauexFetchYahooPrice = mauexFetchYahooPrice;
+
+async function fetchYahooSpotPrice(ticker) {
+  return mauexFetchYahooPrice(ticker);
 }
 window.updateDirectTradeSizeLabel = () => {
   const dir = document.getElementById('dtDir')?.value || 'long';

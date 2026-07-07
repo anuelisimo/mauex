@@ -153,8 +153,6 @@
       <div id="dashTabResumenContent">
         <div class="dash-section-title">Capital y exposici&oacute;n</div>
         <div id="dashLiquidity" class="ixs-14"></div>
-        <div class="dash-section-title">Salud</div>
-        <div id="dashHealth" class="ixs-15"></div>
         <div class="dash-section-title">Performance general</div>
         <div id="dashProMetrics" class="g4 ixs-15"></div>
         <div id="histCharts" class="ixs-15"></div>
@@ -169,6 +167,14 @@
           <div class="card"><div class="sec-label">Distribución por activo</div><div class="ixs-16"><canvas id="chartAssets"></canvas></div></div>
           <div class="card"><div class="sec-label">Posiciones activas</div><div id="dashActivePos"></div></div>
         </div>
+        <div class="dash-section-title">Sistema</div>
+        <details id="dashHealthPanel" class="dash-health-panel ixs-15" ontoggle="window.onDashHealthToggle?.()">
+          <summary>
+            <span>Salud operativa</span>
+            <span id="dashHealthSummary" class="dash-health-summary">abrir para revisar</span>
+          </summary>
+          <div id="dashHealth"></div>
+        </details>
       </div>
       <!-- Historial tab -->
       <div id="dashTabHistorialContent" class="ixs-1">
@@ -1137,25 +1143,25 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      FIREBASE MODULE
      ═══════════════════════════════════════════════════════════════════════ -->
-<script type="module" src="./firebase.js?v=20260706-190000"></script>
+<script type="module" src="./firebase.js?v=20260707-111500"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./proxy.js?v=20260706-190000"></script>
-<script src="./helpers.js?v=20260706-190000"></script>
-<script src="./nav.js?v=20260706-190000"></script>
-<script src="./themes.js?v=20260706-190000"></script>
-<script src="./signals.js?v=20260706-190000"></script>
-<script src="./calc.js?v=20260706-190000"></script>
-<script src="./dashboard.js?v=20260706-190000"></script>
-<script src="./watchlist.js?v=20260706-190000"></script>
-<script src="./positions.js?v=20260706-190000"></script>
-<script src="./history.js?v=20260706-190000"></script>
-<script src="./analysis.js?v=20260706-190000"></script>
-<script src="./exchange-keys.js?v=20260706-190000"></script>
-<script src="./orders.js?v=20260706-190000"></script>
-<script src="./init.js?v=20260706-190000"></script>
-<script src="./app.js?v=20260706-190000"></script>
+<script src="./proxy.js?v=20260707-111500"></script>
+<script src="./helpers.js?v=20260707-111500"></script>
+<script src="./nav.js?v=20260707-111500"></script>
+<script src="./themes.js?v=20260707-111500"></script>
+<script src="./signals.js?v=20260707-111500"></script>
+<script src="./calc.js?v=20260707-111500"></script>
+<script src="./dashboard.js?v=20260707-111500"></script>
+<script src="./watchlist.js?v=20260707-111500"></script>
+<script src="./positions.js?v=20260707-111500"></script>
+<script src="./history.js?v=20260707-111500"></script>
+<script src="./analysis.js?v=20260707-111500"></script>
+<script src="./exchange-keys.js?v=20260707-111500"></script>
+<script src="./orders.js?v=20260707-111500"></script>
+<script src="./init.js?v=20260707-111500"></script>
+<script src="./app.js?v=20260707-111500"></script>
 </body>
 </html>

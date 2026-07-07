@@ -386,6 +386,8 @@ window._updateLiquidityCache = (data, opts = {}) => {
 window.refreshDashboardLiquidity = () => fetchAndRenderLiquidity({ forceRefresh: true });
 
 const dashSafe = v => esc(v);
+let dashboardHealthLastData = null;
+let dashboardHealthLoadedAt = 0;
 function dashRelativeTime(value) {
   const ms = Date.parse(value || '');
   if (!Number.isFinite(ms)) return '-';
@@ -407,12 +409,72 @@ function dashHealthPill(label, state) {
 function renderDashboardHealthLoading() {
   const el = document.getElementById('dashHealth');
   if (!el) return;
-  el.innerHTML = `<div class="card" style="padding:16px;color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando salud operativa...</div>`;
+  el.innerHTML = `<div class="dash-health-body" style="color:var(--t3);font-family:var(--mono);font-size:11px;">Cargando salud operativa...</div>`;
+  updateDashboardHealthSummary(null, 'cargando');
 }
+
+function updateDashboardHealthSummary(data, state = '') {
+  const el = document.getElementById('dashHealthSummary');
+  if (!el) return;
+  if (state === 'cargando') {
+    el.textContent = 'cargando...';
+    el.className = 'dash-health-summary';
+    return;
+  }
+  if (state === 'sin-token') {
+    el.textContent = 'sin token';
+    el.className = 'dash-health-summary warn';
+    return;
+  }
+  if (state === 'pendiente') {
+    el.textContent = 'abrir para revisar';
+    el.className = 'dash-health-summary';
+    return;
+  }
+  if (state === 'error') {
+    el.textContent = 'revisar';
+    el.className = 'dash-health-summary bad';
+    return;
+  }
+  const errors24h = Number(data?.errors24h || 0) || 0;
+  const reader = data?.reader || null;
+  const oracle = data?.services?.oracle || {};
+  const railway = data?.services?.railway || {};
+  const parts = [
+    `sync ${dashRelativeTime(data?.lastSync)}`,
+    `errores ${errors24h}`,
+    reader?.alive ? 'reader vivo' : 'reader revisar',
+    oracle?.ok ? 'Oracle ok' : 'Oracle revisar',
+    railway?.ok ? 'Railway ok' : 'Railway fallback',
+  ];
+  el.textContent = parts.join(' | ');
+  el.className = `dash-health-summary ${errors24h || !reader?.alive ? 'warn' : 'ok'}`;
+}
+
+function renderDashboardHealthPlaceholder() {
+  const el = document.getElementById('dashHealth');
+  if (!el) return;
+  if (!dashboardHealthLastData && !el.innerHTML.trim()) {
+    el.innerHTML = `<div class="dash-health-body muted">Abrilo para ver ultimo sync, reader, backends y errores recientes.</div>`;
+    updateDashboardHealthSummary(null, 'pendiente');
+  } else if (dashboardHealthLastData) {
+    updateDashboardHealthSummary(dashboardHealthLastData);
+  }
+}
+
+window.onDashHealthToggle = () => {
+  const panel = document.getElementById('dashHealthPanel');
+  if (panel?.open && (!dashboardHealthLoadedAt || Date.now() - dashboardHealthLoadedAt > 60000)) {
+    renderDashboardHealth();
+  }
+};
 
 function renderDashboardHealthCard(data) {
   const el = document.getElementById('dashHealth');
   if (!el) return;
+  dashboardHealthLastData = data;
+  dashboardHealthLoadedAt = Date.now();
+  updateDashboardHealthSummary(data);
   const oracle = data?.services?.oracle || {};
   const railway = data?.services?.railway || {};
   if (oracle?.ok && railway?.configured && !railway?.ok) railway.optionalFallback = true;
@@ -427,7 +489,7 @@ function renderDashboardHealthCard(data) {
     ? dashHealthPill(reader.alive ? `vivo ${dashRelativeTime(reader.ts)}` : `caido ${dashRelativeTime(reader.ts)}`, reader.alive ? 'ok' : 'bad')
     : dashHealthPill('sin heartbeat', 'warn');
   const latest = Array.isArray(data?.latestErrors) ? data.latestErrors.slice(0, 3) : [];
-  el.innerHTML = `<div class="card" style="padding:16px 20px;">
+  el.innerHTML = `<div class="dash-health-body">
     <div class="fxb" style="gap:12px;margin-bottom:12px;">
       <div>
         <div class="sec-label">Salud operativa</div>
@@ -439,7 +501,7 @@ function renderDashboardHealthCard(data) {
       ${dashMetricCard({ l:'Ultimo sync', v:dashRelativeTime(data?.lastSync), sub:data?.lastSync ? new Date(data.lastSync).toLocaleString('es') : '' })}
       ${dashMetricCard({ l:'Errores 24h', v:String(errors24h), cls:errors24h ? 'red' : 'green' })}
       ${dashMetricCard({ l:'Telegram reader', v:reader?.alive ? 'VIVO' : 'REVISAR', sub:readerText, cls:reader?.alive ? 'green' : 'red' })}
-      ${dashMetricCard({ l:'Backends', v:'Estado', sub:`Oracle ${serviceText(oracle)} · Railway ${serviceText(railway)}` })}
+      ${dashMetricCard({ l:'Backends', v:'Estado', sub:`Oracle ${serviceText(oracle)} | Railway ${serviceText(railway)}` })}
     </div>
     ${latest.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;">
       <div style="font-family:var(--mono);font-size:9px;color:var(--t3);margin-bottom:6px;">ULTIMOS ERRORES</div>
@@ -456,7 +518,8 @@ async function renderDashboardHealth() {
   const el = document.getElementById('dashHealth');
   if (!el || !window.workerFetch) return;
   if (!getWorkerApiToken?.()) {
-    el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--amber);font-family:var(--mono);font-size:11px;">
+    updateDashboardHealthSummary(null, 'sin-token');
+    el.innerHTML = `<div class="dash-health-body" style="color:var(--amber);font-family:var(--mono);font-size:11px;">
       Falta MAUEX_API_TOKEN en Settings para cargar Salud.
     </div>`;
     return;
@@ -480,7 +543,8 @@ async function renderDashboardHealth() {
     if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
     renderDashboardHealthCard(data);
   } catch(e) {
-    el.innerHTML = `<div class="card" style="padding:16px 20px;color:var(--red);font-family:var(--mono);font-size:11px;">
+    updateDashboardHealthSummary(null, 'error');
+    el.innerHTML = `<div class="dash-health-body" style="color:var(--red);font-family:var(--mono);font-size:11px;">
       No pude cargar Salud: ${dashSafe(liquidityFetchErrorMessage(e))}
     </div>`;
   }
@@ -996,7 +1060,7 @@ function renderDashboard() {
   // Charts
   drawPnlChart(closed); drawWRChart(closed); drawAssetsChart(all);
   fetchAndRenderLiquidity();
-  renderDashboardHealth();
+  renderDashboardHealthPlaceholder();
   renderProfessionalDashboard(closed);
   renderIntelligenceDashboard(closed, all);
   renderQualityDashboard(closed);
