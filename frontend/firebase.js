@@ -119,8 +119,8 @@ onAuthStateChanged(auth, async user => {
     setTimeout(() => window.refreshSignalRemoteStates?.(), 500);
     setTimeout(() => window.checkMissedTradeLevels?.(), 1200);
     await waitForUiReady();
-    openInitialDashboard();
     startLivePrices();
+    openInitialDashboard();
     // Show master password modal if keys are configured
     setTimeout(checkMasterPassNeeded, 800);
     startAutoSync();

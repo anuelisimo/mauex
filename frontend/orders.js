@@ -489,7 +489,7 @@ window.syncAllOrders = async () => {
     await window._loadTrades?.();
     window.startLivePrices?.();
     renderOrders();
-    updateStatusBar();
+    window.updateStatusBar?.();
     const manualCount = (window.G?.trades?.() || []).filter(t => t.status === 'pending').length;
     if(btn){ btn.textContent=`↻ ${manualCount} manuales`; btn.disabled=false; }
     return;
@@ -511,7 +511,7 @@ window.syncAllOrders = async () => {
     }
     window.exchangeOrders = exchangeOrders;
     renderOrders();
-    updateStatusBar();
+    window.updateStatusBar?.();
     if(btn){ btn.textContent=`↻ ${exchangeOrders.length} órdenes`; btn.disabled=false; }
   } catch(e) {
     console.error('syncAllOrders:', e);
