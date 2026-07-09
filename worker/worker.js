@@ -179,8 +179,14 @@ function exchangeCooldownForError(exchange, message = '') {
   const msg = String(message || '');
   if (/429|rate limit|too many requests|code:?\s*1015/i.test(msg)) {
     return {
-      ms: ex === 'OKX' ? 20 * 60 * 1000 : 10 * 60 * 1000,
+      ms: ex === 'OKX' ? 60 * 60 * 1000 : 10 * 60 * 1000,
       reason: 'rate limit temporal',
+    };
+  }
+  if (ex === 'KUCOIN' && /timeout|timed out|aborted/i.test(msg)) {
+    return {
+      ms: 20 * 60 * 1000,
+      reason: 'timeout temporal de Oracle',
     };
   }
   if (ex === 'MEXC' && /402|api key expired|apply again|key expired/i.test(msg)) {
@@ -228,6 +234,12 @@ async function setExchangeCooldown(env, exchange, message = '') {
   return payload;
 }
 
+async function clearExchangeCooldown(env, exchange) {
+  if (!env.MAUEX_CACHE) return false;
+  await env.MAUEX_CACHE.delete(EXCHANGE_COOLDOWN_PREFIX + String(exchange || '').toUpperCase());
+  return true;
+}
+
 async function exchangeCooldownActive(env, exchange) {
   const cooldown = await readExchangeCooldown(env, exchange);
   if (!cooldown) return null;
@@ -238,6 +250,23 @@ async function exchangeCooldownActive(env, exchange) {
     skipped: true,
     cooldown,
   };
+}
+
+async function readActiveExchangeCooldowns(env, exchanges = []) {
+  const entries = await Promise.all(
+    exchanges.map(async exchange => [exchange, await readExchangeCooldown(env, exchange)])
+  );
+  return Object.fromEntries(entries.filter(([, cooldown]) => !!cooldown));
+}
+
+function isExpectedCooldownError(error, cooldowns = {}) {
+  const exchange = String(error?.exchange || error?.service || '').toUpperCase();
+  const message = String(error?.message || '');
+  const cooldown = cooldowns[exchange];
+  if (!cooldown) return false;
+  if (/rate limit/i.test(cooldown.reason || '') && /429|rate limit|too many requests|code:?\s*1015/i.test(message)) return true;
+  if (/timeout/i.test(cooldown.reason || '') && /timeout|timed out|aborted/i.test(message)) return true;
+  return false;
 }
 
 function filterOpsHealthErrors(errors = [], { oracleOk = false } = {}) {
@@ -253,6 +282,7 @@ function normalizedOpsErrorMessage(exchange, message) {
   const ex = String(exchange || '').toUpperCase();
   const msg = String(message || '');
   if (/429|rate limit|too many requests|code:?\s*1015/i.test(msg)) return `${ex} rate limit`;
+  if (ex === 'KUCOIN' && /timeout|timed out|aborted/i.test(msg)) return 'KUCOIN timeout Oracle';
   if (ex === 'MEXC' && /402|api key expired|apply again|key expired/i.test(msg)) return 'MEXC API key vencida';
   return msg;
 }
@@ -317,6 +347,26 @@ async function readCachedSummary(env) {
   }
 }
 
+function cachedExchangeBalance(summary, exchange, cooldown = null) {
+  const ex = String(exchange || '').toUpperCase();
+  const balance = summary?.balances?.[ex];
+  if (!balance) return null;
+  return {
+    ...balance,
+    stale: true,
+    staleReason: cooldown?.reason || 'dato cacheado',
+    cooldown: cooldown || null,
+  };
+}
+
+function cachedExchangeRows(summary, exchange, key) {
+  const ex = String(exchange || '').toUpperCase();
+  return (Array.isArray(summary?.[key]) ? summary[key] : []).filter(row => {
+    const rowExchange = String(row?.exchange || row?.exchangeSource || '').toUpperCase();
+    return rowExchange === ex;
+  });
+}
+
 async function checkServiceHealth(env, name, baseUrl) {
   const url = String(baseUrl || '').replace(/\/+$/, '');
   if (!url) return { configured: false, ok: null, status: null, message: 'sin URL' };
@@ -347,7 +397,11 @@ async function buildOpsHealth(env) {
     checkServiceHealth(env, 'oracle', env.BINANCE_BACKEND_URL || env.ORACLE_BACKEND_URL || ''),
     checkServiceHealth(env, 'railway', env.RAILWAY_URL || ''),
   ]);
-  const visibleErrors = uniqueOpsHealthErrors(filterOpsHealthErrors(errors, { oracleOk: !!oracle.ok }));
+  const cooldowns = await readActiveExchangeCooldowns(env, ['OKX', 'KUCOIN', 'MEXC']);
+  const visibleErrors = uniqueOpsHealthErrors(
+    filterOpsHealthErrors(errors, { oracleOk: !!oracle.ok })
+      .filter(error => !isExpectedCooldownError(error, cooldowns))
+  );
   return {
     ok: true,
     worker: { status: 'ok', version: WORKER_VERSION },
@@ -358,6 +412,7 @@ async function buildOpsHealth(env) {
     latestErrors: visibleErrors.slice(0, 5),
     reader,
     services: { oracle, railway },
+    cooldowns,
   };
 }
 
@@ -438,7 +493,11 @@ async function fetchBalancesV2(env) {
   const okxPass = (env.OKX_PASSPHRASE || '').trim();
   if (okxKey && okxSec && okxPass) {
     const okxCooldown = await readExchangeCooldown(env, 'OKX');
-    if (!okxCooldown) try {
+    if (okxCooldown) {
+      const cached = cachedExchangeBalance(await readCachedSummary(env), 'OKX', okxCooldown);
+      if (cached) balances.OKX = cached;
+      else errors.OKX = `OKX en pausa: ${okxCooldown.reason}`;
+    } else try {
       const okxGet = async (path) => {
         const ts = new Date().toISOString();
         const key2 = await crypto.subtle.importKey('raw', new TextEncoder().encode(okxSec), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -498,7 +557,7 @@ async function fetchBalancesV2(env) {
       if (!r1.ok && !r2.ok) errors.OKX = r1.data?.msg || `${r1.status}`;
       else if ((total || totalUsdt + totalUsdc || free || margin || orders || pnl) <= 0) errors.OKX = 'OKX respondio sin saldos USDT/USDC utilizables';
     } catch(e) { errors.OKX = e.message; }
-    if (errors.OKX) await setExchangeCooldown(env, 'OKX', errors.OKX);
+    if (errors.OKX && !okxCooldown) await setExchangeCooldown(env, 'OKX', errors.OKX);
   }
 
   const mexcKey = (env.MEXC_KEY || '').trim();
@@ -551,11 +610,13 @@ async function fetchBalancesV2(env) {
 
   const kucoinBackendUrl = (env.KUCOIN_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
   if (kucoinBackendUrl) {
-    try {
-      const r = await backendFetch(env, `${kucoinBackendUrl}/kucoin-balance`);
+    const kucoinCooldown = await readExchangeCooldown(env, 'KUCOIN');
+    if (!kucoinCooldown) try {
+      const r = await backendFetch(env, `${kucoinBackendUrl}/kucoin-balance`, { timeoutMs: 30000 });
       if (r.ok && r.data && !r.data.error) balances.KUCOIN = normalizeBalance(r.data);
       else errors.KUCOIN = `Oracle: ${r.data?.error || r.raw || r.status}`;
     } catch(e) { errors.KUCOIN = `Oracle: ${e.message}`; }
+    if (errors.KUCOIN) await setExchangeCooldown(env, 'KUCOIN', errors.KUCOIN);
   }
 
   const ibkrBackendUrl = (env.IBKR_BACKEND_URL || env.BINANCE_BACKEND_URL || '').trim();
@@ -588,7 +649,7 @@ async function fetchBalancesV2(env) {
   };
 }
 
-const WORKER_VERSION = '2026-07-07-exchange-cooldown-v7';
+const WORKER_VERSION = '2026-07-08-okx-cooldown-final-v10';
 const TELEGRAM_KV_KEY = 'telegram_signals';
 
 // ── HMAC-SHA256 (Web Crypto API) ─────────────────────────────────────────────
@@ -1710,6 +1771,7 @@ async function fetchBalances(env) {
 // MAIN SYNC — called by cron and by /sync endpoint
 // ═════════════════════════════════════════════════════════════════════════════
 async function syncAll(env) {
+  const previousSummary = await readCachedSummary(env);
   let balanceData = { balances: {}, totals: { USDT: 0, USDC: 0, total: 0 }, errors: {} };
   let positions = [];
   let orders = [];
@@ -1725,7 +1787,13 @@ async function syncAll(env) {
 
   const runExchangeSync = async (exchange, fn) => {
     const skipped = await exchangeCooldownActive(env, exchange);
-    if (skipped) return [exchange, skipped];
+    if (skipped) {
+      return [exchange, {
+        ...skipped,
+        positions: cachedExchangeRows(previousSummary, exchange, 'positions'),
+        orders: cachedExchangeRows(previousSummary, exchange, 'orders'),
+      }];
+    }
     try {
       const data = await fn(env);
       if (data?.error) await setExchangeCooldown(env, exchange, data.error);
@@ -1904,6 +1972,11 @@ export default {
     }
 
     if (url.pathname === '/errors') {
+      if (request.method === 'POST' && url.searchParams.get('clear') === '1') {
+        if (env.MAUEX_CACHE) await env.MAUEX_CACHE.delete(ERROR_LOG_KV_KEY);
+        await Promise.all(['OKX', 'KUCOIN', 'MEXC'].map(exchange => clearExchangeCooldown(env, exchange)));
+        return json({ ok: true, cleared: true, clearedCooldowns: ['OKX', 'KUCOIN', 'MEXC'] });
+      }
       const errors = await readErrorLog(env);
       return json({
         ok: true,
@@ -1954,7 +2027,11 @@ export default {
 
     // ── /balance — free liquidity per exchange ───────────────────────────────
     if (url.pathname === '/diagnose-okx' || url.pathname === '/okx-diagnostic') {
-      return json(await diagnoseOKXBalance(env));
+      const diagnostic = await diagnoseOKXBalance(env);
+      if (diagnostic?.ok) {
+        await clearExchangeCooldown(env, 'OKX');
+      }
+      return json(diagnostic);
     }
 
     if (url.pathname === '/diagnose-bybit' || url.pathname === '/bybit-diagnostic') {

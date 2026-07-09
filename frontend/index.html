@@ -560,6 +560,7 @@
         </div>
         <div class="ixs-77">
           <div class="ixs-78"><label class="lbl">Elegí una contraseña (mínimo 8 caracteres)</label><input type="password" id="masterPass2" placeholder="Tu contraseña maestra"></div>
+          <label class="ixs-78" style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);font-family:var(--mono);"><input type="checkbox" id="rememberMasterPass2" checked> Recordar este dispositivo</label>
           <button class="btn acc" onclick="saveMasterPass2()">Guardar</button>
         </div>
         <div class="ixs-79">⚠️ Si la olvidás, regenerá las keys en el exchange y cargalas de nuevo.</div>
@@ -699,9 +700,10 @@
       <!-- Master password -->
       <div class="card ixs-24">
         <div class="sec-label">Contraseña maestra</div>
-        <div class="ixs-97">Sirve para abrir y re-encriptar las API Keys de exchanges. No es el token del Worker y no queda recordada al cerrar la sesion.</div>
+        <div class="ixs-97">Sirve para abrir y re-encriptar las API Keys de exchanges. No es el token del Worker; si marcas recordar, queda solo en este dispositivo.</div>
         <div class="ixs-77">
           <div class="ixs-78"><input type="password" id="masterPass" placeholder="Tu contraseña maestra"></div>
+          <label class="ixs-78" style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);font-family:var(--mono);"><input type="checkbox" id="rememberMasterPass" checked> Recordar este dispositivo</label>
           <button class="btn acc" onclick="saveMasterPass()">Guardar</button>
         </div>
         <div id="masterStatus" class="ixs-98"></div>
@@ -810,6 +812,7 @@
         <label class="lbl">Contraseña maestra</label>
         <input type="password" id="unlockPass" placeholder="Tu contraseña maestra"
           onkeydown="if(event.key==='Enter')doUnlock()">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:var(--t2);font-family:var(--mono);"><input type="checkbox" id="rememberUnlockPass" checked> Recordar este dispositivo</label>
       </div>
       <div id="unlockError" class="ixs-111"></div>
     </div>
@@ -1148,18 +1151,18 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      UI LOGIC (no Firebase deps here)
      ═══════════════════════════════════════════════════════════════════════ -->
-<script src="./proxy.js?v=20260707-133000"></script>
+<script src="./proxy.js?v=20260708-reset-proxy"></script>
 <script src="./helpers.js?v=20260707-133000"></script>
 <script src="./nav.js?v=20260707-133000"></script>
 <script src="./themes.js?v=20260707-133000"></script>
 <script src="./signals.js?v=20260707-133000"></script>
 <script src="./calc.js?v=20260707-133000"></script>
-<script src="./dashboard.js?v=20260707-133000"></script>
+<script src="./dashboard.js?v=20260708-okx-final"></script>
 <script src="./watchlist.js?v=20260707-133000"></script>
 <script src="./positions.js?v=20260707-133000"></script>
 <script src="./history.js?v=20260707-133000"></script>
 <script src="./analysis.js?v=20260707-133000"></script>
-<script src="./exchange-keys.js?v=20260707-133000"></script>
+<script src="./exchange-keys.js?v=20260709-remember-device"></script>
 <script src="./orders.js?v=20260707-133000"></script>
 <script src="./init.js?v=20260707-133000"></script>
 <script src="./app.js?v=20260707-133000"></script>

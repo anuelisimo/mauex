@@ -1,6 +1,19 @@
 // Proxy config and fetch wrappers.
 // Loaded before app.js so legacy inline handlers and app globals keep working.
-var PROXY_URL = localStorage.getItem('mauex_proxy') || 'https://mauex-proxy.mauaparo.workers.dev';
+var DEFAULT_MAUEX_PROXY_URL = 'https://mauex-proxy.mauaparo.workers.dev';
+try {
+  const reset = new URLSearchParams(location.search).get('mauex_reset');
+  if (reset === '1' || reset === 'cache' || reset === 'proxy') {
+    [
+      'mauex_liquidity_cache_v1',
+      'mauex_liquidity_fetch_block_until',
+      'mauex_proxy',
+    ].forEach(key => localStorage.removeItem(key));
+    localStorage.setItem('mauex_proxy', DEFAULT_MAUEX_PROXY_URL);
+    sessionStorage.setItem('mauex_reset_done', new Date().toISOString());
+  }
+} catch(e) {}
+var PROXY_URL = localStorage.getItem('mauex_proxy') || DEFAULT_MAUEX_PROXY_URL;
 var WORKER_API_TOKEN_KEY = 'mauex_api_token';
 
 function getWorkerApiToken() {

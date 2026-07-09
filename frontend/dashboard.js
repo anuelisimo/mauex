@@ -10,9 +10,21 @@ const LIQUIDITY_REFRESH_MIN_MS = 30 * 1000;
 function saveLiquidityLocalCache(data) {
   if (!data?.balances || !Object.keys(data.balances).length) return;
   try {
+    const cleanBalances = {};
+    Object.entries(data.balances || {}).forEach(([ex, balance]) => {
+      const b = normalizeDashboardBalance(balance);
+      if ((b.total || b.free || b.margin || b.orders || b.pnl) <= 0 && balance?.error) return;
+      cleanBalances[ex] = balance;
+    });
+    if (!Object.keys(cleanBalances).length) return;
     localStorage.setItem(LIQUIDITY_CACHE_KEY, JSON.stringify({
       savedAt: new Date().toISOString(),
-      data,
+      data: {
+        ...data,
+        balances: cleanBalances,
+        errors: {},
+        balanceErrors: {},
+      },
     }));
   } catch(e) {}
 }
@@ -22,7 +34,25 @@ function loadLiquidityLocalCache() {
     const raw = localStorage.getItem(LIQUIDITY_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.data ? { ...parsed.data, cacheSavedAt: parsed.savedAt || parsed.data.cacheSavedAt } : null;
+    if (!parsed?.data) return null;
+    const hasErrors = Object.keys(parsed.data.errors || parsed.data.balanceErrors || {}).length > 0;
+    const cleanBalances = {};
+    Object.entries(parsed.data.balances || {}).forEach(([ex, balance]) => {
+      const b = normalizeDashboardBalance(balance);
+      if ((b.total || b.free || b.margin || b.orders || b.pnl) <= 0 && balance?.error) return;
+      cleanBalances[ex] = balance;
+    });
+    if (hasErrors) {
+      localStorage.removeItem(LIQUIDITY_CACHE_KEY);
+      return null;
+    }
+    return {
+      ...parsed.data,
+      balances: cleanBalances,
+      errors: {},
+      balanceErrors: {},
+      cacheSavedAt: parsed.savedAt || parsed.data.cacheSavedAt,
+    };
   } catch(e) {
     return null;
   }
@@ -400,6 +430,24 @@ function dashRelativeTime(value) {
   return `${Math.floor(h / 24)}d`;
 }
 
+function dashTimeUntil(value) {
+  const ms = Date.parse(value || '');
+  if (!Number.isFinite(ms)) return '-';
+  const diff = Math.max(0, ms - Date.now());
+  const min = Math.ceil(diff / 60000);
+  if (min <= 1) return '1m';
+  if (min < 60) return `${min}m`;
+  const h = Math.ceil(min / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.ceil(h / 24)}d`;
+}
+
+function dashCooldownSummary(data) {
+  const entries = Object.entries(data?.cooldowns || {});
+  if (!entries.length) return '';
+  return entries.map(([ex, cd]) => `${ex} pausa ${dashTimeUntil(cd?.until)}`).join(' | ');
+}
+
 function dashHealthPill(label, state) {
   const cls = state === 'ok' ? 'pnl-pos' : state === 'warn' ? '' : 'pnl-neg';
   const color = state === 'ok' ? 'var(--accent)' : state === 'warn' ? 'var(--amber)' : 'var(--red)';
@@ -440,13 +488,15 @@ function updateDashboardHealthSummary(data, state = '') {
   const reader = data?.reader || null;
   const oracle = data?.services?.oracle || {};
   const railway = data?.services?.railway || {};
+  const cooldownText = dashCooldownSummary(data);
   const parts = [
     `sync ${dashRelativeTime(data?.lastSync)}`,
     `errores ${errors24h}`,
+    cooldownText,
     reader?.alive ? 'reader vivo' : 'reader revisar',
     oracle?.ok ? 'Oracle ok' : 'Oracle revisar',
     railway?.ok ? 'Railway ok' : 'Railway fallback',
-  ];
+  ].filter(Boolean);
   el.textContent = parts.join(' | ');
   el.className = `dash-health-summary ${errors24h || !reader?.alive ? 'warn' : 'ok'}`;
 }
@@ -489,6 +539,7 @@ function renderDashboardHealthCard(data) {
     ? dashHealthPill(reader.alive ? `vivo ${dashRelativeTime(reader.ts)}` : `caido ${dashRelativeTime(reader.ts)}`, reader.alive ? 'ok' : 'bad')
     : dashHealthPill('sin heartbeat', 'warn');
   const latest = Array.isArray(data?.latestErrors) ? data.latestErrors.slice(0, 3) : [];
+  const cooldownRows = Object.entries(data?.cooldowns || {});
   el.innerHTML = `<div class="dash-health-body">
     <div class="fxb" style="gap:12px;margin-bottom:12px;">
       <div>
@@ -503,6 +554,14 @@ function renderDashboardHealthCard(data) {
       ${dashMetricCard({ l:'Telegram reader', v:reader?.alive ? 'VIVO' : 'REVISAR', sub:readerText, cls:reader?.alive ? 'green' : 'red' })}
       ${dashMetricCard({ l:'Backends', v:'Estado', sub:`Oracle ${serviceText(oracle)} | Railway ${serviceText(railway)}` })}
     </div>
+    ${cooldownRows.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:10px;">
+      <div style="font-family:var(--mono);font-size:9px;color:var(--t3);margin-bottom:6px;">PAUSAS ACTIVAS</div>
+      ${cooldownRows.map(([ex, cd]) => `<div style="display:grid;grid-template-columns:80px 1fr 54px;gap:8px;align-items:center;padding:5px 0;border-bottom:.5px solid var(--border);">
+        <strong style="font-family:var(--mono);font-size:10px;color:var(--t1);">${dashSafe(ex)}</strong>
+        <span style="font-size:10px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dashSafe(cd?.reason || 'pausa temporal')}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--amber);text-align:right;">${dashTimeUntil(cd?.until)}</span>
+      </div>`).join('')}
+    </div>` : ''}
     ${latest.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;">
       <div style="font-family:var(--mono);font-size:9px;color:var(--t3);margin-bottom:6px;">ULTIMOS ERRORES</div>
       ${latest.map(e => `<div style="display:grid;grid-template-columns:80px 1fr 54px;gap:8px;align-items:center;padding:5px 0;border-bottom:.5px solid var(--border);">
